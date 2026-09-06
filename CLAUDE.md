@@ -45,35 +45,46 @@ src/
                    is an overlay-only "explicitly deleted" marker
     mesh/          greedyMesh (shared by editor + export), mesher.worker,
                    ChunkMesher (owns the worker)
-    project/       Project, VoxelObject, resolve.ts (extend resolution),
-                   types (.voxproj schema)
+    project/       Project (has a stable id), VoxelObject, resolve.ts (extend
+                   resolution), types (.voxproj schema)
     shapes/        primitive voxelisation (box/sphere/cylinder/pyramid)
-    export/        exportGlb.ts — merge chunks, pivot/scale/up-axis, GLTFExporter
-    ops/           flood.ts and future selection ops
-    io/            projectFile, fileSystem (File System Access + fallbacks),
-                   serialize (LE base64 for chunk arrays)
+    export/        exportGlb.ts — per-object merge + pivot/scale/up-axis via
+                   GLTFExporter; exportProjectToGlbs() for batch export
+    ops/           flood.ts, selection.ts (Selection box + region helpers)
+    io/            projectFile, fileSystem (File System Access + fallbacks incl.
+                   pickDirectory), serialize (LE base64), projectStore
+                   (IndexedDB: autosave target + recent-projects source)
     history/       History (per-object undo stack of voxel diffs) + HistoryStore
     palette.ts     256 sRGB hex slots; paletteToLinearArray for meshing/export
-  viewport/        Three.js. Viewport composes GodotControls, Gizmos, Picker,
-                   ChunkMeshView (one mesh per non-empty chunk)
-  tools/           Tool implementations + ToolContext interface
+  viewport/        Three.js. Viewport composes GodotControls (perspective + ortho
+                   off one orbit state), Gizmos, Picker, ChunkMeshView (one mesh
+                   per non-empty chunk)
+  tools/           Tool implementations (incl. SelectTool) + ToolContext interface
   editor/          ToolRunner (pointer input → tool → history → viewport),
-                   session.ts (shared refs to the mounted viewport/runner)
+                   session.ts (shared refs to the mounted viewport/runner),
+                   autosave.ts (debounced IndexedDB save), selectionOps.ts
+                   (move/recolour/duplicate/delete via ToolContext)
   stores/          Pinia: editor.ts holds the Project (markRaw) + reactive
                    version counters (structureVersion / activeVersion /
-                   paletteVersion) that components watch
+                   paletteVersion / editVersion) that components watch, plus
+                   selection + autosave status
   components/      Vue SFCs
 ```
 
 ### Data flow
 
 - The Pinia store holds a `markRaw(Project)`. Vue never deep-proxies voxel data.
-  Components react to integer `*Version` refs bumped on mutation.
+  Components react to integer `*Version` refs bumped on mutation. `editVersion`
+  is bumped by `ToolRunner` on every committed edit / undo / redo (the other
+  counters miss plain voxel writes) and is what `useAutosave()` watches.
 - Editing: `ViewportCanvas` forwards pointer events to `ToolRunner`, which
   implements `ToolContext`, applies voxel writes, records `{x,y,z,prev,next}`
-  diffs, pushes history batches, and tells the `Viewport` to re-mesh.
+  diffs, pushes history batches, and tells the `Viewport` to re-mesh. During a
+  drag the batch re-meshes once per frame (rAF-coalesced) so strokes show live.
 - Meshing is always off-thread. A chunk is re-meshed when its voxels or a
   neighbour's border voxels change (`VoxelData.dirty`).
+- Autosave writes the whole project (+ a viewport JPEG thumbnail) to IndexedDB
+  5s after the last edit; the StartScreen lists those records as recent projects.
 
 ### Coordinate conventions
 
@@ -105,6 +116,11 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   outliner, per-object undo/redo, `.voxproj` save, single-object GLB export.
 - **Done — iter 2:** extend/overlay objects, viewport + outliner context menus,
   flood ops, app icon/branding.
-- **Next — iter 3:** select tool + selection ops (move/recolour/duplicate),
-  IndexedDB autosave + recent-projects list, PWA (manifest from `public/icon.png`,
-  service worker), batch export to a folder, ortho camera + preset views.
+- **Done — iter 3:** select tool + selection ops (move/recolour/duplicate/delete,
+  box-drag + arrow-key nudge), IndexedDB autosave + recent-projects list with
+  thumbnails, PWA (manifest + service worker, prompt-to-update), batch export to
+  a folder, ortho camera + preset views (numpad 1/3/5/7). Also: live re-mesh
+  during drag strokes, Shift = straight-line draw for place/erase/paint.
+- **Next — iter 4:** ideas — selection copy/paste across objects, marquee in
+  screen space, export-settings dialog (units/up-axis/pivot per object), grid
+  snapping options, mirror modelling.
