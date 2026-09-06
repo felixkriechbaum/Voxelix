@@ -7,10 +7,39 @@ function cursorAdd(v: THREE.Vector3, color = 0x8fd3ff) {
   return { min: v.clone(), max: v.clone().addScalar(1), color };
 }
 
-/** Place or erase single voxels, click or drag. */
+/** Every integer cell on the 3D line from `a` to `b`, endpoints included. */
+function lineCells(a: THREE.Vector3, b: THREE.Vector3): Array<[number, number, number]> {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const dz = b.z - a.z;
+  const steps = Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz));
+  if (steps === 0) return [[Math.round(a.x), Math.round(a.y), Math.round(a.z)]];
+  const out: Array<[number, number, number]> = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    out.push([Math.round(a.x + dx * t), Math.round(a.y + dy * t), Math.round(a.z + dz * t)]);
+  }
+  return out;
+}
+
+/** Snap `t` onto the single axis it has moved furthest along from `anchor`. */
+function axisLock(anchor: THREE.Vector3, t: THREE.Vector3): THREE.Vector3 {
+  const dx = Math.abs(t.x - anchor.x);
+  const dy = Math.abs(t.y - anchor.y);
+  const dz = Math.abs(t.z - anchor.z);
+  const out = anchor.clone();
+  if (dx >= dy && dx >= dz) out.x = t.x;
+  else if (dy >= dz) out.y = t.y;
+  else out.z = t.z;
+  return out;
+}
+
+/** Place or erase voxels, click or drag. Hold Shift to draw a straight line. */
 export class PlaceEraseTool implements Tool {
   private drawing = false;
   private visited = new Set<string>();
+  private anchor: THREE.Vector3 | null = null;
+  private last: THREE.Vector3 | null = null;
   constructor(public readonly id: 'place' | 'erase') {}
 
   private target(ctx: ToolContext, p: PointerInfo) {
@@ -25,38 +54,49 @@ export class PlaceEraseTool implements Tool {
     if (!t || !ctx.data.inBounds(t.x, t.y, t.z)) return;
     this.drawing = true;
     this.visited.clear();
+    this.anchor = t.clone();
+    this.last = null;
     ctx.begin(this.id === 'place' ? 'Place' : 'Erase');
     this.stamp(ctx, t);
   }
 
   pointerMove(ctx: ToolContext, p: PointerInfo): void {
-    const t = this.target(ctx, p);
+    let t = this.target(ctx, p);
     if (!this.drawing) {
       ctx.setCursor(t ? cursorAdd(t, this.id === 'place' ? 0x8fd3ff : 0xff8f8f) : null);
       return;
     }
-    if (t && ctx.data.inBounds(t.x, t.y, t.z)) this.stamp(ctx, t);
+    if (!t) return;
+    if (p.shiftKey && this.anchor) t = axisLock(this.anchor, t);
+    this.stamp(ctx, t);
   }
 
   pointerUp(ctx: ToolContext): void {
     if (!this.drawing) return;
     this.drawing = false;
+    this.anchor = this.last = null;
     ctx.commit();
   }
 
   clearPreview(ctx: ToolContext): void {
     if (this.drawing) {
       this.drawing = false;
+      this.anchor = this.last = null;
       ctx.commit();
     }
     ctx.setCursor(null);
   }
 
   private stamp(ctx: ToolContext, t: THREE.Vector3): void {
-    const k = key(t.x, t.y, t.z);
-    if (this.visited.has(k)) return;
-    this.visited.add(k);
-    ctx.write(t.x, t.y, t.z, this.id === 'place' ? ctx.colorIndex + 1 : 0);
+    const value = this.id === 'place' ? ctx.colorIndex + 1 : 0;
+    for (const [x, y, z] of lineCells(this.last ?? t, t)) {
+      if (!ctx.data.inBounds(x, y, z)) continue;
+      const k = key(x, y, z);
+      if (this.visited.has(k)) continue;
+      this.visited.add(k);
+      ctx.write(x, y, z, value);
+    }
+    this.last = t.clone();
   }
 }
 
@@ -122,18 +162,23 @@ export class BoxTool implements Tool {
   }
 }
 
-/** Recolour existing voxels without adding or removing. */
+/** Recolour existing voxels without adding or removing. Hold Shift for a line. */
 export class PaintTool implements Tool {
   readonly id: ToolId = 'paint';
   private drawing = false;
   private visited = new Set<string>();
+  private anchor: THREE.Vector3 | null = null;
+  private last: THREE.Vector3 | null = null;
 
   pointerDown(ctx: ToolContext, p: PointerInfo): void {
     if (p.button !== 0) return;
+    const hit = ctx.pick(p.clientX, p.clientY);
     this.drawing = true;
     this.visited.clear();
+    this.anchor = hit?.remove ? hit.remove.clone() : null;
+    this.last = null;
     ctx.begin('Paint');
-    this.stamp(ctx, p);
+    if (hit?.remove) this.stamp(ctx, hit.remove);
   }
 
   pointerMove(ctx: ToolContext, p: PointerInfo): void {
@@ -142,32 +187,39 @@ export class PaintTool implements Tool {
       ctx.setCursor(hit?.remove ? cursorAdd(hit.remove, 0xffe08a) : null);
       return;
     }
-    this.stamp(ctx, p);
+    if (!hit?.remove) return;
+    let t = hit.remove;
+    if (!this.anchor) this.anchor = t.clone();
+    if (p.shiftKey) t = axisLock(this.anchor, t);
+    this.stamp(ctx, t);
   }
 
   pointerUp(ctx: ToolContext): void {
     if (!this.drawing) return;
     this.drawing = false;
+    this.anchor = this.last = null;
     ctx.commit();
   }
 
   clearPreview(ctx: ToolContext): void {
     if (this.drawing) {
       this.drawing = false;
+      this.anchor = this.last = null;
       ctx.commit();
     }
     ctx.setCursor(null);
   }
 
-  private stamp(ctx: ToolContext, p: PointerInfo): void {
-    const hit = ctx.pick(p.clientX, p.clientY);
-    if (!hit?.remove) return;
-    const t = hit.remove;
-    if (!ctx.data.isSolid(t.x, t.y, t.z)) return;
-    const k = key(t.x, t.y, t.z);
-    if (this.visited.has(k)) return;
-    this.visited.add(k);
-    ctx.write(t.x, t.y, t.z, ctx.colorIndex + 1);
+  private stamp(ctx: ToolContext, t: THREE.Vector3): void {
+    const value = ctx.colorIndex + 1;
+    for (const [x, y, z] of lineCells(this.last ?? t, t)) {
+      if (!ctx.data.isSolid(x, y, z)) continue;
+      const k = key(x, y, z);
+      if (this.visited.has(k)) continue;
+      this.visited.add(k);
+      ctx.write(x, y, z, value);
+    }
+    this.last = t.clone();
   }
 }
 

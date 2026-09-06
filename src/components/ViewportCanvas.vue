@@ -179,7 +179,7 @@ watch(
     <canvas ref="canvas" class="viewport-canvas" />
     <div class="hud">
       {{ store.buildPlane.toUpperCase() }} plane @ {{ store.buildOffset }} &nbsp;·&nbsp; MMB orbit ·
-      Shift+MMB pan · RMB+WASD fly · RMB click menu · F frame
+      Shift+MMB pan · RMB+WASD fly · Shift draw = straight line · F frame
     </div>
     <ContextMenu
       v-if="menu"

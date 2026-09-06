@@ -26,6 +26,7 @@ export class ToolRunner implements ToolContext {
   private batchLabel = '';
   private histories = new HistoryStore();
   private ctx: ActiveCtx | null = null;
+  private liveFlushQueued = false;
 
   constructor(
     private viewport: Viewport,
@@ -105,13 +106,19 @@ export class ToolRunner implements ToolContext {
 
     if (!ctx.extend) {
       const prev = ctx.object.data.setRaw(x, y, z, value);
-      if (prev !== value) this.batch.push({ x, y, z, prev, next: value });
+      if (prev !== value) {
+        this.batch.push({ x, y, z, prev, next: value });
+        this.liveFlush();
+      }
       return;
     }
 
     const stored = overlayWriteValue(value, ctx.baseResolved!, x, y, z);
     const prev = ctx.object.data.setRaw(x, y, z, stored);
-    if (prev !== stored) this.batch.push({ x, y, z, prev, next: stored });
+    if (prev !== stored) {
+      this.batch.push({ x, y, z, prev, next: stored });
+      this.liveFlush();
+    }
 
     // keep the read view in lockstep
     if (stored === REMOVED) ctx.readData.clear(x, y, z);
@@ -119,9 +126,20 @@ export class ToolRunner implements ToolContext {
     else ctx.readData.setRaw(x, y, z, stored);
   }
 
+  /** Re-mesh mid-stroke so a drag shows its result live, not only on release. */
+  private liveFlush(): void {
+    if (this.liveFlushQueued) return;
+    this.liveFlushQueued = true;
+    requestAnimationFrame(() => {
+      this.liveFlushQueued = false;
+      if (this.batch.length > 0) this.afterEdit();
+    });
+  }
+
   commit(): void {
     if (this.batch.length > 0) {
       this.currentHistory().push({ label: this.batchLabel, edits: this.batch.slice() });
+      this.store.bumpEdit();
     }
     this.batch = [];
     this.afterEdit();
@@ -165,6 +183,7 @@ export class ToolRunner implements ToolContext {
     if (this.currentHistory().undo(ctx.object.data)) {
       this.syncActive();
       this.afterEdit();
+      this.store.bumpEdit();
     }
   }
 
@@ -174,6 +193,7 @@ export class ToolRunner implements ToolContext {
     if (this.currentHistory().redo(ctx.object.data)) {
       this.syncActive();
       this.afterEdit();
+      this.store.bumpEdit();
     }
   }
 
