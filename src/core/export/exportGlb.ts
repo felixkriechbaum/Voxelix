@@ -3,8 +3,10 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { greedyMesh } from '@/core/mesh/greedyMesh';
 import type { MeshArrays } from '@/core/mesh/meshTypes';
 import { paletteToLinearArray, type Palette } from '@/core/palette';
+import { resolveEffectiveData } from '@/core/project/resolve';
 import type { VoxelData } from '@/core/voxel/VoxelData';
 import type { VoxelObject } from '@/core/project/VoxelObject';
+import type { Project } from '@/core/project/Project';
 import type { ExportSettings } from '@/core/project/types';
 
 /** Greedy-mesh every chunk of an object and concatenate into one mesh. */
@@ -123,4 +125,47 @@ export async function exportObjectToGlb(
 
 export function sanitizeFilename(name: string): string {
   return name.trim().replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'object';
+}
+
+export interface BatchProgress {
+  done: number;
+  total: number;
+  /** object currently being processed */
+  name: string;
+}
+
+/**
+ * Export every object in the project as its own `.glb`, resolving extend
+ * overlays first. Empty objects are skipped; filename clashes get a `-2` suffix.
+ */
+export async function exportProjectToGlbs(
+  project: Project,
+  onProgress?: (p: BatchProgress) => void,
+): Promise<GlbFile[]> {
+  const files: GlbFile[] = [];
+  const used = new Set<string>();
+  const total = project.objects.length;
+  let done = 0;
+  for (const obj of project.objects) {
+    onProgress?.({ done, total, name: obj.name });
+    const data = resolveEffectiveData(obj, project);
+    const file = await exportObjectToGlb(obj, data, project.palette, project.exportSettings);
+    done++;
+    if (file) {
+      file.name = dedupeName(file.name, used);
+      files.push(file);
+    }
+  }
+  onProgress?.({ done, total, name: '' });
+  return files;
+}
+
+function dedupeName(name: string, used: Set<string>): string {
+  const dot = name.lastIndexOf('.');
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : '';
+  let candidate = name;
+  for (let i = 2; used.has(candidate); i++) candidate = `${stem}-${i}${ext}`;
+  used.add(candidate);
+  return candidate;
 }

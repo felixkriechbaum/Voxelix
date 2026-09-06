@@ -4,6 +4,7 @@ import { VoxelObject } from './VoxelObject';
 import { defaultExportSettings, type ExportSettings, type ProjectJson } from './types';
 
 export class Project {
+  id: string;
   name: string;
   palette: Palette;
   exportSettings: ExportSettings;
@@ -11,12 +12,14 @@ export class Project {
   activeObjectId: string | null;
 
   constructor(opts: {
+    id?: string;
     name: string;
     palette?: Palette;
     exportSettings?: ExportSettings;
     objects?: VoxelObject[];
     activeObjectId?: string | null;
   }) {
+    this.id = opts.id ?? crypto.randomUUID();
     this.name = opts.name;
     this.palette = opts.palette ?? createDefaultPalette();
     this.exportSettings = opts.exportSettings ?? defaultExportSettings();
@@ -102,6 +105,7 @@ export class Project {
     return {
       format: 'voxeleditor-project',
       version: 1,
+      id: this.id,
       name: this.name,
       palette: this.palette,
       exportSettings: this.exportSettings,
@@ -115,6 +119,7 @@ export class Project {
       throw new Error('Not a voxeleditor project file');
     }
     return new Project({
+      id: json.id,
       name: json.name,
       palette: json.palette,
       exportSettings: json.exportSettings ?? defaultExportSettings(),

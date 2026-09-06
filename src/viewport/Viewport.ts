@@ -25,7 +25,12 @@ export class Viewport {
     this.scene.background = new THREE.Color(0x181b23);
 
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 4000);
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      // let captureThumbnail() read the frame back on demand
+      preserveDrawingBuffer: true,
+    });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     this.controls = new GodotControls(this.camera, canvas);
@@ -140,6 +145,27 @@ export class Viewport {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+  }
+
+  /** Small JPEG data URL of the current view, for the recent-projects list. */
+  captureThumbnail(maxEdge = 320): string | null {
+    try {
+      this.renderer.render(this.scene, this.camera);
+      const src = this.renderer.domElement;
+      if (!src.width || !src.height) return null;
+      const scale = Math.min(1, maxEdge / Math.max(src.width, src.height));
+      const cw = Math.max(1, Math.round(src.width * scale));
+      const ch = Math.max(1, Math.round(src.height * scale));
+      const off = document.createElement('canvas');
+      off.width = cw;
+      off.height = ch;
+      const g = off.getContext('2d');
+      if (!g) return null;
+      g.drawImage(src, 0, 0, cw, ch);
+      return off.toDataURL('image/jpeg', 0.7);
+    } catch {
+      return null;
+    }
   }
 
   private loop = (): void => {

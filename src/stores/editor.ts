@@ -15,6 +15,13 @@ export const useEditorStore = defineStore('editor', () => {
   const activeVersion = ref(0);
   /** bumps when any palette colour changes */
   const paletteVersion = ref(0);
+  /** bumps after every committed voxel edit / undo / redo (for autosave) */
+  const editVersion = ref(0);
+
+  /** autosave (IndexedDB) status, driven by useAutosave() */
+  const autosaveBusy = ref(false);
+  const autosaveAt = ref<number | null>(null);
+  const autosaveError = ref(false);
 
   const activeObjectId = ref<string | null>(null);
   const currentColor = ref(16);
@@ -50,6 +57,8 @@ export const useEditorStore = defineStore('editor', () => {
     activeObjectId.value = p.activeObjectId ?? p.objects[0]?.id ?? null;
     currentColor.value = 16;
     buildOffset.value = 0;
+    autosaveAt.value = null;
+    autosaveError.value = false;
     structureVersion.value++;
     activeVersion.value++;
     paletteVersion.value++;
@@ -108,6 +117,10 @@ export const useEditorStore = defineStore('editor', () => {
     activeVersion.value++;
   }
 
+  function bumpEdit() {
+    editVersion.value++;
+  }
+
   function setColor(i: number) {
     currentColor.value = i;
   }
@@ -127,6 +140,10 @@ export const useEditorStore = defineStore('editor', () => {
     structureVersion,
     activeVersion,
     paletteVersion,
+    editVersion,
+    autosaveBusy,
+    autosaveAt,
+    autosaveError,
     objects,
     projectName,
     activeObjectId,
@@ -145,6 +162,7 @@ export const useEditorStore = defineStore('editor', () => {
     removeObject,
     renameObject,
     resizeActive,
+    bumpEdit,
     setColor,
     setPaletteColor,
     palette,

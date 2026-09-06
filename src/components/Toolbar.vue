@@ -1,10 +1,17 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useEditorStore } from '@/stores/editor';
 import { useSession } from '@/editor/session';
 import { serializeProject } from '@/core/io/projectFile';
-import { saveTextFile, saveBinaryFile } from '@/core/io/fileSystem';
-import { exportObjectToGlb } from '@/core/export/exportGlb';
+import {
+  saveTextFile,
+  saveBinaryFile,
+  pickDirectory,
+  writeFileToDirectory,
+  downloadBlob,
+  hasDirectoryPicker,
+} from '@/core/io/fileSystem';
+import { exportObjectToGlb, exportProjectToGlbs } from '@/core/export/exportGlb';
 import { resolveEffectiveData } from '@/core/project/resolve';
 import type { ToolId } from '@/tools/types';
 import type { BuildPlane } from '@/viewport/Picker';
@@ -14,6 +21,14 @@ const { runner } = useSession();
 const emit = defineEmits<{ (e: 'add-shape'): void }>();
 
 const busy = ref('');
+const batchLabel = ref('');
+
+const autosave = computed(() => {
+  if (store.autosaveError) return { text: 'Autosave failed', bad: true };
+  if (store.autosaveBusy) return { text: 'Saving…', bad: false };
+  if (store.autosaveAt) return { text: 'Saved locally', bad: false };
+  return { text: '', bad: false };
+});
 
 const tools: Array<{ id: ToolId; label: string; key: string }> = [
   { id: 'place', label: 'Place', key: '1' },
@@ -53,6 +68,39 @@ async function exportActive() {
     await saveBinaryFile(file.name, file.blob);
   } finally {
     busy.value = '';
+  }
+}
+
+async function exportAll() {
+  if (!store.project) return;
+
+  let dir: FileSystemDirectoryHandle | null = null;
+  if (hasDirectoryPicker) {
+    dir = await pickDirectory();
+    if (!dir) return; // picker cancelled
+  }
+
+  busy.value = 'export-all';
+  batchLabel.value = 'Preparing…';
+  try {
+    const files = await exportProjectToGlbs(store.project, ({ done, total, name }) => {
+      batchLabel.value = name ? `${done}/${total} · ${name}` : `${done}/${total}`;
+    });
+    if (files.length === 0) {
+      alert('No objects with voxels to export.');
+      return;
+    }
+    if (dir) {
+      for (const f of files) await writeFileToDirectory(dir, f.name, f.blob);
+    } else {
+      for (const f of files) {
+        downloadBlob(f.name, f.blob);
+        await new Promise((r) => setTimeout(r, 350));
+      }
+    }
+  } finally {
+    busy.value = '';
+    batchLabel.value = '';
   }
 }
 </script>
@@ -97,8 +145,18 @@ async function exportActive() {
     <button :disabled="!runner" @click="runner?.redo()">Redo</button>
 
     <span class="spacer" />
-    <button :disabled="busy === 'save'" @click="save">Save</button>
-    <button class="primary" :disabled="busy === 'export'" @click="exportActive">Export GLB</button>
+    <span v-if="busy === 'export-all'" class="batch">{{ batchLabel }}</span>
+    <span v-else-if="autosave.text" class="batch" :class="{ bad: autosave.bad }" :title="autosave.bad ? 'Could not write to browser storage' : 'Autosaved to this browser (IndexedDB)'">{{ autosave.text }}</span>
+    <button :disabled="!!busy" @click="save">Save</button>
+    <button :disabled="!!busy" @click="exportActive">Export GLB</button>
+    <button
+      class="primary"
+      :disabled="!!busy || store.objects.length === 0"
+      :title="hasDirectoryPicker ? 'Export every object to a folder' : 'Download a .glb for every object'"
+      @click="exportAll"
+    >
+      Export all{{ hasDirectoryPicker ? '…' : '' }}
+    </button>
   </div>
 </template>
 
@@ -130,5 +188,17 @@ async function exportActive() {
   border-color: var(--accent);
   color: #0b1220;
   font-weight: 600;
+}
+.batch {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.batch.bad {
+  color: var(--danger);
 }
 </style>

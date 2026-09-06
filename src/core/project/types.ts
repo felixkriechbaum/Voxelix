@@ -24,6 +24,8 @@ export interface ExportSettings {
 export interface ProjectJson {
   format: 'voxeleditor-project';
   version: 1;
+  /** stable project identity; absent in files written before autosave existed */
+  id?: string;
   name: string;
   palette: Palette;
   exportSettings: ExportSettings;

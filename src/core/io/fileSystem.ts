@@ -8,6 +8,7 @@ interface PickerWindow {
 const w = window as unknown as PickerWindow;
 
 export const hasFsAccess = typeof w.showSaveFilePicker === 'function';
+export const hasDirectoryPicker = typeof w.showDirectoryPicker === 'function';
 
 export interface OpenedFile {
   name: string;

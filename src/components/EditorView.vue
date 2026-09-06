@@ -5,8 +5,11 @@ import Outliner from './Outliner.vue';
 import PalettePanel from './PalettePanel.vue';
 import ViewportCanvas from './ViewportCanvas.vue';
 import ShapeDialog from './ShapeDialog.vue';
+import { useAutosave } from '@/editor/autosave';
 
 const showShape = ref(false);
+
+useAutosave();
 </script>
 
 <template>

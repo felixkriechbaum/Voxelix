@@ -1,13 +1,34 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { useEditorStore } from '@/stores/editor';
 import { deserializeProject } from '@/core/io/projectFile';
 import { openTextFile } from '@/core/io/fileSystem';
+import { Project } from '@/core/project/Project';
 import { PROJECT_FILE_EXT } from '@/core/project/types';
+import {
+  deleteProjectRecord,
+  getProjectRecord,
+  isProjectStoreAvailable,
+  listProjectMeta,
+  touchProjectRecord,
+  type ProjectMeta,
+} from '@/core/io/projectStore';
 
 const store = useEditorStore();
 const name = ref('Placeables');
 const error = ref('');
+const recent = ref<ProjectMeta[]>([]);
+
+onMounted(refreshRecent);
+
+async function refreshRecent() {
+  if (!isProjectStoreAvailable()) return;
+  try {
+    recent.value = await listProjectMeta();
+  } catch {
+    /* private mode / storage disabled — no recents, no error */
+  }
+}
 
 function create() {
   store.newProject(name.value.trim() || 'Untitled');
@@ -23,6 +44,42 @@ async function open() {
   } catch (e) {
     error.value = (e as Error).message;
   }
+}
+
+async function openRecent(id: string) {
+  error.value = '';
+  try {
+    const record = await getProjectRecord(id);
+    if (!record) {
+      await refreshRecent();
+      return;
+    }
+    store.setProject(Project.fromJSON(record.json));
+    void touchProjectRecord(id);
+  } catch (e) {
+    error.value = `Could not open project: ${(e as Error).message}`;
+  }
+}
+
+async function removeRecent(id: string) {
+  recent.value = recent.value.filter((r) => r.id !== id);
+  try {
+    await deleteProjectRecord(id);
+  } catch {
+    await refreshRecent();
+  }
+}
+
+function ago(ts: number): string {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 45) return 'just now';
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  if (d < 7) return `${d} d ago`;
+  return new Date(ts).toLocaleDateString();
 }
 </script>
 
@@ -43,6 +100,26 @@ async function open() {
         <button @click="open">Open {{ PROJECT_FILE_EXT }}…</button>
       </div>
       <p v-if="error" class="err">{{ error }}</p>
+
+      <template v-if="recent.length">
+        <label class="recent-label">Recent</label>
+        <ul class="recent">
+          <li v-for="r in recent" :key="r.id">
+            <button class="entry" @click="openRecent(r.id)">
+              <img v-if="r.thumbnail" class="thumb" :src="r.thumbnail" alt="" />
+              <span v-else class="thumb ph" aria-hidden="true" />
+              <span class="info">
+                <span class="rname">{{ r.name }}</span>
+                <span class="meta">
+                  {{ r.objectCount }} {{ r.objectCount === 1 ? 'object' : 'objects' }} ·
+                  {{ ago(r.updatedAt) }}
+                </span>
+              </span>
+            </button>
+            <button class="del" title="Remove from list" @click="removeRecent(r.id)">×</button>
+          </li>
+        </ul>
+      </template>
     </div>
   </div>
 </template>
@@ -90,5 +167,74 @@ code {
   background: var(--bg-elev);
   padding: 1px 4px;
   border-radius: 3px;
+}
+.recent-label {
+  margin-top: 20px;
+}
+.recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 210px;
+  overflow: auto;
+}
+.recent li {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.entry {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  padding: 6px 8px;
+  background: var(--bg-elev);
+}
+.entry:hover {
+  border-color: var(--accent-dim);
+}
+.thumb {
+  width: 46px;
+  height: 34px;
+  flex: none;
+  object-fit: cover;
+  border-radius: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.thumb.ph {
+  background: linear-gradient(135deg, var(--bg-elev), var(--bg));
+}
+.info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rname {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.meta {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.del {
+  width: 30px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-dim);
+}
+.del:hover {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 </style>
