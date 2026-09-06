@@ -29,7 +29,10 @@ async function open() {
 <template>
   <div class="start">
     <div class="card panel">
-      <h1>Voxel Editor</h1>
+      <div class="brand">
+        <img src="/icon.png" alt="" width="40" height="40" />
+        <h1>Voxelix</h1>
+      </div>
       <p class="sub">Fast voxel modelling with per-object <code>.glb</code> export.</p>
 
       <label>Project name</label>
@@ -54,8 +57,14 @@ async function open() {
   width: 380px;
   padding: 28px;
 }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
 h1 {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: 22px;
 }
 .sub {
