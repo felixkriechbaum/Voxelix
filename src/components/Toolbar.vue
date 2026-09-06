@@ -36,6 +36,7 @@ const tools: Array<{ id: ToolId; label: string; key: string }> = [
   { id: 'box', label: 'Box', key: '3' },
   { id: 'paint', label: 'Paint', key: '4' },
   { id: 'eyedropper', label: 'Pick', key: '5' },
+  { id: 'select', label: 'Select', key: '6' },
 ];
 const planes: BuildPlane[] = ['xz', 'xy', 'yz'];
 

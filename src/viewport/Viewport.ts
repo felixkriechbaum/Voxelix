@@ -141,6 +141,10 @@ export class Viewport {
     this.gizmos.setCursor(box);
   }
 
+  setSelectionBox(box: CursorBox | null): void {
+    this.gizmos.setSelection(box);
+  }
+
   frameActive(): void {
     const d = this.editableView?.data;
     if (!d) return;

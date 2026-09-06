@@ -13,6 +13,7 @@ export class Gizmos {
   private bbox: THREE.LineSegments;
   private axes: THREE.Group;
   private cursor: THREE.LineSegments;
+  private selection: THREE.LineSegments;
 
   constructor() {
     this.bbox = new THREE.LineSegments(
@@ -33,6 +34,15 @@ export class Gizmos {
     (this.cursor.material as THREE.LineBasicMaterial).depthTest = false;
     this.group.add(this.cursor);
 
+    this.selection = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+      new THREE.LineBasicMaterial({ color: 0x7cff9b }),
+    );
+    this.selection.visible = false;
+    this.selection.renderOrder = 1;
+    (this.selection.material as THREE.LineBasicMaterial).depthTest = false;
+    this.group.add(this.selection);
+
     this.setObjectSize(16, 16, 16);
   }
 
@@ -52,22 +62,30 @@ export class Gizmos {
   }
 
   setCursor(box: CursorBox | null): void {
+    this.applyBox(this.cursor, box);
+  }
+
+  setSelection(box: CursorBox | null): void {
+    this.applyBox(this.selection, box);
+  }
+
+  private applyBox(target: THREE.LineSegments, box: CursorBox | null): void {
     if (!box) {
-      this.cursor.visible = false;
+      target.visible = false;
       return;
     }
-    this.cursor.visible = true;
-    this.cursor.scale.set(
+    target.visible = true;
+    target.scale.set(
       Math.max(0.001, box.max.x - box.min.x),
       Math.max(0.001, box.max.y - box.min.y),
       Math.max(0.001, box.max.z - box.min.z),
     );
-    this.cursor.position.set(
+    target.position.set(
       (box.min.x + box.max.x) / 2,
       (box.min.y + box.max.y) / 2,
       (box.min.z + box.max.z) / 2,
     );
-    (this.cursor.material as THREE.LineBasicMaterial).color.setHex(box.color);
+    (target.material as THREE.LineBasicMaterial).color.setHex(box.color);
   }
 
   dispose(): void {

@@ -1,6 +1,7 @@
 import type { VoxelData } from '@/core/voxel/VoxelData';
-import type { PickResult } from '@/viewport/Picker';
+import type { PickResult, BuildPlane } from '@/viewport/Picker';
 import type { CursorBox } from '@/viewport/Gizmos';
+import type { Selection } from '@/core/ops/selection';
 
 export type ToolId = 'place' | 'erase' | 'box' | 'paint' | 'eyedropper' | 'select';
 
@@ -17,6 +18,7 @@ export interface PointerInfo {
 export interface ToolContext {
   readonly data: VoxelData;
   readonly colorIndex: number;
+  readonly buildPlane: BuildPlane;
   pick(clientX: number, clientY: number): PickResult | null;
   /** open an undo batch */
   begin(label: string): void;
@@ -29,6 +31,9 @@ export interface ToolContext {
   setCursor(box: CursorBox | null): void;
   /** eyedropper / paint helpers */
   pickColor(index: number): void;
+  /** current voxel selection (select tool + selection ops) */
+  readonly selection: Selection | null;
+  setSelection(selection: Selection | null): void;
 }
 
 export interface Tool {

@@ -4,6 +4,7 @@ import { Project } from '@/core/project/Project';
 import { paletteToLinearArray } from '@/core/palette';
 import type { ToolId } from '@/tools/types';
 import type { BuildPlane } from '@/viewport/Picker';
+import type { Selection } from '@/core/ops/selection';
 
 export const useEditorStore = defineStore('editor', () => {
   const project = shallowRef<Project | null>(null);
@@ -29,6 +30,8 @@ export const useEditorStore = defineStore('editor', () => {
   const boxMode = ref<'fill' | 'erase'>('fill');
   const buildPlane = ref<BuildPlane>('xz');
   const buildOffset = ref(0);
+  /** active voxel selection (select tool); per-object, cleared on switch */
+  const selection = ref<Selection | null>(null);
 
   const objects = computed(() => {
     void structureVersion.value;
@@ -57,6 +60,7 @@ export const useEditorStore = defineStore('editor', () => {
     activeObjectId.value = p.activeObjectId ?? p.objects[0]?.id ?? null;
     currentColor.value = 16;
     buildOffset.value = 0;
+    selection.value = null;
     autosaveAt.value = null;
     autosaveError.value = false;
     structureVersion.value++;
@@ -73,6 +77,7 @@ export const useEditorStore = defineStore('editor', () => {
     activeObjectId.value = id;
     project.value.activeObjectId = id;
     buildOffset.value = 0;
+    selection.value = null;
     activeVersion.value++;
   }
 
@@ -114,11 +119,20 @@ export const useEditorStore = defineStore('editor', () => {
     const o = activeObject();
     if (!o) return;
     o.data.resize(size[0], size[1], size[2]);
+    selection.value = null;
     activeVersion.value++;
   }
 
   function bumpEdit() {
     editVersion.value++;
+  }
+
+  function setSelection(s: Selection | null) {
+    selection.value = s;
+  }
+
+  function clearSelection() {
+    selection.value = null;
   }
 
   function setColor(i: number) {
@@ -152,6 +166,7 @@ export const useEditorStore = defineStore('editor', () => {
     boxMode,
     buildPlane,
     buildOffset,
+    selection,
     activeObject,
     setProject,
     newProject,
@@ -163,6 +178,8 @@ export const useEditorStore = defineStore('editor', () => {
     renameObject,
     resizeActive,
     bumpEdit,
+    setSelection,
+    clearSelection,
     setColor,
     setPaletteColor,
     palette,

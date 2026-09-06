@@ -1,0 +1,102 @@
+<script setup lang="ts">
+import { computed } from 'vue';
+import { useEditorStore } from '@/stores/editor';
+import { useSession } from '@/editor/session';
+import { selectionDims } from '@/core/ops/selection';
+import {
+  deleteSelection,
+  duplicateSelection,
+  moveSelection,
+  recolourSelection,
+} from '@/editor/selectionOps';
+
+const store = useEditorStore();
+const { runner } = useSession();
+
+const dims = computed(() => (store.selection ? selectionDims(store.selection) : null));
+
+function nudge(d: [number, number, number]) {
+  if (runner.value && store.selection) moveSelection(runner.value, store.selection, d);
+}
+function recolour() {
+  if (runner.value && store.selection) recolourSelection(runner.value, store.selection, store.currentColor);
+}
+function duplicate() {
+  if (runner.value && store.selection) duplicateSelection(runner.value, store.selection);
+}
+function remove() {
+  if (runner.value && store.selection) deleteSelection(runner.value, store.selection);
+}
+</script>
+
+<template>
+  <div class="sel panel">
+    <div class="hd">
+      Selection
+      <span v-if="dims" class="dim">{{ dims[0] }}×{{ dims[1] }}×{{ dims[2] }}</span>
+    </div>
+
+    <div class="nudge">
+      <button title="Move −X (←)" @click="nudge([-1, 0, 0])">−X</button>
+      <button title="Move +X (→)" @click="nudge([1, 0, 0])">+X</button>
+      <button title="Move +Y (Shift ↑)" @click="nudge([0, 1, 0])">+Y</button>
+      <button title="Move −Y (Shift ↓)" @click="nudge([0, -1, 0])">−Y</button>
+      <button title="Move −Z (↑)" @click="nudge([0, 0, -1])">−Z</button>
+      <button title="Move +Z (↓)" @click="nudge([0, 0, 1])">+Z</button>
+    </div>
+
+    <div class="acts">
+      <button :title="`Recolour to palette #${store.currentColor}`" @click="recolour">Recolour</button>
+      <button title="Stamp a copy alongside" @click="duplicate">Duplicate</button>
+      <button class="danger" title="Delete voxels (Del)" @click="remove">Delete</button>
+      <button title="Clear selection (Esc)" @click="store.clearSelection()">Deselect</button>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.sel {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(20, 22, 29, 0.86);
+  width: 148px;
+}
+.hd {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+.dim {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.nudge {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px;
+}
+.acts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px;
+}
+.sel button {
+  padding: 4px 6px;
+  font-size: 11px;
+}
+.sel .danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+</style>

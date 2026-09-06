@@ -1,5 +1,13 @@
 import * as THREE from 'three';
 import type { Tool, ToolContext, PointerInfo, ToolId } from './types';
+import type { BuildPlane } from '@/viewport/Picker';
+import {
+  clampSelection,
+  makeSelection,
+  selectionContains,
+  translateSelection,
+} from '@/core/ops/selection';
+import { moveSelection } from '@/editor/selectionOps';
 
 const key = (x: number, y: number, z: number) => `${x},${y},${z}`;
 
@@ -255,6 +263,103 @@ function clampToGrid(v: THREE.Vector3, ctx: ToolContext): THREE.Vector3 {
   );
 }
 
+/** The two axes (0=x,1=y,2=z) that lie in the given build plane. */
+function planeAxes(plane: BuildPlane): [number, number] {
+  if (plane === 'xy') return [0, 1];
+  if (plane === 'yz') return [1, 2];
+  return [0, 2];
+}
+
+/** Box-select voxels, then drag inside the box to slide them on the build plane. */
+export class SelectTool implements Tool {
+  readonly id: ToolId = 'select';
+  private phase: 'idle' | 'box' | 'move' = 'idle';
+  private cornerA: THREE.Vector3 | null = null;
+  private cornerB: THREE.Vector3 | null = null;
+  private moveFrom: THREE.Vector3 | null = null;
+  private moveDelta: [number, number, number] = [0, 0, 0];
+
+  pointerDown(ctx: ToolContext, p: PointerInfo): void {
+    if (p.button !== 0) return;
+    const hit = ctx.pick(p.clientX, p.clientY);
+    if (!hit) return;
+    const sel = ctx.selection;
+    const under = hit.remove ?? hit.place;
+
+    if (sel && hit.remove && selectionContains(sel, under.x, under.y, under.z)) {
+      this.phase = 'move';
+      this.moveFrom = under.clone();
+      this.moveDelta = [0, 0, 0];
+      return;
+    }
+    this.phase = 'box';
+    this.cornerA = clampToGrid(under, ctx);
+    this.cornerB = this.cornerA.clone();
+    this.drawBox(ctx, this.cornerA, this.cornerB, 0x8bffa0);
+  }
+
+  pointerMove(ctx: ToolContext, p: PointerInfo): void {
+    const hit = ctx.pick(p.clientX, p.clientY);
+
+    if (this.phase === 'idle') {
+      ctx.setCursor(null);
+      return;
+    }
+    if (this.phase === 'box') {
+      if (hit) this.cornerB = clampToGrid(hit.remove ?? hit.place, ctx);
+      if (this.cornerA && this.cornerB) this.drawBox(ctx, this.cornerA, this.cornerB, 0x8bffa0);
+      return;
+    }
+    // move
+    const sel = ctx.selection;
+    if (!hit || !this.moveFrom || !sel) return;
+    const to = hit.remove ?? hit.place;
+    const raw = [to.x - this.moveFrom.x, to.y - this.moveFrom.y, to.z - this.moveFrom.z];
+    const d: [number, number, number] = [0, 0, 0];
+    for (const ax of planeAxes(ctx.buildPlane)) d[ax] = Math.round(raw[ax]);
+    this.moveDelta = d;
+    const preview = translateSelection(sel, d);
+    ctx.setCursor({
+      min: new THREE.Vector3(...preview.min),
+      max: new THREE.Vector3(preview.max[0] + 1, preview.max[1] + 1, preview.max[2] + 1),
+      color: 0xffe08a,
+    });
+  }
+
+  pointerUp(ctx: ToolContext): void {
+    if (this.phase === 'box' && this.cornerA && this.cornerB) {
+      const box = makeSelection(
+        [this.cornerA.x, this.cornerA.y, this.cornerA.z],
+        [this.cornerB.x, this.cornerB.y, this.cornerB.z],
+      );
+      ctx.setSelection(clampSelection(box, ctx.data));
+    } else if (this.phase === 'move' && ctx.selection) {
+      moveSelection(ctx, ctx.selection, this.moveDelta);
+    }
+    this.reset(ctx);
+  }
+
+  clearPreview(ctx: ToolContext): void {
+    this.reset(ctx);
+  }
+
+  private reset(ctx: ToolContext): void {
+    this.phase = 'idle';
+    this.cornerA = this.cornerB = this.moveFrom = null;
+    this.moveDelta = [0, 0, 0];
+    ctx.setCursor(null);
+  }
+
+  private drawBox(ctx: ToolContext, a: THREE.Vector3, b: THREE.Vector3, color: number): void {
+    const s = makeSelection([a.x, a.y, a.z], [b.x, b.y, b.z]);
+    ctx.setCursor({
+      min: new THREE.Vector3(...s.min),
+      max: new THREE.Vector3(s.max[0] + 1, s.max[1] + 1, s.max[2] + 1),
+      color,
+    });
+  }
+}
+
 function ordered(a: THREE.Vector3, b: THREE.Vector3): [THREE.Vector3, THREE.Vector3] {
   return [
     new THREE.Vector3(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.min(a.z, b.z)),
@@ -274,6 +379,8 @@ export function createTool(id: ToolId): Tool {
       return new PaintTool();
     case 'eyedropper':
       return new EyedropperTool();
+    case 'select':
+      return new SelectTool();
     default:
       return new PlaceEraseTool('place');
   }

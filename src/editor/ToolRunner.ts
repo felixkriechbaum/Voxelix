@@ -4,6 +4,7 @@ import { VoxelData } from '@/core/voxel/VoxelData';
 import { REMOVED } from '@/core/voxel/constants';
 import { buildActiveRender, overlayWriteValue, resolveEffectiveData } from '@/core/project/resolve';
 import type { Tool, ToolContext, ToolId, PointerInfo } from '@/tools/types';
+import type { Selection } from '@/core/ops/selection';
 import type { VoxelEdit } from '@/core/voxel/types';
 import type { VoxelObject } from '@/core/project/VoxelObject';
 import type { CursorBox } from '@/viewport/Gizmos';
@@ -91,6 +92,10 @@ export class ToolRunner implements ToolContext {
     return this.store.currentColor;
   }
 
+  get buildPlane() {
+    return this.store.buildPlane;
+  }
+
   pick(clientX: number, clientY: number) {
     return this.viewport.pick(clientX, clientY, this.store.buildPlane, this.store.buildOffset);
   }
@@ -161,6 +166,14 @@ export class ToolRunner implements ToolContext {
 
   pickColor(index: number): void {
     this.store.setColor(index);
+  }
+
+  get selection(): Selection | null {
+    return this.store.selection;
+  }
+
+  setSelection(selection: Selection | null): void {
+    this.store.setSelection(selection);
   }
 
   // ---- history --------------------------------------------------------

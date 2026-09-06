@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import * as THREE from 'three';
 import { Viewport } from '@/viewport/Viewport';
 import { ToolRunner } from '@/editor/ToolRunner';
 import { setSession } from '@/editor/session';
 import { useEditorStore } from '@/stores/editor';
 import { buildActiveRender } from '@/core/project/resolve';
 import { floodRegion } from '@/core/ops/flood';
+import { deleteSelection, moveSelection } from '@/editor/selectionOps';
 import ContextMenu, { type MenuItem } from './ContextMenu.vue';
+import SelectionPanel from './SelectionPanel.vue';
 import type { ToolId } from '@/tools/types';
 import type { PresetView, ProjectionMode } from '@/viewport/GodotControls';
 
@@ -44,7 +47,28 @@ const toolKeys: Record<string, ToolId> = {
   Digit3: 'box',
   Digit4: 'paint',
   Digit5: 'eyedropper',
+  Digit6: 'select',
 };
+
+const nudgeKeys: Record<string, [number, number, number]> = {
+  ArrowLeft: [-1, 0, 0],
+  ArrowRight: [1, 0, 0],
+  ArrowUp: [0, 0, -1],
+  ArrowDown: [0, 0, 1],
+};
+
+function syncSelectionGizmo() {
+  const sel = store.toolId === 'select' ? store.selection : null;
+  viewport?.setSelectionBox(
+    sel
+      ? {
+          min: new THREE.Vector3(...sel.min),
+          max: new THREE.Vector3(sel.max[0] + 1, sel.max[1] + 1, sel.max[2] + 1),
+          color: 0x7cff9b,
+        }
+      : null,
+  );
+}
 
 function loadActive() {
   const obj = store.activeObject();
@@ -64,6 +88,7 @@ onMounted(() => {
   viewport.setPalette(store.paletteLinear());
   loadActive();
   viewport.frameActive();
+  syncSelectionGizmo();
 
   ro = new ResizeObserver(() => viewport?.resize());
   ro.observe(c);
@@ -129,6 +154,30 @@ function onKey(e: KeyboardEvent) {
   if (e.code === 'Numpad1') return setView(e.ctrlKey || e.metaKey ? 'back' : 'front');
   if (e.code === 'Numpad3') return setView(e.ctrlKey || e.metaKey ? 'left' : 'right');
   if (e.code === 'Numpad7') return setView(e.ctrlKey || e.metaKey ? 'bottom' : 'top');
+
+  if (store.toolId === 'select' && store.selection && runner) {
+    const sel = store.selection;
+    if (e.code === 'Escape') {
+      store.clearSelection();
+      return;
+    }
+    if (e.code === 'Delete' || e.code === 'Backspace') {
+      e.preventDefault();
+      deleteSelection(runner, sel);
+      return;
+    }
+    if (e.shiftKey && (e.code === 'ArrowUp' || e.code === 'ArrowDown')) {
+      e.preventDefault();
+      moveSelection(runner, sel, [0, e.code === 'ArrowUp' ? 1 : -1, 0]);
+      return;
+    }
+    if (nudgeKeys[e.code]) {
+      e.preventDefault();
+      moveSelection(runner, sel, nudgeKeys[e.code]);
+      return;
+    }
+  }
+
   if (toolKeys[e.code]) store.toolId = toolKeys[e.code];
 }
 
@@ -194,12 +243,16 @@ watch(
 );
 watch(
   () => store.toolId,
-  (id) => runner?.setTool(id),
+  (id) => {
+    runner?.setTool(id);
+    syncSelectionGizmo();
+  },
 );
 watch(
   () => store.boxMode,
   () => runner?.syncBoxMode(),
 );
+watch(() => store.selection, syncSelectionGizmo, { deep: true });
 </script>
 
 <template>
@@ -235,9 +288,14 @@ watch(
       </div>
     </div>
 
+    <SelectionPanel v-if="store.toolId === 'select' && store.selection" />
+
     <div class="hud">
-      {{ store.buildPlane.toUpperCase() }} plane @ {{ store.buildOffset }} &nbsp;·&nbsp; MMB orbit ·
-      Shift+MMB pan · RMB+WASD fly · Shift draw = straight line · F frame
+      {{ store.buildPlane.toUpperCase() }} plane @ {{ store.buildOffset }} &nbsp;·&nbsp;
+      <template v-if="store.toolId === 'select'">
+        drag = box-select · drag inside = move · arrows nudge · Shift+↕ = Y
+      </template>
+      <template v-else>MMB orbit · Shift+MMB pan · RMB+WASD fly · Shift draw = straight line · F frame</template>
     </div>
     <ContextMenu
       v-if="menu"
@@ -248,6 +306,7 @@ watch(
     />
   </div>
 </template>
+
 
 <style scoped>
 .viewport-wrap {
