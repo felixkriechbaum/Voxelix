@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GodotControls } from './GodotControls';
+import { GodotControls, type PresetView, type ProjectionMode } from './GodotControls';
 import { Gizmos, type CursorBox } from './Gizmos';
 import { Picker, type BuildPlane, type PickResult } from './Picker';
 import { ChunkMeshView } from './ChunkMeshView';
@@ -10,6 +10,7 @@ import type { VoxelData } from '@/core/voxel/VoxelData';
 export class Viewport {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
+  readonly orthoCamera: THREE.OrthographicCamera;
   readonly renderer: THREE.WebGLRenderer;
   readonly controls: GodotControls;
   readonly gizmos = new Gizmos();
@@ -25,6 +26,8 @@ export class Viewport {
     this.scene.background = new THREE.Color(0x181b23);
 
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 4000);
+    // wide symmetric depth slab so an orbiting ortho camera never clips the object
+    this.orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, -4000, 4000);
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
@@ -33,7 +36,7 @@ export class Viewport {
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-    this.controls = new GodotControls(this.camera, canvas);
+    this.controls = new GodotControls(this.camera, this.orthoCamera, canvas);
 
     const hemi = new THREE.HemisphereLight(0xffffff, 0x2b2f3a, 1.05);
     const key = new THREE.DirectionalLight(0xffffff, 1.7);
@@ -119,7 +122,19 @@ export class Viewport {
       ...(this.editableView?.raycastTargets() ?? []),
       ...(this.baseView?.raycastTargets() ?? []),
     ];
-    return this.picker.pick(ndc, this.camera, targets, size, buildPlane, buildOffset);
+    return this.picker.pick(ndc, this.controls.camera, targets, size, buildPlane, buildOffset);
+  }
+
+  get projection(): ProjectionMode {
+    return this.controls.mode;
+  }
+
+  setProjection(mode: ProjectionMode): void {
+    this.controls.setMode(mode);
+  }
+
+  setView(view: PresetView): void {
+    this.controls.setView(view);
   }
 
   setCursor(box: CursorBox | null): void {
@@ -145,12 +160,13 @@ export class Viewport {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this.controls.setAspect(w / h);
   }
 
   /** Small JPEG data URL of the current view, for the recent-projects list. */
   captureThumbnail(maxEdge = 320): string | null {
     try {
-      this.renderer.render(this.scene, this.camera);
+      this.renderer.render(this.scene, this.controls.camera);
       const src = this.renderer.domElement;
       if (!src.width || !src.height) return null;
       const scale = Math.min(1, maxEdge / Math.max(src.width, src.height));
@@ -171,7 +187,7 @@ export class Viewport {
   private loop = (): void => {
     this.raf = requestAnimationFrame(this.loop);
     this.controls.update(this.clock.getDelta());
-    this.renderer.render(this.scene, this.camera);
+    this.renderer.render(this.scene, this.controls.camera);
   };
 
   dispose(): void {

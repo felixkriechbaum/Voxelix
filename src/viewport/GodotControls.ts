@@ -1,10 +1,15 @@
 import * as THREE from 'three';
 
+export type ProjectionMode = 'perspective' | 'ortho';
+
+export type PresetView = 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom' | 'iso';
+
 /**
- * Godot-editor-style camera navigation:
+ * Godot-editor-style camera navigation, driving a perspective and an ortho
+ * camera off the same orbit state (yaw / pitch / distance / target):
  *  - MMB drag           orbit around the focus point
  *  - Shift + MMB drag   pan the focus point
- *  - wheel              dolly in / out
+ *  - wheel              dolly in / out (ortho: zoom the frustum)
  *  - RMB drag           free-look; hold and use WASD + Q/E to fly
  *  - F                  frame a target box (call frame())
  */
@@ -15,6 +20,9 @@ export class GodotControls {
   pitch = Math.PI * 0.28;
   /** flip vertical orbit direction */
   invertY = false;
+  /** viewport aspect (w / h), kept in sync by the Viewport */
+  aspect = 1;
+  mode: ProjectionMode = 'perspective';
 
   private readonly minPitch = -Math.PI / 2 + 0.05;
   private readonly maxPitch = Math.PI / 2 - 0.05;
@@ -30,7 +38,8 @@ export class GodotControls {
   private rmbMoved = false;
 
   constructor(
-    private camera: THREE.PerspectiveCamera,
+    private perspective: THREE.PerspectiveCamera,
+    private ortho: THREE.OrthographicCamera,
     private dom: HTMLElement,
   ) {
     dom.addEventListener('pointerdown', this.onPointerDown);
@@ -52,6 +61,21 @@ export class GodotControls {
     window.removeEventListener('keyup', this.onKeyUp);
   }
 
+  /** The camera currently being rendered. */
+  get camera(): THREE.Camera {
+    return this.mode === 'ortho' ? this.ortho : this.perspective;
+  }
+
+  setMode(mode: ProjectionMode): void {
+    this.mode = mode;
+    this.apply();
+  }
+
+  setAspect(aspect: number): void {
+    this.aspect = aspect;
+    this.apply();
+  }
+
   /** True while a navigation drag is active — tools should ignore pointer input then. */
   get navigating(): boolean {
     return this.dragButton !== null;
@@ -59,8 +83,23 @@ export class GodotControls {
 
   frame(center: THREE.Vector3, radius: number): void {
     this.target.copy(center);
-    const fov = (this.camera.fov * Math.PI) / 180;
+    const fov = (this.perspective.fov * Math.PI) / 180;
     this.distance = Math.max(4, (radius * 1.6) / Math.sin(fov / 2));
+    this.apply();
+  }
+
+  /** Snap the orbit to an axis-aligned (or isometric) direction. */
+  setView(view: PresetView): void {
+    const p = Math.PI;
+    switch (view) {
+      case 'front': this.yaw = 0; this.pitch = 0; break;
+      case 'back': this.yaw = p; this.pitch = 0; break;
+      case 'right': this.yaw = p / 2; this.pitch = 0; break;
+      case 'left': this.yaw = -p / 2; this.pitch = 0; break;
+      case 'top': this.yaw = 0; this.pitch = this.maxPitch; break;
+      case 'bottom': this.yaw = 0; this.pitch = this.minPitch; break;
+      case 'iso': this.yaw = p / 4; this.pitch = Math.atan(Math.SQRT1_2); break;
+    }
     this.apply();
   }
 
@@ -175,8 +214,22 @@ export class GodotControls {
       this.distance * Math.sin(cp),
       this.distance * Math.cos(cp) * Math.cos(this.yaw),
     );
-    this.camera.position.copy(this.target).add(offset);
-    this.camera.lookAt(this.target);
-    this.camera.updateMatrixWorld();
+
+    this.perspective.position.copy(this.target).add(offset);
+    this.perspective.lookAt(this.target);
+    this.perspective.updateMatrixWorld();
+
+    // ortho: same eye point, frustum sized so the view roughly matches the
+    // perspective one at the focus distance (so the wheel still reads as zoom)
+    const halfH = this.distance * Math.tan((this.perspective.fov * Math.PI) / 360);
+    const halfW = halfH * this.aspect;
+    this.ortho.left = -halfW;
+    this.ortho.right = halfW;
+    this.ortho.top = halfH;
+    this.ortho.bottom = -halfH;
+    this.ortho.position.copy(this.target).add(offset);
+    this.ortho.lookAt(this.target);
+    this.ortho.updateProjectionMatrix();
+    this.ortho.updateMatrixWorld();
   }
 }

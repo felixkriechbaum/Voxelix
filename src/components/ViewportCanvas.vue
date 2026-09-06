@@ -8,6 +8,7 @@ import { buildActiveRender } from '@/core/project/resolve';
 import { floodRegion } from '@/core/ops/flood';
 import ContextMenu, { type MenuItem } from './ContextMenu.vue';
 import type { ToolId } from '@/tools/types';
+import type { PresetView, ProjectionMode } from '@/viewport/GodotControls';
 
 const store = useEditorStore();
 const canvas = ref<HTMLCanvasElement | null>(null);
@@ -16,6 +17,26 @@ let runner: ToolRunner | null = null;
 let ro: ResizeObserver | null = null;
 
 const menu = ref<{ x: number; y: number; items: MenuItem[] } | null>(null);
+const projection = ref<ProjectionMode>('perspective');
+
+const presetViews: Array<{ id: PresetView; label: string; hint: string }> = [
+  { id: 'front', label: 'Front', hint: 'Numpad 1' },
+  { id: 'back', label: 'Back', hint: 'Ctrl+Numpad 1' },
+  { id: 'right', label: 'Right', hint: 'Numpad 3' },
+  { id: 'left', label: 'Left', hint: 'Ctrl+Numpad 3' },
+  { id: 'top', label: 'Top', hint: 'Numpad 7' },
+  { id: 'bottom', label: 'Bottom', hint: 'Ctrl+Numpad 7' },
+  { id: 'iso', label: 'Iso', hint: 'isometric' },
+];
+
+function setProjection(mode: ProjectionMode) {
+  projection.value = mode;
+  viewport?.setProjection(mode);
+}
+function setView(view: PresetView) {
+  setProjection('ortho');
+  viewport?.setView(view);
+}
 
 const toolKeys: Record<string, ToolId> = {
   Digit1: 'place',
@@ -101,6 +122,13 @@ function onKey(e: KeyboardEvent) {
     viewport?.frameActive();
     return;
   }
+  if (e.code === 'Numpad5') {
+    setProjection(projection.value === 'ortho' ? 'perspective' : 'ortho');
+    return;
+  }
+  if (e.code === 'Numpad1') return setView(e.ctrlKey || e.metaKey ? 'back' : 'front');
+  if (e.code === 'Numpad3') return setView(e.ctrlKey || e.metaKey ? 'left' : 'right');
+  if (e.code === 'Numpad7') return setView(e.ctrlKey || e.metaKey ? 'bottom' : 'top');
   if (toolKeys[e.code]) store.toolId = toolKeys[e.code];
 }
 
@@ -177,6 +205,36 @@ watch(
 <template>
   <div class="viewport-wrap">
     <canvas ref="canvas" class="viewport-canvas" />
+
+    <div class="view-controls panel">
+      <div class="seg">
+        <button
+          :class="{ active: projection === 'perspective' }"
+          title="Perspective (Numpad 5)"
+          @click="setProjection('perspective')"
+        >
+          Persp
+        </button>
+        <button
+          :class="{ active: projection === 'ortho' }"
+          title="Orthographic (Numpad 5)"
+          @click="setProjection('ortho')"
+        >
+          Ortho
+        </button>
+      </div>
+      <div class="views">
+        <button
+          v-for="v in presetViews"
+          :key="v.id"
+          :title="`${v.label} view (${v.hint})`"
+          @click="setView(v.id)"
+        >
+          {{ v.label }}
+        </button>
+      </div>
+    </div>
+
     <div class="hud">
       {{ store.buildPlane.toUpperCase() }} plane @ {{ store.buildOffset }} &nbsp;·&nbsp; MMB orbit ·
       Shift+MMB pan · RMB+WASD fly · Shift draw = straight line · F frame
@@ -214,5 +272,34 @@ watch(
   background: rgba(0, 0, 0, 0.35);
   border-radius: 4px;
   pointer-events: none;
+}
+.view-controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: rgba(20, 22, 29, 0.82);
+}
+.view-controls button {
+  padding: 3px 7px;
+  font-size: 11px;
+}
+.view-controls .seg {
+  display: flex;
+  gap: 3px;
+}
+.view-controls .seg button {
+  flex: 1;
+}
+.view-controls .views {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px;
+}
+.view-controls .views button:last-child {
+  grid-column: 1 / -1;
 }
 </style>
