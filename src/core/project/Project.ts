@@ -1,0 +1,125 @@
+import { VoxelData } from '@/core/voxel/VoxelData';
+import { createDefaultPalette, type Palette } from '@/core/palette';
+import { VoxelObject } from './VoxelObject';
+import { defaultExportSettings, type ExportSettings, type ProjectJson } from './types';
+
+export class Project {
+  name: string;
+  palette: Palette;
+  exportSettings: ExportSettings;
+  objects: VoxelObject[];
+  activeObjectId: string | null;
+
+  constructor(opts: {
+    name: string;
+    palette?: Palette;
+    exportSettings?: ExportSettings;
+    objects?: VoxelObject[];
+    activeObjectId?: string | null;
+  }) {
+    this.name = opts.name;
+    this.palette = opts.palette ?? createDefaultPalette();
+    this.exportSettings = opts.exportSettings ?? defaultExportSettings();
+    this.objects = opts.objects ?? [];
+    this.activeObjectId = opts.activeObjectId ?? this.objects[0]?.id ?? null;
+  }
+
+  static createNew(name: string): Project {
+    const project = new Project({ name });
+    const first = project.addObject('Object', [16, 16, 16]);
+    project.activeObjectId = first.id;
+    return project;
+  }
+
+  getActive(): VoxelObject | null {
+    return this.objects.find((o) => o.id === this.activeObjectId) ?? null;
+  }
+
+  getById(id: string): VoxelObject | null {
+    return this.objects.find((o) => o.id === id) ?? null;
+  }
+
+  private uniqueName(base: string): string {
+    const names = new Set(this.objects.map((o) => o.name));
+    if (!names.has(base)) return base;
+    for (let i = 2; ; i++) {
+      const candidate = `${base} ${i}`;
+      if (!names.has(candidate)) return candidate;
+    }
+  }
+
+  addObject(name: string, size: [number, number, number]): VoxelObject {
+    const obj = new VoxelObject({
+      name: this.uniqueName(name),
+      data: new VoxelData(size[0], size[1], size[2]),
+    });
+    this.objects.push(obj);
+    return obj;
+  }
+
+  /** Create a linked overlay object that builds on top of `id`. */
+  extend(id: string): VoxelObject | null {
+    const base = this.getById(id);
+    if (!base) return null;
+    const overlay = new VoxelObject({
+      name: this.uniqueName(`${base.name} extend`),
+      kind: 'extend',
+      baseId: base.id,
+      data: new VoxelData(base.data.sizeX, base.data.sizeY, base.data.sizeZ),
+      pivot: base.pivot,
+    });
+    const idx = this.objects.findIndex((o) => o.id === id);
+    this.objects.splice(idx + 1, 0, overlay);
+    return overlay;
+  }
+
+  /** Independent, unlinked copy. */
+  duplicate(id: string): VoxelObject | null {
+    const src = this.getById(id);
+    if (!src) return null;
+    const copy = new VoxelObject({
+      name: this.uniqueName(`${src.name} copy`),
+      kind: 'normal',
+      data: src.data.clone(),
+      pivot: src.pivot,
+    });
+    const idx = this.objects.findIndex((o) => o.id === id);
+    this.objects.splice(idx + 1, 0, copy);
+    return copy;
+  }
+
+  remove(id: string): void {
+    this.objects = this.objects.filter((o) => o.id !== id && o.baseId !== id);
+    if (this.activeObjectId === id) this.activeObjectId = this.objects[0]?.id ?? null;
+  }
+
+  rename(id: string, name: string): void {
+    const obj = this.getById(id);
+    if (obj) obj.name = this.uniqueName(name.trim() || obj.name);
+  }
+
+  toJSON(): ProjectJson {
+    return {
+      format: 'voxeleditor-project',
+      version: 1,
+      name: this.name,
+      palette: this.palette,
+      exportSettings: this.exportSettings,
+      objects: this.objects.map((o) => o.toJSON()),
+      activeObjectId: this.activeObjectId,
+    };
+  }
+
+  static fromJSON(json: ProjectJson): Project {
+    if (json.format !== 'voxeleditor-project') {
+      throw new Error('Not a voxeleditor project file');
+    }
+    return new Project({
+      name: json.name,
+      palette: json.palette,
+      exportSettings: json.exportSettings ?? defaultExportSettings(),
+      objects: json.objects.map((o) => VoxelObject.fromJSON(o)),
+      activeObjectId: json.activeObjectId,
+    });
+  }
+}
