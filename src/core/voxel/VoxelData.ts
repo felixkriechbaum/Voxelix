@@ -1,6 +1,6 @@
 import { CHUNK, MAX_SIZE, REMOVED } from './constants';
 import type { Bounds, VoxelDataJson } from './types';
-import { u16ToBase64, base64ToU16 } from '@/core/io/serialize';
+import { base64ToU16, base64ToRleU16, rleU16ToBase64 } from '@/core/io/serialize';
 
 const CHUNK3 = CHUNK * CHUNK * CHUNK;
 
@@ -254,15 +254,16 @@ export class VoxelData {
       let empty = true;
       for (let i = 0; i < CHUNK3; i++) if (chunk[i] !== 0) { empty = false; break; }
       if (empty) continue;
-      chunks[key] = u16ToBase64(chunk);
+      chunks[key] = rleU16ToBase64(chunk);
     }
-    return { size: [this.sizeX, this.sizeY, this.sizeZ], chunks };
+    return { size: [this.sizeX, this.sizeY, this.sizeZ], chunks, enc: 'rle' };
   }
 
   static fromJSON(json: VoxelDataJson): VoxelData {
     const data = new VoxelData(json.size[0], json.size[1], json.size[2]);
+    const rle = json.enc === 'rle';
     for (const [key, b64] of Object.entries(json.chunks)) {
-      data.chunks.set(Number(key), base64ToU16(b64));
+      data.chunks.set(Number(key), rle ? base64ToRleU16(b64, CHUNK3) : base64ToU16(b64));
     }
     data.markAllChunksDirty();
     return data;

@@ -9,19 +9,29 @@ import type { VoxelObject } from '@/core/project/VoxelObject';
 import type { Project } from '@/core/project/Project';
 import { metersPerVoxel, type ExportSettings } from '@/core/project/types';
 
+/** Let the browser paint (progress overlay, etc.) between bursts of work. */
+const breathe = () => new Promise<void>((r) => setTimeout(r));
+
 /** Greedy-mesh every chunk of an object and concatenate into one mesh. */
-export function buildMergedArrays(data: VoxelData, paletteLinear: Float32Array): MeshArrays {
+export async function buildMergedArrays(
+  data: VoxelData,
+  paletteLinear: Float32Array,
+): Promise<MeshArrays> {
   const parts: MeshArrays[] = [];
   let vcount = 0;
   let icount = 0;
-  for (const key of data.allChunkKeys()) {
+  const keys = data.allChunkKeys();
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
     const padded = data.extractPadded(key);
     const o = data.chunkOrigin(key);
     const m = greedyMesh(padded, paletteLinear, o.x, o.y, o.z);
-    if (m.indices.length === 0) continue;
-    parts.push(m);
-    vcount += m.positions.length / 3;
-    icount += m.indices.length;
+    if (m.indices.length > 0) {
+      parts.push(m);
+      vcount += m.positions.length / 3;
+      icount += m.indices.length;
+    }
+    if ((i & 31) === 31) await breathe();
   }
   const positions = new Float32Array(vcount * 3);
   const normals = new Float32Array(vcount * 3);
@@ -56,7 +66,7 @@ export async function exportObjectToGlb(
   if (!bounds) return null;
 
   const paletteLinear = paletteToLinearArray(palette);
-  const arrays = buildMergedArrays(effectiveData, paletteLinear);
+  const arrays = await buildMergedArrays(effectiveData, paletteLinear);
 
   let ox: number;
   let oy: number;
@@ -149,6 +159,7 @@ export async function exportProjectToGlbs(
   let done = 0;
   for (const obj of project.objects) {
     onProgress?.({ done, total, name: obj.name });
+    await breathe(); // let the overlay repaint before this object blocks
     const data = resolveEffectiveData(obj, project);
     const file = await exportObjectToGlb(obj, data, project.palette, project.exportSettings);
     done++;

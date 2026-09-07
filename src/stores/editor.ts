@@ -28,6 +28,9 @@ export const useEditorStore = defineStore('editor', () => {
   const autosaveAt = ref<number | null>(null);
   const autosaveError = ref(false);
 
+  /** non-null while a long export is running — shown as a blocking overlay */
+  const exportStatus = ref<string | null>(null);
+
   const activeObjectId = ref<string | null>(null);
   const currentColor = ref(16);
   const toolId = ref<ToolId>('place');
@@ -213,6 +216,7 @@ export const useEditorStore = defineStore('editor', () => {
     autosaveBusy,
     autosaveAt,
     autosaveError,
+    exportStatus,
     objects,
     projectName,
     exportSettings,

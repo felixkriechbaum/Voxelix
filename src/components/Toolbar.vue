@@ -21,7 +21,6 @@ const { runner } = useSession();
 const emit = defineEmits<{ (e: 'add-shape'): void; (e: 'export-settings'): void }>();
 
 const busy = ref('');
-const batchLabel = ref('');
 
 const autosave = computed(() => {
   if (store.autosaveError) return { text: 'Autosave failed', bad: true };
@@ -61,7 +60,11 @@ async function save() {
       serializeProject(store.project),
       store.fileHandle,
     );
-    if (handle) store.fileHandle = handle;
+    store.fileHandle = handle; // null when cancelled → next save re-prompts
+  } catch (err) {
+    console.error('[save]', err);
+    store.fileHandle = null;
+    alert('Could not save the project file. Press Save again and choose a location.');
   } finally {
     busy.value = '';
   }
@@ -71,7 +74,9 @@ async function exportActive() {
   const obj = store.activeObject();
   if (!obj || !store.project) return;
   busy.value = 'export';
+  store.exportStatus = `Exporting ${obj.name}…`;
   try {
+    await new Promise((r) => setTimeout(r)); // let the overlay paint first
     const data = resolveEffectiveData(obj, store.project);
     const file = await exportObjectToGlb(obj, data, store.project.palette, store.project.exportSettings);
     if (!file) {
@@ -81,6 +86,7 @@ async function exportActive() {
     await saveBinaryFile(file.name, file.blob);
   } finally {
     busy.value = '';
+    store.exportStatus = null;
   }
 }
 
@@ -94,26 +100,32 @@ async function exportAll() {
   }
 
   busy.value = 'export-all';
-  batchLabel.value = 'Preparing…';
+  store.exportStatus = 'Preparing export…';
   try {
     const files = await exportProjectToGlbs(store.project, ({ done, total, name }) => {
-      batchLabel.value = name ? `${done}/${total} · ${name}` : `${done}/${total}`;
+      store.exportStatus = name
+        ? `Meshing ${name} (${done + 1}/${total})…`
+        : `Finishing (${done}/${total})…`;
     });
     if (files.length === 0) {
       alert('No objects with voxels to export.');
       return;
     }
     if (dir) {
-      for (const f of files) await writeFileToDirectory(dir, f.name, f.blob);
+      for (const f of files) {
+        store.exportStatus = `Writing ${f.name}…`;
+        await writeFileToDirectory(dir, f.name, f.blob);
+      }
     } else {
       for (const f of files) {
+        store.exportStatus = `Downloading ${f.name}…`;
         downloadBlob(f.name, f.blob);
         await new Promise((r) => setTimeout(r, 350));
       }
     }
   } finally {
     busy.value = '';
-    batchLabel.value = '';
+    store.exportStatus = null;
   }
 }
 </script>
@@ -182,7 +194,7 @@ async function exportAll() {
     <button :disabled="!runner" @click="runner?.redo()">Redo</button>
 
     <span class="spacer" />
-    <span v-if="busy === 'export-all'" class="batch">{{ batchLabel }}</span>
+    <span v-if="store.exportStatus" class="batch">{{ store.exportStatus }}</span>
     <span v-else-if="autosave.text" class="batch" :class="{ bad: autosave.bad }" :title="autosave.bad ? 'Could not write to browser storage' : 'Autosaved to this browser (IndexedDB)'">{{ autosave.text }}</span>
     <button :disabled="!!busy" @click="save">Save</button>
     <button

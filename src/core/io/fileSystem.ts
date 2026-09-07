@@ -32,16 +32,43 @@ export async function openTextFile(extensions: string[]): Promise<OpenedFile | n
   return openViaInput(extensions);
 }
 
+interface PermissionHandle {
+  queryPermission?: (o: { mode: string }) => Promise<PermissionState>;
+  requestPermission?: (o: { mode: string }) => Promise<PermissionState>;
+}
+
+/** A stored handle can lose its write grant between sessions / after a while. */
+async function canWrite(handle: FileSystemFileHandle): Promise<boolean> {
+  const h = handle as unknown as PermissionHandle;
+  const opts = { mode: 'readwrite' };
+  try {
+    if (!h.queryPermission) return true; // old spec — assume ok, createWritable will tell us
+    if ((await h.queryPermission(opts)) === 'granted') return true;
+    return (await h.requestPermission?.(opts)) === 'granted';
+  } catch {
+    return false;
+  }
+}
+
+async function writeText(handle: FileSystemFileHandle, text: string): Promise<void> {
+  const writable = await handle.createWritable();
+  await writable.write(text);
+  await writable.close();
+}
+
 export async function saveTextFile(
   suggestedName: string,
   text: string,
   handle: FileSystemFileHandle | null,
 ): Promise<FileSystemFileHandle | null> {
-  if (handle) {
-    const writable = await handle.createWritable();
-    await writable.write(text);
-    await writable.close();
-    return handle;
+  if (handle && (await canWrite(handle))) {
+    try {
+      await writeText(handle, text);
+      return handle;
+    } catch (err) {
+      if ((err as DOMException).name === 'AbortError') return handle;
+      // the handle went stale (file moved / permission revoked) — re-pick below
+    }
   }
   if (w.showSaveFilePicker) {
     try {
@@ -49,12 +76,11 @@ export async function saveTextFile(
         suggestedName,
         types: [{ description: 'Project', accept: { 'application/json': ['.voxproj'] } }],
       });
-      const writable = await h.createWritable();
-      await writable.write(text);
-      await writable.close();
+      await writeText(h, text);
       return h;
     } catch (err) {
       if ((err as DOMException).name === 'AbortError') return null;
+      throw err;
     }
   }
   downloadBlob(suggestedName, new Blob([text], { type: 'application/json' }));

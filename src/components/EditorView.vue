@@ -6,8 +6,10 @@ import PalettePanel from './PalettePanel.vue';
 import ViewportCanvas from './ViewportCanvas.vue';
 import ShapeDialog from './ShapeDialog.vue';
 import ExportSettingsDialog from './ExportSettingsDialog.vue';
+import { useEditorStore } from '@/stores/editor';
 import { useAutosave } from '@/editor/autosave';
 
+const store = useEditorStore();
 const showShape = ref(false);
 const showExportSettings = ref(false);
 
@@ -30,6 +32,13 @@ useAutosave();
     </main>
     <ShapeDialog v-if="showShape" @close="showShape = false" />
     <ExportSettingsDialog v-if="showExportSettings" @close="showExportSettings = false" />
+
+    <div v-if="store.exportStatus" class="export-overlay">
+      <div class="panel export-card">
+        <span class="spinner" />
+        <span>{{ store.exportStatus }}</span>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -59,5 +68,33 @@ useAutosave();
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--border);
+}
+.export-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+.export-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 22px;
+  font-size: 13px;
+}
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

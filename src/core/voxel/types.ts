@@ -23,6 +23,11 @@ export interface VoxelEdit {
 /** Serialized form of a VoxelData grid inside a .voxproj file. */
 export interface VoxelDataJson {
   size: [number, number, number];
-  /** base64 of a Uint16Array, one entry per filled-chunk, prefixed by chunk key. */
+  /**
+   * chunk key -> base64. `enc: 'rle'` means run-length `[count, value]` u16 pairs
+   * (small for the big solid regions a subdivided grid creates); anything else /
+   * absent means a raw Uint16Array of one full chunk.
+   */
   chunks: Record<string, string>;
+  enc?: 'rle';
 }
