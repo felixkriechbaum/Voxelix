@@ -4,6 +4,8 @@ import { useEditorStore } from '@/stores/editor';
 import { useSession } from '@/editor/session';
 import { MAX_SIZE } from '@/core/voxel/constants';
 import ContextMenu, { type MenuItem } from './ContextMenu.vue';
+import Icon from './Icon.vue';
+import { faPlus, faClone, faCodeBranch, faTrash } from '@fortawesome/free-solid-svg-icons';
 
 const store = useEditorStore();
 const { runner } = useSession();
@@ -70,7 +72,9 @@ watch(() => [store.activeVersion, store.structureVersion], syncSize);
     <div class="row">
       <h3>Objects</h3>
       <span class="spacer" />
-      <button title="Add a new object" aria-label="Add object" @click="addObject">+</button>
+      <button class="ic" title="Add a new object" aria-label="Add object" @click="addObject">
+        <Icon :icon="faPlus" />
+      </button>
     </div>
 
     <ul class="list">
@@ -102,26 +106,32 @@ watch(() => [store.activeVersion, store.structureVersion], syncSize);
 
     <div class="row actions">
       <button
+        class="ic"
         :disabled="!store.activeObjectId"
-        title="Make an independent copy of this object"
+        title="Duplicate — make an independent copy of this object"
+        aria-label="Duplicate object"
         @click="store.duplicateObject(store.activeObjectId!)"
       >
-        Duplicate
+        <Icon :icon="faClone" />
       </button>
       <button
+        class="ic"
         :disabled="!store.activeObjectId"
-        title="Add a linked overlay that edits on top of this object without changing it"
+        title="Extend — add a linked overlay that edits on top without changing the original"
+        aria-label="Extend object"
         @click="store.extendObject(store.activeObjectId!)"
       >
-        Extend
+        <Icon :icon="faCodeBranch" />
       </button>
+      <span class="spacer" />
       <button
+        class="ic danger"
         :disabled="!store.activeObjectId"
-        class="danger"
         title="Delete this object"
+        aria-label="Delete object"
         @click="store.removeObject(store.activeObjectId!)"
       >
-        Delete
+        <Icon :icon="faTrash" />
       </button>
     </div>
 
@@ -180,20 +190,30 @@ watch(() => [store.activeVersion, store.structureVersion], syncSize);
   font-size: 10px;
   padding: 1px 4px;
   border-radius: 3px;
-  background: var(--bg-elev);
-  color: var(--text-dim);
+  background: var(--surface-2);
+  color: var(--ink-dim);
 }
 .hint {
-  text-transform: none;
   letter-spacing: 0;
-  color: var(--text-dim);
+  color: var(--ink-dim);
 }
 .actions {
-  margin-top: 4px;
-  flex-wrap: wrap;
+  margin-top: 6px;
 }
-.danger:hover {
-  border-color: var(--danger);
-  color: var(--danger);
+.ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  color: var(--ink-dim);
+}
+.ic:hover:not(:disabled) {
+  color: var(--ink);
+}
+.ic.danger:hover:not(:disabled) {
+  color: var(--warn);
+  border-color: var(--warn);
 }
 </style>

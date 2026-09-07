@@ -10,6 +10,7 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@fortawesome/free-solid-svg-icons": "^7.3.1",
     "pinia": "^2.3.1",
     "three": "^0.185.0",
     "vue": "^3.5.13"

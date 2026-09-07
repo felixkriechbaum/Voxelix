@@ -29,14 +29,14 @@ const brushLabel = computed(() => {
   return f <= 1 ? 'brush: full voxel' : `brush: 1/${f} voxel`;
 });
 
-const presetViews: Array<{ id: PresetView; label: string; hint: string }> = [
-  { id: 'front', label: 'Front', hint: 'Numpad 1' },
-  { id: 'back', label: 'Back', hint: 'Ctrl+Numpad 1' },
-  { id: 'right', label: 'Right', hint: 'Numpad 3' },
-  { id: 'left', label: 'Left', hint: 'Ctrl+Numpad 3' },
-  { id: 'top', label: 'Top', hint: 'Numpad 7' },
-  { id: 'bottom', label: 'Bottom', hint: 'Ctrl+Numpad 7' },
-  { id: 'iso', label: 'Iso', hint: 'isometric' },
+const presetViews: Array<{ id: PresetView; label: string; badge: string; hint: string }> = [
+  { id: 'front', label: 'Front', badge: 'Num 1', hint: 'Numpad 1' },
+  { id: 'back', label: 'Back', badge: '⌃1', hint: 'Ctrl + Numpad 1' },
+  { id: 'right', label: 'Right', badge: 'Num 3', hint: 'Numpad 3' },
+  { id: 'left', label: 'Left', badge: '⌃3', hint: 'Ctrl + Numpad 3' },
+  { id: 'top', label: 'Top', badge: 'Num 7', hint: 'Numpad 7' },
+  { id: 'bottom', label: 'Bottom', badge: '⌃7', hint: 'Ctrl + Numpad 7' },
+  { id: 'iso', label: 'Iso', badge: '', hint: 'Isometric view' },
 ];
 
 function setProjection(mode: ProjectionMode) {
@@ -221,13 +221,22 @@ function onKey(e: KeyboardEvent) {
   if (toolKeys[e.code] && !viewport?.controls.navigating) store.toolId = toolKeys[e.code];
 }
 
-/** Right-click erase (toggle in the toolbar): clear the single voxel under the cursor. */
+/** Right-click erase (toggle in the toolbar): clear the block under the cursor,
+ *  matching the current brush size. */
 function rmbEraseAt(x: number, y: number) {
   if (!runner) return;
   const hit = runner.pick(x, y);
   if (!hit?.remove) return;
   const v = hit.remove;
-  eraseCells([[v.x, v.y, v.z]], 'Erase voxel');
+  const b = Math.max(1, runner.brushSize);
+  const ox = Math.floor(v.x / b) * b;
+  const oy = Math.floor(v.y / b) * b;
+  const oz = Math.floor(v.z / b) * b;
+  const cells: Array<[number, number, number]> = [];
+  for (let dz = 0; dz < b; dz++)
+    for (let dy = 0; dy < b; dy++)
+      for (let dx = 0; dx < b; dx++) cells.push([ox + dx, oy + dy, oz + dz]);
+  eraseCells(cells, 'Erase');
 }
 
 function openContextMenu(x: number, y: number) {
@@ -325,14 +334,14 @@ watch(theme, (t) => viewport?.setDark(t === 'dark'));
       <div class="seg">
         <button
           :class="{ active: projection === 'perspective' }"
-          title="Perspective (Numpad 5)"
+          title="Perspective camera — toggle with Numpad 5"
           @click="setProjection('perspective')"
         >
           Persp
         </button>
         <button
           :class="{ active: projection === 'ortho' }"
-          title="Orthographic (Numpad 5)"
+          title="Orthographic camera — toggle with Numpad 5"
           @click="setProjection('ortho')"
         >
           Ortho
@@ -342,10 +351,11 @@ watch(theme, (t) => viewport?.setDark(t === 'dark'));
         <button
           v-for="v in presetViews"
           :key="v.id"
-          :title="`${v.label} view (${v.hint})`"
+          :title="`${v.label} view — ${v.hint}`"
           @click="setView(v.id)"
         >
-          {{ v.label }}
+          <span>{{ v.label }}</span>
+          <span v-if="v.badge" class="kbd">{{ v.badge }}</span>
         </button>
       </div>
     </div>
@@ -357,7 +367,7 @@ watch(theme, (t) => viewport?.setDark(t === 'dark'));
       <template v-if="store.activeDetail > 1">&nbsp;·&nbsp; {{ brushLabel }}</template>
       &nbsp;·&nbsp;
       <template v-if="store.toolId === 'select'">
-        Ctrl+A = select all · drag = box-select · drag inside = move · arrows nudge · Shift+↕ = Y
+        double-click = same-colour region · drag = box · drag inside = move · arrows nudge · Shift+↕ = Y · Ctrl+A = all
       </template>
       <template v-else>
         Q/W/E/R/T = tools · MMB orbit · Shift+MMB pan · RMB+WASD fly · Shift draw = straight line ·
@@ -393,13 +403,12 @@ watch(theme, (t) => viewport?.setDark(t === 'dark'));
   left: 10px;
   bottom: 10px;
   padding: 5px 9px;
-  font-size: 11px;
+  font: 11px/1.4 system-ui, sans-serif;
   color: var(--ink-dim);
   background: var(--surface-1);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   pointer-events: none;
-  font-variant-numeric: tabular-nums;
 }
 .view-controls {
   position: absolute;
@@ -426,7 +435,23 @@ watch(theme, (t) => viewport?.setDark(t === 'dark'));
   grid-template-columns: repeat(2, 1fr);
   gap: 3px;
 }
+.view-controls .views button {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 5px;
+}
 .view-controls .views button:last-child {
   grid-column: 1 / -1;
+  justify-content: center;
+}
+.kbd {
+  font-size: 9px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.view-controls .views button.active .kbd {
+  color: var(--accent-ink);
+  opacity: 0.7;
 }
 </style>

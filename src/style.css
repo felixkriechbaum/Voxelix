@@ -85,9 +85,19 @@ body,
 body {
   background: var(--surface-0);
   color: var(--ink);
-  font: 13px/1.45 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: 'Josefin Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Josefin Sans has no lining/tabular figures — borrow the system font for
+   dense numeric fields so columns line up and stay legible at small sizes */
+input[type='number'],
+.tabular {
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-variant-numeric: tabular-nums;
 }
 
 :focus-visible {

@@ -1,9 +1,14 @@
 import type { VoxelData } from '@/core/voxel/VoxelData';
 
-/** An inclusive voxel-space box: every cell from `min` to `max` on each axis. */
+/**
+ * An inclusive voxel-space box (`min`..`max` on each axis). When `cells` is set
+ * the selection is exactly those voxels (smart / flood select); `min`/`max` are
+ * then just their bounding box, used for the gizmo and hit-testing.
+ */
 export interface Selection {
   min: [number, number, number];
   max: [number, number, number];
+  cells?: Array<[number, number, number]>;
 }
 
 export function makeSelection(
@@ -16,10 +21,27 @@ export function makeSelection(
   };
 }
 
+/** A selection of exactly these voxels (bounding box computed for the gizmo). */
+export function cellSelection(cells: Array<[number, number, number]>): Selection | null {
+  if (cells.length === 0) return null;
+  const min: [number, number, number] = [...cells[0]];
+  const max: [number, number, number] = [...cells[0]];
+  for (const [x, y, z] of cells) {
+    if (x < min[0]) min[0] = x;
+    if (y < min[1]) min[1] = y;
+    if (z < min[2]) min[2] = z;
+    if (x > max[0]) max[0] = x;
+    if (y > max[1]) max[1] = y;
+    if (z > max[2]) max[2] = z;
+  }
+  return { min, max, cells };
+}
+
 export function translateSelection(s: Selection, d: [number, number, number]): Selection {
   return {
     min: [s.min[0] + d[0], s.min[1] + d[1], s.min[2] + d[2]],
     max: [s.max[0] + d[0], s.max[1] + d[1], s.max[2] + d[2]],
+    cells: s.cells?.map(([x, y, z]) => [x + d[0], y + d[1], z + d[2]] as [number, number, number]),
   };
 }
 
@@ -72,9 +94,16 @@ export interface SelectionCell {
   v: number;
 }
 
-/** Every solid cell inside the selection, with its raw value. */
+/** Every solid cell in the selection, with its raw value. */
 export function selectionCells(data: VoxelData, s: Selection): SelectionCell[] {
   const out: SelectionCell[] = [];
+  if (s.cells) {
+    for (const [x, y, z] of s.cells) {
+      const v = data.get(x, y, z);
+      if (v !== 0) out.push({ x, y, z, v });
+    }
+    return out;
+  }
   for (let z = s.min[2]; z <= s.max[2]; z++)
     for (let y = s.min[1]; y <= s.max[1]; y++)
       for (let x = s.min[0]; x <= s.max[0]; x++) {

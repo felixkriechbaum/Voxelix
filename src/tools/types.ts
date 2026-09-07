@@ -13,6 +13,8 @@ export interface PointerInfo {
   shiftKey: boolean;
   ctrlKey: boolean;
   altKey: boolean;
+  /** consecutive-click count — 2 on the second press of a double-click */
+  detail: number;
 }
 
 /** Everything a tool is allowed to do, provided by the editor session. */

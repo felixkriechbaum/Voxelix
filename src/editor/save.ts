@@ -16,6 +16,7 @@ export function useProjectSave() {
     if (saving.value || !store.project) return;
     saving.value = true;
     try {
+      await new Promise((r) => setTimeout(r)); // let the "Saving…" spinner paint
       const handle = await saveTextFile(
         `${store.project.name}.voxproj`,
         serializeProject(store.project),

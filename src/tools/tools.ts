@@ -2,11 +2,13 @@ import * as THREE from 'three';
 import type { Tool, ToolContext, PointerInfo, ToolId } from './types';
 import type { BuildPlane, PickResult } from '@/viewport/Picker';
 import {
+  cellSelection,
   clampSelection,
   makeSelection,
   selectionContains,
   translateSelection,
 } from '@/core/ops/selection';
+import { floodRegion } from '@/core/ops/flood';
 import { moveSelection } from '@/editor/selectionOps';
 
 const key = (x: number, y: number, z: number) => `${x},${y},${z}`;
@@ -390,10 +392,13 @@ function planeAxes(plane: BuildPlane): [number, number] {
   return [0, 2];
 }
 
-/** Box-select voxels, then drag inside the box to slide them on the build plane. */
+/**
+ * Box-select voxels, then drag inside the box to slide them on the build plane.
+ * Double-click a voxel to smart-select every connected voxel of the same colour.
+ */
 export class SelectTool implements Tool {
   readonly id: ToolId = 'select';
-  private phase: 'idle' | 'box' | 'move' = 'idle';
+  private phase: 'idle' | 'box' | 'move' | 'done' = 'idle';
   private cornerA: THREE.Vector3 | null = null;
   private cornerB: THREE.Vector3 | null = null;
   private moveFrom: THREE.Vector3 | null = null;
@@ -405,6 +410,14 @@ export class SelectTool implements Tool {
     if (!hit) return;
     const sel = ctx.selection;
     const under = hit.remove ?? hit.place;
+
+    // double-click on a voxel → flood-select its same-colour region
+    if (p.detail >= 2 && hit.remove) {
+      const cells = floodRegion(ctx.data, hit.remove.x, hit.remove.y, hit.remove.z, true);
+      ctx.setSelection(cellSelection(cells));
+      this.phase = 'done';
+      return;
+    }
 
     if (sel && hit.remove && selectionContains(sel, under.x, under.y, under.z)) {
       this.phase = 'move';

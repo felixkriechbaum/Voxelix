@@ -301,5 +301,6 @@ function info(e: PointerEvent): PointerInfo {
     shiftKey: e.shiftKey,
     ctrlKey: e.ctrlKey,
     altKey: e.altKey,
+    detail: e.detail,
   };
 }

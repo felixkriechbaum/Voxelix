@@ -14,6 +14,7 @@ const store = useEditorStore();
 const { runner } = useSession();
 
 const dims = computed(() => (store.selection ? selectionDims(store.selection) : null));
+const smartCount = computed(() => store.selection?.cells?.length ?? null);
 
 function nudge(d: [number, number, number]) {
   if (runner.value && store.selection) moveSelection(runner.value, store.selection, d);
@@ -32,8 +33,9 @@ function remove() {
 <template>
   <div class="sel panel">
     <div class="hd">
-      Selection
-      <span v-if="dims" class="dim">{{ dims[0] }}×{{ dims[1] }}×{{ dims[2] }}</span>
+      {{ smartCount != null ? 'Region' : 'Selection' }}
+      <span v-if="smartCount != null" class="dim">{{ smartCount }} voxels</span>
+      <span v-else-if="dims" class="dim">{{ dims[0] }}×{{ dims[1] }}×{{ dims[2] }}</span>
     </div>
 
     <div class="nudge">

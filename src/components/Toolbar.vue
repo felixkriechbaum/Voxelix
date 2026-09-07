@@ -12,6 +12,16 @@ import {
 import { exportObjectToGlb, exportProjectToGlbs } from '@/core/export/exportGlb';
 import { resolveEffectiveData } from '@/core/project/resolve';
 import { useProjectSave } from '@/editor/save';
+import Icon from './Icon.vue';
+import {
+  faRotateLeft,
+  faRotateRight,
+  faFloppyDisk,
+  faGear,
+  faFileExport,
+  faBoxesStacked,
+  faShapes,
+} from '@fortawesome/free-solid-svg-icons';
 import type { ToolId } from '@/tools/types';
 import type { BuildPlane } from '@/viewport/Picker';
 
@@ -21,6 +31,17 @@ const emit = defineEmits<{ (e: 'add-shape'): void; (e: 'settings'): void }>();
 const { saving, saveProject } = useProjectSave();
 
 const busy = ref('');
+
+const canUndo = computed(() => {
+  void store.editVersion;
+  void store.activeVersion;
+  return runner.value?.canUndo ?? false;
+});
+const canRedo = computed(() => {
+  void store.editVersion;
+  void store.activeVersion;
+  return runner.value?.canRedo ?? false;
+});
 
 const autosave = computed(() => {
   if (store.autosaveError) return { text: 'Autosave failed', bad: true };
@@ -187,49 +208,80 @@ async function exportAll() {
     />
 
     <span class="divider" />
-    <button title="Add a primitive: box, sphere, cylinder or pyramid" @click="emit('add-shape')">
-      + Shape
+    <button
+      class="ic"
+      title="Add a primitive shape — box, sphere, cylinder or pyramid"
+      aria-label="Add shape"
+      @click="emit('add-shape')"
+    >
+      <Icon :icon="faShapes" />
     </button>
-    <button :disabled="!runner" title="Undo — Ctrl+Z" @click="runner?.undo()">Undo</button>
-    <button :disabled="!runner" title="Redo — Ctrl+Shift+Z" @click="runner?.redo()">Redo</button>
+    <button
+      class="ic"
+      :disabled="!canUndo"
+      title="Undo the last edit on this object — Ctrl+Z"
+      aria-label="Undo"
+      @click="runner?.undo()"
+    >
+      <Icon :icon="faRotateLeft" />
+    </button>
+    <button
+      class="ic"
+      :disabled="!canRedo"
+      title="Redo — Ctrl+Shift+Z"
+      aria-label="Redo"
+      @click="runner?.redo()"
+    >
+      <Icon :icon="faRotateRight" />
+    </button>
 
     <span class="spacer" />
-    <span v-if="store.exportStatus" class="status">{{ store.exportStatus }}</span>
-    <span
-      v-else-if="autosave.text"
-      class="status"
-      :class="{ bad: autosave.bad }"
-      :title="autosave.bad ? 'Could not write to browser storage' : 'Autosaved to this browser'"
-    >
-      {{ autosave.text }}
+    <span class="statusbox">
+      <span v-if="saving || store.autosaveBusy || store.exportStatus" class="spin" />
+      <span v-if="store.exportStatus" class="status">{{ store.exportStatus }}</span>
+      <span
+        v-else-if="saving"
+        class="status"
+      >Saving project…</span>
+      <span
+        v-else-if="autosave.text"
+        class="status"
+        :class="{ bad: autosave.bad }"
+        :title="autosave.bad ? 'Could not write to browser storage' : 'Autosaved to this browser'"
+      >
+        {{ autosave.text }}
+      </span>
     </span>
 
-    <button :disabled="saving" title="Save the project file — Ctrl+S" @click="saveProject">
-      {{ saving ? 'Saving…' : 'Save' }}
-    </button>
     <button
-      class="icon"
-      title="Settings — theme and export scale"
-      aria-label="Settings"
-      @click="emit('settings')"
+      class="ic"
+      :disabled="saving"
+      title="Save the project file — Ctrl+S"
+      aria-label="Save project"
+      @click="saveProject"
     >
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="3.2" />
-        <path
-          d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"
-        />
-      </svg>
+      <Icon :icon="faFloppyDisk" />
     </button>
-    <button :disabled="!!busy" title="Export the active object as .glb" @click="exportActive">
-      Export GLB
+    <button class="ic" title="Settings — theme and export scale" aria-label="Settings" @click="emit('settings')">
+      <Icon :icon="faGear" />
     </button>
     <button
-      class="primary"
+      class="ic"
+      :disabled="!!busy || !store.activeObjectId"
+      title="Export the active object as a .glb file"
+      aria-label="Export active object"
+      @click="exportActive"
+    >
+      <Icon :icon="faFileExport" />
+    </button>
+    <button
+      class="ic primary"
       :disabled="!!busy || store.objects.length === 0"
-      :title="hasDirectoryPicker ? 'Export every object to a chosen folder' : 'Download one .glb per object'"
+      :title="hasDirectoryPicker ? 'Export every object as .glb into a chosen folder' : 'Download one .glb per object'"
+      aria-label="Export all objects"
       @click="exportAll"
     >
-      Export all
+      <Icon :icon="faBoxesStacked" />
     </button>
   </div>
 </template>
@@ -270,16 +322,21 @@ async function exportAll() {
   background: currentColor;
   border-radius: 1px;
 }
-.icon {
+.ic {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 30px;
+  height: 28px;
   padding: 0;
   color: var(--ink-dim);
 }
-.icon:hover:not(:disabled) {
+.ic:hover:not(:disabled) {
   color: var(--ink);
+}
+.ic.primary,
+.ic.primary:hover:not(:disabled) {
+  color: var(--accent-ink);
 }
 .num {
   width: 52px;
@@ -290,10 +347,15 @@ async function exportAll() {
   background: var(--line);
   margin: 0 3px;
 }
+.statusbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 10px;
+}
 .status {
-  font-size: 11px;
+  font: 11px/1.4 system-ui, sans-serif;
   color: var(--ink-faint);
-  font-variant-numeric: tabular-nums;
   max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -301,5 +363,19 @@ async function exportAll() {
 }
 .status.bad {
   color: var(--warn);
+}
+.spin {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
