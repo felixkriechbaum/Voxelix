@@ -4,17 +4,11 @@ import type { MeshJob, MeshResult } from './meshTypes';
 
 type Inbound =
   | { kind: 'palette'; palette: Float32Array }
-  | { kind: 'job'; job: MeshJob };
+  | { kind: 'jobs'; jobs: MeshJob[] };
 
 let paletteLinear: Float32Array<ArrayBufferLike> = new Float32Array(768);
 
-self.onmessage = (e: MessageEvent<Inbound>) => {
-  const msg = e.data;
-  if (msg.kind === 'palette') {
-    paletteLinear = msg.palette;
-    return;
-  }
-  const { job } = msg;
+function run(job: MeshJob): void {
   const mesh = greedyMesh(job.padded, paletteLinear, job.origin[0], job.origin[1], job.origin[2]);
   const result: MeshResult = {
     objectId: job.objectId,
@@ -30,4 +24,13 @@ self.onmessage = (e: MessageEvent<Inbound>) => {
     mesh.colors.buffer,
     mesh.indices.buffer,
   ]);
+}
+
+self.onmessage = (e: MessageEvent<Inbound>) => {
+  const msg = e.data;
+  if (msg.kind === 'palette') {
+    paletteLinear = msg.palette;
+    return;
+  }
+  for (const job of msg.jobs) run(job);
 };

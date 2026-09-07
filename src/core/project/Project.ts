@@ -1,6 +1,7 @@
 import { VoxelData } from '@/core/voxel/VoxelData';
 import { createDefaultPalette, type Palette } from '@/core/palette';
 import { VoxelObject } from './VoxelObject';
+import { CELLS_PER_VOXEL } from '@/core/voxel/constants';
 import {
   defaultExportSettings,
   normalizeExportSettings,
@@ -126,6 +127,13 @@ export class Project {
       throw new Error('Not a voxeleditor project file');
     }
     const objects = json.objects.map((o) => VoxelObject.fromJSON(o));
+    // a mid-transition file may carry detail 2/3 — normalise to the fixed grid
+    for (const o of objects) {
+      if (o.detail > 1 && o.detail < CELLS_PER_VOXEL) {
+        o.data.upscale(CELLS_PER_VOXEL / o.detail);
+        o.detail = CELLS_PER_VOXEL;
+      }
+    }
     const byId = new Map(objects.map((o) => [o.id, o]));
     for (const o of objects) {
       if (o.kind === 'extend' && o.baseId) o.detail = byId.get(o.baseId)?.detail ?? o.detail;

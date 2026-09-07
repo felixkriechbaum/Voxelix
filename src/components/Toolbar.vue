@@ -39,8 +39,20 @@ const tools: Array<{ id: ToolId; label: string; key: string }> = [
   { id: 'select', label: 'Select', key: 'V or 6' },
 ];
 const planes: BuildPlane[] = ['xz', 'xy', 'yz'];
-const fractions = computed(() => Array.from({ length: store.activeDetail }, (_, i) => i + 1));
-const currentFraction = computed(() => Math.min(store.activeDetail, store.voxelFraction));
+
+const brushes = [
+  { f: 1, size: 16, label: 'Full voxel' },
+  { f: 2, size: 10, label: 'Half voxel' },
+  { f: 3, size: 6, label: 'Third of a voxel' },
+];
+function pickBrush(f: number) {
+  store.voxelFraction = f;
+  if (f > 1 && store.activeObjectId) store.ensureDetail(store.activeObjectId);
+}
+// which brush reads as active: fraction is capped by how finely the object is subdivided
+const currentBrushF = computed(() =>
+  store.activeDetail === 1 ? 1 : Math.min(store.activeDetail, store.voxelFraction),
+);
 
 async function save() {
   if (!store.project) return;
@@ -129,17 +141,18 @@ async function exportAll() {
       <button :class="{ active: store.boxMode === 'erase' }" @click="store.boxMode = 'erase'">Erase</button>
     </template>
 
-    <template v-if="store.activeDetail > 1 && ['place', 'erase', 'box'].includes(store.toolId)">
+    <template v-if="['place', 'erase', 'box'].includes(store.toolId)">
       <span class="divider" />
       <label class="lbl">Brush</label>
       <button
-        v-for="f in fractions"
-        :key="f"
-        :class="{ active: currentFraction === f }"
-        :title="f === 1 ? 'Full voxel' : `1/${f} of a voxel`"
-        @click="store.voxelFraction = f"
+        v-for="b in brushes"
+        :key="b.f"
+        class="brush"
+        :class="{ active: currentBrushF === b.f }"
+        :title="b.label"
+        @click="pickBrush(b.f)"
       >
-        1/{{ f }}
+        <span class="sq" :style="{ width: b.size + 'px', height: b.size + 'px' }" />
       </button>
     </template>
 
@@ -206,6 +219,19 @@ async function exportAll() {
 }
 .lbl {
   color: var(--text-dim);
+}
+.brush {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+.brush .sq {
+  display: block;
+  background: currentColor;
+  border-radius: 1px;
 }
 .num {
   width: 54px;

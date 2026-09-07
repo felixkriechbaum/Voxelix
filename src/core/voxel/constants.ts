@@ -2,10 +2,13 @@
 export const CHUNK = 16;
 
 /** Hard cap on an object's grid dimension on any axis (in cells). */
-export const MAX_SIZE = 96;
+export const MAX_SIZE = 192;
 
-/** Finest voxel subdivision an object can be pushed to (cells per voxel edge). */
-export const MAX_DETAIL = 3;
+/**
+ * Grid cells per voxel edge once an object is subdivided for fractional-brush
+ * detail. 6 so a voxel splits cleanly into halves and thirds.
+ */
+export const CELLS_PER_VOXEL = 6;
 
 /** Number of palette slots shared by every object in a project. */
 export const PALETTE_SIZE = 256;

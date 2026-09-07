@@ -3,7 +3,7 @@ import { computed, markRaw, ref, shallowRef } from 'vue';
 import { Project } from '@/core/project/Project';
 import { defaultExportSettings, type ExportSettings } from '@/core/project/types';
 import { effectiveDetail } from '@/core/project/resolve';
-import { MAX_DETAIL } from '@/core/voxel/constants';
+import { CELLS_PER_VOXEL } from '@/core/voxel/constants';
 import { paletteToLinearArray } from '@/core/palette';
 import { useSession } from '@/editor/session';
 import type { ToolId } from '@/tools/types';
@@ -145,24 +145,23 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   /**
-   * Push an object one step finer (cells per voxel edge, up to MAX_DETAIL). The
-   * voxel data is upscaled losslessly so the shape is unchanged — you can then
-   * place fractional-voxel detail on it. One-way; undo history is dropped.
-   * An extend overlay redirects to its base (their grids must match).
+   * Subdivide an object's grid to CELLS_PER_VOXEL cells per voxel so a fractional
+   * brush has somewhere to land. Lossless (VoxelData.upscale keeps the shape),
+   * one-way, done automatically the first time a sub-voxel brush is used. Undo
+   * history is dropped; an extend overlay redirects to its base.
    */
-  function increaseDetail(id: string) {
+  function ensureDetail(id: string) {
     const proj = project.value;
     const obj = proj?.getById(id);
     if (!proj || !obj) return;
     const target = obj.kind === 'extend' && obj.baseId ? proj.getById(obj.baseId) : obj;
-    if (!target || target.detail >= MAX_DETAIL) return;
+    if (!target || target.detail >= CELLS_PER_VOXEL) return;
 
-    const next = target.detail + 1;
-    const factor = next / target.detail;
+    const factor = CELLS_PER_VOXEL / target.detail;
     const touched = [target, ...proj.objects.filter((o) => o.baseId === target.id)];
     for (const o of touched) {
       o.data.upscale(factor);
-      o.detail = next;
+      o.detail = CELLS_PER_VOXEL;
     }
     const { runner } = useSession();
     for (const o of touched) runner.value?.forgetHistory(o.id);
@@ -237,7 +236,7 @@ export const useEditorStore = defineStore('editor', () => {
     removeObject,
     renameObject,
     resizeActive,
-    increaseDetail,
+    ensureDetail,
     bumpEdit,
     updateExportSettings,
     setSelection,

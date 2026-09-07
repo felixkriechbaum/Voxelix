@@ -15,15 +15,13 @@ function add() {
   const obj = store.activeObject();
   if (!obj || !runner.value) return;
   const read = runner.value.data;
-  const cells = voxelizeShape({
-    kind: spec.kind,
-    w: clamp(spec.w),
-    h: clamp(spec.h),
-    d: clamp(spec.d),
-    hollow: spec.hollow,
-  });
-  const ox = Math.max(0, Math.floor((read.sizeX - spec.w) / 2));
-  const oz = Math.max(0, Math.floor((read.sizeZ - spec.d) / 2));
+  const det = store.activeDetail; // dimensions are entered in voxels
+  const w = clamp(spec.w) * det;
+  const h = clamp(spec.h) * det;
+  const d = clamp(spec.d) * det;
+  const cells = voxelizeShape({ kind: spec.kind, w, h, d, hollow: spec.hollow });
+  const ox = Math.max(0, Math.floor((read.sizeX - w) / 2));
+  const oz = Math.max(0, Math.floor((read.sizeZ - d) / 2));
   const value = store.currentColor + 1;
   runner.value.runExternal(`Add ${spec.kind}`, (write) => {
     for (const [x, y, z] of cells) {

@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import { useEditorStore } from '@/stores/editor';
 import { useSession } from '@/editor/session';
-import { MAX_DETAIL, MAX_SIZE } from '@/core/voxel/constants';
+import { MAX_SIZE } from '@/core/voxel/constants';
 import ContextMenu, { type MenuItem } from './ContextMenu.vue';
 
 const store = useEditorStore();
@@ -13,8 +13,9 @@ const renameInput = ref<HTMLInputElement | null>(null);
 const menu = ref<{ x: number; y: number; items: MenuItem[] } | null>(null);
 
 const active = computed(() => store.activeObject());
+/** edited in voxels (grid cells / detail) */
 const size = ref<[number, number, number]>([16, 16, 16]);
-const nextDetail = computed(() => Math.min(MAX_DETAIL, store.activeDetail + 1));
+const maxVoxels = computed(() => Math.floor(MAX_SIZE / store.activeDetail));
 
 function startRename(id: string, current: string) {
   renamingId.value = id;
@@ -29,11 +30,10 @@ function addObject() {
   store.addObject('Object', [16, 16, 16]);
 }
 function applyResize() {
-  const s = size.value.map((n) => Math.max(1, Math.min(MAX_SIZE, Math.round(n)))) as [
-    number,
-    number,
-    number,
-  ];
+  const d = store.activeDetail;
+  const s = size.value.map((n) =>
+    Math.max(1, Math.min(MAX_SIZE, Math.round(n) * d)),
+  ) as [number, number, number];
   store.resizeActive(s);
 }
 
@@ -53,10 +53,16 @@ function openMenu(e: MouseEvent, id: string, name: string, kind: string) {
 
 function syncSize() {
   const a = active.value;
-  if (a) size.value = [a.data.sizeX, a.data.sizeY, a.data.sizeZ];
+  if (!a) return;
+  const d = store.activeDetail;
+  size.value = [a.data.sizeX / d, a.data.sizeY / d, a.data.sizeZ / d].map(Math.round) as [
+    number,
+    number,
+    number,
+  ];
 }
 syncSize();
-watch(() => store.activeVersion, syncSize);
+watch(() => [store.activeVersion, store.structureVersion], syncSize);
 </script>
 
 <template>
@@ -111,28 +117,14 @@ watch(() => store.activeVersion, syncSize);
 
     <template v-if="active">
       <h3 style="margin-top: 12px">
-        Size (max {{ MAX_SIZE }})
+        Size in voxels (max {{ maxVoxels }})
         <span v-if="active.kind === 'extend'" class="hint">— overlay grid</span>
       </h3>
       <div class="row">
-        <input v-model.number="size[0]" type="number" min="1" :max="MAX_SIZE" />
-        <input v-model.number="size[1]" type="number" min="1" :max="MAX_SIZE" />
-        <input v-model.number="size[2]" type="number" min="1" :max="MAX_SIZE" />
+        <input v-model.number="size[0]" type="number" min="1" :max="maxVoxels" />
+        <input v-model.number="size[1]" type="number" min="1" :max="maxVoxels" />
+        <input v-model.number="size[2]" type="number" min="1" :max="maxVoxels" />
         <button @click="applyResize">Set</button>
-      </div>
-
-      <h3 style="margin-top: 12px">
-        Voxel detail
-        <span class="hint">— {{ store.activeDetail }} cell{{ store.activeDetail === 1 ? '' : 's' }} / voxel</span>
-      </h3>
-      <div class="row">
-        <button
-          :disabled="store.activeDetail >= MAX_DETAIL || active.kind === 'extend'"
-          :title="active.kind === 'extend' ? 'Follows the base object' : 'Split each voxel into finer cells (one-way, keeps your work)'"
-          @click="store.increaseDetail(store.activeObjectId!)"
-        >
-          Make finer (1/{{ nextDetail }})
-        </button>
       </div>
     </template>
 

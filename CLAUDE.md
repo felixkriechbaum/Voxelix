@@ -90,15 +90,18 @@ src/
 
 - Voxel `(x,y,z)` fills the unit cube `[x, x+1]`. Meshes sit at the origin.
 - Build planes: XZ (ground, default), XY, YZ, with an integer offset.
-- `VoxelObject.detail` (1..`MAX_DETAIL`) = grid cells per voxel edge. `store.increaseDetail`
-  is one-way: `VoxelData.upscale` blows each cell into a detail³ block (lossless,
-  shape unchanged), so you can then place sub-voxel detail. `ActiveRender.detail`
-  drives the per-voxel grid overlay + the export cell scale. An `extend` overlay
-  follows its base's detail. No viewport rescaling — the object grows in cell
-  space and `frameActive` refits.
-- Brush (`editor.ts` `voxelFraction` 1/2/3, capped at the object's detail):
-  place/erase a `detail / fraction`-cell cube, grid-aligned. Fraction 1 = a full
-  voxel, 2 = half, 3 = a third. Never mutates existing voxels.
+- `VoxelObject.detail` = grid cells per voxel edge: 1 (coarse) or `CELLS_PER_VOXEL`
+  (=6) once subdivided. `store.ensureDetail` runs the first time a sub-voxel brush
+  is used on a coarse object: `VoxelData.upscale` blows each cell into a 6³ block
+  (lossless, shape unchanged), one-way. `ActiveRender.detail` drives the per-voxel
+  grid overlay + the export cell scale; an `extend` overlay follows its base.
+  No viewport rescaling — the object grows in cell space and `frameActive` refits.
+- Brush (`editor.ts` `voxelFraction` 1/2/3): places a `detail / fraction`-cell
+  cube, grid-aligned — a full voxel, a half, or a third. The toolbar shows it as
+  three squares. Switching it never mutates existing voxels. Outliner size input
+  and the shape dialog are in voxels (× detail internally).
+- Meshing is batched: `ChunkMesher.meshChunks` posts every dirty chunk in one
+  worker message (a 6× grid has 216 chunks for a 16-voxel object).
 - Every drag stroke (place/erase/box/paint) locks to the plane of the first hit
   (`Picker.pickPlane` / `ToolContext.pickOnPlane`) so it can't wander onto
   another face or drill inward. Shift adds a straight-line constraint on top.
@@ -137,8 +140,8 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   a folder, ortho camera + preset views (numpad 1/3/5/7). Also: live re-mesh
   during drag strokes, Shift = straight-line draw for place/erase/paint.
 - **Done — iter 4 (so far):** letter tool shortcuts + RMB-erase toggle, "reset
-  extend to base", export-scale dialog (N voxels = M metres), one-way per-object
-  voxel detail + fractional brush (1/2, 1/3), plane-locked drag strokes,
-  GitHub Pages deploy.
+  extend to base", export-scale dialog (N voxels = M metres), fractional brush
+  (full / half / third voxel, auto-subdivides on first use), plane-locked drag
+  strokes, batched chunk meshing, GitHub Pages deploy.
 - **Next — iter 4:** ideas — selection copy/paste across objects, marquee in
   screen space, per-object up-axis/pivot in the export dialog, mirror modelling.

@@ -49,8 +49,8 @@ export class ChunkMeshView {
   }
 
   flush(): void {
-    for (const key of this.data.dirty) {
-      this.mesher.meshChunk(this.id, this.data, key);
+    if (this.data.dirty.size > 0) {
+      this.mesher.meshChunks(this.id, this.data, this.data.dirty);
     }
     this.data.dirty.clear();
   }

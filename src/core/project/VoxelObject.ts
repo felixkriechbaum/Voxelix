@@ -1,5 +1,5 @@
 import { VoxelData } from '@/core/voxel/VoxelData';
-import { MAX_DETAIL } from '@/core/voxel/constants';
+import { CELLS_PER_VOXEL } from '@/core/voxel/constants';
 import type { ObjectKind, VoxelObjectJson } from './types';
 
 export class VoxelObject {
@@ -9,7 +9,7 @@ export class VoxelObject {
   baseId?: string;
   data: VoxelData;
   pivot: 'bottom-center' | 'min-corner';
-  /** grid cells per voxel edge (1 = coarse; up to MAX_DETAIL for finer placement) */
+  /** grid cells per voxel edge: 1 = coarse, or CELLS_PER_VOXEL once subdivided */
   detail: number;
 
   constructor(opts: {
@@ -27,7 +27,7 @@ export class VoxelObject {
     this.baseId = opts.baseId;
     this.data = opts.data;
     this.pivot = opts.pivot ?? 'bottom-center';
-    this.detail = Math.min(MAX_DETAIL, Math.max(1, Math.round(opts.detail ?? 1)));
+    this.detail = Math.min(CELLS_PER_VOXEL, Math.max(1, Math.round(opts.detail ?? 1)));
   }
 
   toJSON(): VoxelObjectJson {
