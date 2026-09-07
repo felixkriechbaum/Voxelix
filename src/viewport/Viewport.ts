@@ -19,8 +19,6 @@ export class Viewport {
 
   private editableView: ChunkMeshView | null = null;
   private baseView: ChunkMeshView | null = null;
-  /** current brush footprint in voxels — drives the block-grid overlay */
-  private blockStep = 1;
   private timer = new THREE.Timer();
   private raf = 0;
 
@@ -98,14 +96,8 @@ export class Viewport {
       Math.max(d.sizeX, b?.sizeX ?? 0),
       Math.max(d.sizeY, b?.sizeY ?? 0),
       Math.max(d.sizeZ, b?.sizeZ ?? 0),
-      this.blockStep,
+      render.detail,
     );
-  }
-
-  /** Brush footprint in voxels; shows a brighter grid every N cells when N > 1. */
-  setBlockStep(step: number): void {
-    this.blockStep = Math.max(1, step);
-    this.gizmos.setBlockStep(this.blockStep);
   }
 
   flush(): void {

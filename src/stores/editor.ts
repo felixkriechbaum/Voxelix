@@ -2,7 +2,10 @@ import { defineStore } from 'pinia';
 import { computed, markRaw, ref, shallowRef } from 'vue';
 import { Project } from '@/core/project/Project';
 import { defaultExportSettings, type ExportSettings } from '@/core/project/types';
+import { effectiveDetail } from '@/core/project/resolve';
+import { MAX_DETAIL } from '@/core/voxel/constants';
 import { paletteToLinearArray } from '@/core/palette';
+import { useSession } from '@/editor/session';
 import type { ToolId } from '@/tools/types';
 import type { BuildPlane } from '@/viewport/Picker';
 import type { Selection } from '@/core/ops/selection';
@@ -31,8 +34,8 @@ export const useEditorStore = defineStore('editor', () => {
   const boxMode = ref<'fill' | 'erase'>('fill');
   /** right-click in the viewport erases a voxel instead of opening the context menu */
   const rmbErase = ref(false);
-  /** place / erase a block of N^3 voxels at once (1 = single voxel) */
-  const brushSize = ref(1);
+  /** brush size as a fraction of a voxel: 1 = full voxel, 2 = half, 3 = third */
+  const voxelFraction = ref(1);
   const buildPlane = ref<BuildPlane>('xz');
   const buildOffset = ref(0);
   /** active voxel selection (select tool); per-object, cleared on switch */
@@ -58,6 +61,14 @@ export const useEditorStore = defineStore('editor', () => {
   const exportSettings = computed<ExportSettings>(() => {
     void structureVersion.value;
     return project.value?.exportSettings ?? defaultExportSettings();
+  });
+
+  /** grid cells per voxel edge for the active object (overlays report their base's) */
+  const activeDetail = computed(() => {
+    void structureVersion.value;
+    void activeVersion.value;
+    const o = activeObject();
+    return o && project.value ? effectiveDetail(o, project.value) : 1;
   });
 
   function activeObject() {
@@ -133,6 +144,35 @@ export const useEditorStore = defineStore('editor', () => {
     activeVersion.value++;
   }
 
+  /**
+   * Push an object one step finer (cells per voxel edge, up to MAX_DETAIL). The
+   * voxel data is upscaled losslessly so the shape is unchanged — you can then
+   * place fractional-voxel detail on it. One-way; undo history is dropped.
+   * An extend overlay redirects to its base (their grids must match).
+   */
+  function increaseDetail(id: string) {
+    const proj = project.value;
+    const obj = proj?.getById(id);
+    if (!proj || !obj) return;
+    const target = obj.kind === 'extend' && obj.baseId ? proj.getById(obj.baseId) : obj;
+    if (!target || target.detail >= MAX_DETAIL) return;
+
+    const next = target.detail + 1;
+    const factor = next / target.detail;
+    const touched = [target, ...proj.objects.filter((o) => o.baseId === target.id)];
+    for (const o of touched) {
+      o.data.upscale(factor);
+      o.detail = next;
+    }
+    const { runner } = useSession();
+    for (const o of touched) runner.value?.forgetHistory(o.id);
+
+    selection.value = null;
+    structureVersion.value++;
+    activeVersion.value++;
+    editVersion.value++;
+  }
+
   function bumpEdit() {
     editVersion.value++;
   }
@@ -177,12 +217,13 @@ export const useEditorStore = defineStore('editor', () => {
     objects,
     projectName,
     exportSettings,
+    activeDetail,
     activeObjectId,
     currentColor,
     toolId,
     boxMode,
     rmbErase,
-    brushSize,
+    voxelFraction,
     buildPlane,
     buildOffset,
     selection,
@@ -196,6 +237,7 @@ export const useEditorStore = defineStore('editor', () => {
     removeObject,
     renameObject,
     resizeActive,
+    increaseDetail,
     bumpEdit,
     updateExportSettings,
     setSelection,

@@ -90,9 +90,15 @@ src/
 
 - Voxel `(x,y,z)` fills the unit cube `[x, x+1]`. Meshes sit at the origin.
 - Build planes: XZ (ground, default), XY, YZ, with an integer offset.
-- Brush size (`editor.ts` `brushSize`, 1/2/4): place/erase an N³ block of voxels
-  at once, block-grid-aligned. Pure placement convenience — never touches
-  existing voxels. `Gizmos` draws a brighter grid every N cells while N > 1.
+- `VoxelObject.detail` (1..`MAX_DETAIL`) = grid cells per voxel edge. `store.increaseDetail`
+  is one-way: `VoxelData.upscale` blows each cell into a detail³ block (lossless,
+  shape unchanged), so you can then place sub-voxel detail. `ActiveRender.detail`
+  drives the per-voxel grid overlay + the export cell scale. An `extend` overlay
+  follows its base's detail. No viewport rescaling — the object grows in cell
+  space and `frameActive` refits.
+- Brush (`editor.ts` `voxelFraction` 1/2/3, capped at the object's detail):
+  place/erase a `detail / fraction`-cell cube, grid-aligned. Fraction 1 = a full
+  voxel, 2 = half, 3 = a third. Never mutates existing voxels.
 - Every drag stroke (place/erase/box/paint) locks to the plane of the first hit
   (`Picker.pickPlane` / `ToolContext.pickOnPlane`) so it can't wander onto
   another face or drill inward. Shift adds a straight-line constraint on top.
@@ -131,7 +137,8 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   a folder, ortho camera + preset views (numpad 1/3/5/7). Also: live re-mesh
   during drag strokes, Shift = straight-line draw for place/erase/paint.
 - **Done — iter 4 (so far):** letter tool shortcuts + RMB-erase toggle, "reset
-  extend to base", export-scale dialog (N voxels = M metres), N³ brush sizes,
-  plane-locked drag strokes, GitHub Pages deploy.
+  extend to base", export-scale dialog (N voxels = M metres), one-way per-object
+  voxel detail + fractional brush (1/2, 1/3), plane-locked drag strokes,
+  GitHub Pages deploy.
 - **Next — iter 4:** ideas — selection copy/paste across objects, marquee in
   screen space, per-object up-axis/pivot in the export dialog, mirror modelling.

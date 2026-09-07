@@ -13,6 +13,8 @@ export interface VoxelObjectJson {
   data: VoxelDataJson;
   /** per-object export pivot; default 'bottom-center' */
   pivot?: 'bottom-center' | 'min-corner';
+  /** grid cells per voxel edge; default 1 */
+  detail?: number;
 }
 
 export interface ExportSettings {

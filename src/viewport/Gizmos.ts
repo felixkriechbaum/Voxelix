@@ -9,10 +9,8 @@ export interface CursorBox {
 /** Ground grid, object bounding box, axis lines and the edit cursor. */
 export class Gizmos {
   readonly group = new THREE.Group();
-  private gridFine: THREE.GridHelper | null = null;
-  private gridBlock: THREE.GridHelper | null = null;
-  private lastSize: [number, number, number] = [16, 16, 16];
-  private blockStep = 1;
+  private gridCell: THREE.GridHelper | null = null;
+  private gridVoxel: THREE.GridHelper | null = null;
   private bbox: THREE.LineSegments;
   private axes: THREE.Group;
   private cursor: THREE.LineSegments;
@@ -94,42 +92,36 @@ export class Gizmos {
     this.setObjectSize(16, 16, 16);
   }
 
-  setObjectSize(x: number, y: number, z: number, blockStep = this.blockStep): void {
-    this.lastSize = [x, y, z];
-    this.blockStep = Math.max(1, blockStep);
+  /**
+   * @param detail cells per voxel edge. The main grid is drawn per voxel; when
+   *   detail > 1 a fainter grid shows the sub-voxel cells underneath.
+   */
+  setObjectSize(x: number, y: number, z: number, detail = 1): void {
     this.bbox.scale.set(x, y, z);
     this.bbox.position.set(x / 2, y / 2, z / 2);
-    this.rebuildGrid();
-  }
 
-  /** Brush footprint in voxels; a brighter grid marks every Nth line when N > 1. */
-  setBlockStep(step: number): void {
-    this.blockStep = Math.max(1, step);
-    this.rebuildGrid();
-  }
-
-  private rebuildGrid(): void {
-    for (const g of [this.gridFine, this.gridBlock]) {
+    for (const g of [this.gridCell, this.gridVoxel]) {
       if (!g) continue;
       this.group.remove(g);
       g.geometry.dispose();
       (g.material as THREE.Material).dispose();
     }
 
-    const [x, , z] = this.lastSize;
+    const step = Math.max(1, Math.round(detail));
     const span = Math.max(x, z);
-    this.gridFine = new THREE.GridHelper(span, span, 0x3a4252, 0x2a2f3d);
-    this.gridFine.position.set(x / 2, 0, z / 2);
-    this.group.add(this.gridFine);
 
-    if (this.blockStep > 1) {
-      const blocks = Math.max(1, Math.round(span / this.blockStep));
-      this.gridBlock = new THREE.GridHelper(blocks * this.blockStep, blocks, 0x5b6a86, 0x4a5468);
-      this.gridBlock.position.set(x / 2, 0.01, z / 2);
-      this.group.add(this.gridBlock);
+    if (step > 1) {
+      this.gridCell = new THREE.GridHelper(span, span, 0x2a2f3d, 0x23272f);
+      this.gridCell.position.set(x / 2, 0, z / 2);
+      this.group.add(this.gridCell);
     } else {
-      this.gridBlock = null;
+      this.gridCell = null;
     }
+
+    const voxels = Math.max(1, Math.round(span / step));
+    this.gridVoxel = new THREE.GridHelper(voxels * step, voxels, 0x3a4252, 0x2a2f3d);
+    this.gridVoxel.position.set(x / 2, 0.01, z / 2);
+    this.group.add(this.gridVoxel);
   }
 
   setCursor(box: CursorBox | null): void {

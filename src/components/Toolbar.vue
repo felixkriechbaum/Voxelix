@@ -39,7 +39,8 @@ const tools: Array<{ id: ToolId; label: string; key: string }> = [
   { id: 'select', label: 'Select', key: 'V or 6' },
 ];
 const planes: BuildPlane[] = ['xz', 'xy', 'yz'];
-const brushSizes = [1, 2, 4];
+const fractions = computed(() => Array.from({ length: store.activeDetail }, (_, i) => i + 1));
+const currentFraction = computed(() => Math.min(store.activeDetail, store.voxelFraction));
 
 async function save() {
   if (!store.project) return;
@@ -128,17 +129,17 @@ async function exportAll() {
       <button :class="{ active: store.boxMode === 'erase' }" @click="store.boxMode = 'erase'">Erase</button>
     </template>
 
-    <template v-if="['place', 'erase'].includes(store.toolId)">
+    <template v-if="store.activeDetail > 1 && ['place', 'erase', 'box'].includes(store.toolId)">
       <span class="divider" />
       <label class="lbl">Brush</label>
       <button
-        v-for="n in brushSizes"
-        :key="n"
-        :class="{ active: store.brushSize === n }"
-        :title="n === 1 ? 'Single voxel' : `Place / erase a ${n}×${n}×${n} block`"
-        @click="store.brushSize = n"
+        v-for="f in fractions"
+        :key="f"
+        :class="{ active: currentFraction === f }"
+        :title="f === 1 ? 'Full voxel' : `1/${f} of a voxel`"
+        @click="store.voxelFraction = f"
       >
-        {{ n }}³
+        1/{{ f }}
       </button>
     </template>
 

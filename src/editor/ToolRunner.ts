@@ -2,7 +2,12 @@ import { HistoryStore } from '@/core/history/History';
 import { createTool, BoxTool } from '@/tools/tools';
 import { VoxelData } from '@/core/voxel/VoxelData';
 import { REMOVED } from '@/core/voxel/constants';
-import { buildActiveRender, overlayWriteValue, resolveEffectiveData } from '@/core/project/resolve';
+import {
+  buildActiveRender,
+  effectiveDetail,
+  overlayWriteValue,
+  resolveEffectiveData,
+} from '@/core/project/resolve';
 import type { Tool, ToolContext, ToolId, PointerInfo } from '@/tools/types';
 import type { Selection } from '@/core/ops/selection';
 import type { VoxelEdit } from '@/core/voxel/types';
@@ -28,6 +33,8 @@ export class ToolRunner implements ToolContext {
   private histories = new HistoryStore();
   private ctx: ActiveCtx | null = null;
   private liveFlushQueued = false;
+  /** grid cells per voxel edge for the active object */
+  private activeDetail = 1;
 
   constructor(
     private viewport: Viewport,
@@ -56,6 +63,7 @@ export class ToolRunner implements ToolContext {
       this.ctx = null;
       return;
     }
+    this.activeDetail = effectiveDetail(object, project);
     if (object.kind === 'extend' && object.baseId) {
       const base = project.getById(object.baseId);
       const baseResolved = base
@@ -96,9 +104,10 @@ export class ToolRunner implements ToolContext {
     return this.store.buildPlane;
   }
 
-  /** brush footprint in voxels: place / erase an N^3 block at once */
+  /** brush footprint in grid cells: a voxel (detail cells) divided by the chosen fraction */
   get brushSize(): number {
-    return Math.max(1, this.store.brushSize);
+    const frac = Math.min(this.activeDetail, Math.max(1, this.store.voxelFraction));
+    return Math.max(1, Math.round(this.activeDetail / frac));
   }
 
   pick(clientX: number, clientY: number) {
@@ -188,6 +197,11 @@ export class ToolRunner implements ToolContext {
   // ---- history --------------------------------------------------------
   private currentHistory() {
     return this.histories.for(this.store.activeObjectId ?? '_');
+  }
+
+  /** Drop an object's undo stack — its diffs no longer line up with the grid. */
+  forgetHistory(objectId: string): void {
+    this.histories.drop(objectId);
   }
 
   private afterEdit(): void {

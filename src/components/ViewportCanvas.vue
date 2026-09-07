@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import * as THREE from 'three';
 import { Viewport } from '@/viewport/Viewport';
 import { ToolRunner } from '@/editor/ToolRunner';
@@ -21,6 +21,11 @@ let ro: ResizeObserver | null = null;
 
 const menu = ref<{ x: number; y: number; items: MenuItem[] } | null>(null);
 const projection = ref<ProjectionMode>('perspective');
+
+const brushLabel = computed(() => {
+  const f = Math.min(store.activeDetail, store.voxelFraction);
+  return f <= 1 ? 'brush: full voxel' : `brush: 1/${f} voxel`;
+});
 
 const presetViews: Array<{ id: PresetView; label: string; hint: string }> = [
   { id: 'front', label: 'Front', hint: 'Numpad 1' },
@@ -108,7 +113,6 @@ onMounted(() => {
   };
 
   viewport.setPalette(store.paletteLinear());
-  viewport.setBlockStep(store.brushSize);
   loadActive();
   viewport.frameActive();
   syncSelectionGizmo();
@@ -286,9 +290,10 @@ watch(
   () => [store.activeVersion, store.structureVersion],
   () => loadActive(),
 );
+// increasing detail upscales the grid — the object grows in cell space, refit it
 watch(
-  () => store.brushSize,
-  (n) => viewport?.setBlockStep(n),
+  () => store.activeDetail,
+  () => viewport?.frameActive(),
 );
 watch(
   () => store.paletteVersion,
@@ -345,7 +350,7 @@ watch(() => store.selection, syncSelectionGizmo, { deep: true });
 
     <div class="hud">
       {{ store.buildPlane.toUpperCase() }} plane @ {{ store.buildOffset }}
-      <template v-if="store.brushSize > 1">&nbsp;·&nbsp; brush {{ store.brushSize }}³</template>
+      <template v-if="store.activeDetail > 1">&nbsp;·&nbsp; {{ brushLabel }}</template>
       &nbsp;·&nbsp;
       <template v-if="store.toolId === 'select'">
         Ctrl+A = select all · drag = box-select · drag inside = move · arrows nudge · Shift+↕ = Y

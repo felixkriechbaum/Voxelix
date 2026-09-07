@@ -213,6 +213,31 @@ export class VoxelData {
     this.forEachFilled((x, y, z, c) => {
       if (next.inBounds(x, y, z)) next.set(x, y, z, c);
     });
+    this.adopt(next);
+  }
+
+  /**
+   * Blow every cell up into an `f`×`f`×`f` block — a lossless increase in grid
+   * resolution that preserves the object's shape and physical extent. Keeps
+   * REMOVED overlay markers. Result size is clamped to MAX_SIZE.
+   */
+  upscale(f: number): void {
+    if (f <= 1) return;
+    const k = Math.round(f);
+    const next = new VoxelData(this.sizeX * k, this.sizeY * k, this.sizeZ * k);
+    this.forEachEntry((x, y, z, v) => {
+      for (let dz = 0; dz < k; dz++)
+        for (let dy = 0; dy < k; dy++)
+          for (let dx = 0; dx < k; dx++) {
+            if (next.inBounds(x * k + dx, y * k + dy, z * k + dz)) {
+              next.setRaw(x * k + dx, y * k + dy, z * k + dz, v);
+            }
+          }
+    });
+    this.adopt(next);
+  }
+
+  private adopt(next: VoxelData): void {
     this.sizeX = next.sizeX;
     this.sizeY = next.sizeY;
     this.sizeZ = next.sizeZ;

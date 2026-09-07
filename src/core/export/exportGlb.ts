@@ -71,7 +71,8 @@ export async function exportObjectToGlb(
     oz = -(bounds.min.z + bounds.max.z) / 2;
   }
 
-  const s = metersPerVoxel(settings);
+  // a finer object stores several cells per voxel; scale each cell down to match
+  const s = metersPerVoxel(settings) / Math.max(1, object.detail);
   const pos = arrays.positions;
   const nrm = arrays.normals;
   const zUp = settings.upAxis === 'z';

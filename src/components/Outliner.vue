@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import { useEditorStore } from '@/stores/editor';
 import { useSession } from '@/editor/session';
-import { MAX_SIZE } from '@/core/voxel/constants';
+import { MAX_DETAIL, MAX_SIZE } from '@/core/voxel/constants';
 import ContextMenu, { type MenuItem } from './ContextMenu.vue';
 
 const store = useEditorStore();
@@ -14,6 +14,7 @@ const menu = ref<{ x: number; y: number; items: MenuItem[] } | null>(null);
 
 const active = computed(() => store.activeObject());
 const size = ref<[number, number, number]>([16, 16, 16]);
+const nextDetail = computed(() => Math.min(MAX_DETAIL, store.activeDetail + 1));
 
 function startRename(id: string, current: string) {
   renamingId.value = id;
@@ -118,6 +119,20 @@ watch(() => store.activeVersion, syncSize);
         <input v-model.number="size[1]" type="number" min="1" :max="MAX_SIZE" />
         <input v-model.number="size[2]" type="number" min="1" :max="MAX_SIZE" />
         <button @click="applyResize">Set</button>
+      </div>
+
+      <h3 style="margin-top: 12px">
+        Voxel detail
+        <span class="hint">— {{ store.activeDetail }} cell{{ store.activeDetail === 1 ? '' : 's' }} / voxel</span>
+      </h3>
+      <div class="row">
+        <button
+          :disabled="store.activeDetail >= MAX_DETAIL || active.kind === 'extend'"
+          :title="active.kind === 'extend' ? 'Follows the base object' : 'Split each voxel into finer cells (one-way, keeps your work)'"
+          @click="store.increaseDetail(store.activeObjectId!)"
+        >
+          Make finer (1/{{ nextDetail }})
+        </button>
       </div>
     </template>
 

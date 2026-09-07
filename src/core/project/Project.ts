@@ -75,6 +75,7 @@ export class Project {
       baseId: base.id,
       data: new VoxelData(base.data.sizeX, base.data.sizeY, base.data.sizeZ),
       pivot: base.pivot,
+      detail: base.detail, // overlay grid lines up with the base
     });
     const idx = this.objects.findIndex((o) => o.id === id);
     this.objects.splice(idx + 1, 0, overlay);
@@ -90,6 +91,7 @@ export class Project {
       kind: 'normal',
       data: src.data.clone(),
       pivot: src.pivot,
+      detail: src.detail,
     });
     const idx = this.objects.findIndex((o) => o.id === id);
     this.objects.splice(idx + 1, 0, copy);
@@ -123,12 +125,17 @@ export class Project {
     if (json.format !== 'voxeleditor-project') {
       throw new Error('Not a voxeleditor project file');
     }
+    const objects = json.objects.map((o) => VoxelObject.fromJSON(o));
+    const byId = new Map(objects.map((o) => [o.id, o]));
+    for (const o of objects) {
+      if (o.kind === 'extend' && o.baseId) o.detail = byId.get(o.baseId)?.detail ?? o.detail;
+    }
     return new Project({
       id: json.id,
       name: json.name,
       palette: json.palette,
       exportSettings: normalizeExportSettings(json.exportSettings),
-      objects: json.objects.map((o) => VoxelObject.fromJSON(o)),
+      objects,
       activeObjectId: json.activeObjectId,
     });
   }
