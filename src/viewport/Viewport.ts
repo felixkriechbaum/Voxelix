@@ -142,9 +142,15 @@ export class Viewport {
     return this.picker.pick(this.ndc(clientX, clientY), this.controls.camera, targets, size, buildPlane, buildOffset);
   }
 
-  /** Cell where the ray crosses the axis-`axis` plane locked at cell `value`. */
-  pickOnPlane(clientX: number, clientY: number, axis: 0 | 1 | 2, value: number): THREE.Vector3 | null {
-    return this.picker.pickPlane(this.ndc(clientX, clientY), this.controls.camera, axis, value);
+  /** Cell where the ray crosses the plane at `planeCoord`, axis forced to `cellValue`. */
+  pickOnPlane(
+    clientX: number,
+    clientY: number,
+    axis: 0 | 1 | 2,
+    planeCoord: number,
+    cellValue: number,
+  ): THREE.Vector3 | null {
+    return this.picker.pickPlane(this.ndc(clientX, clientY), this.controls.camera, axis, planeCoord, cellValue);
   }
 
   get projection(): ProjectionMode {

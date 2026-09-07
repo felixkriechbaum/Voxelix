@@ -23,8 +23,14 @@ export interface ToolContext {
   /** place/erase footprint in cells (block-aligned when > 1) */
   readonly brushSize: number;
   pick(clientX: number, clientY: number): PickResult | null;
-  /** cell where the ray crosses the axis-`axis` plane locked at cell `value` */
-  pickOnPlane(clientX: number, clientY: number, axis: 0 | 1 | 2, value: number): THREE.Vector3 | null;
+  /** cell where the ray crosses the plane at `planeCoord`, axis forced to `cellValue` */
+  pickOnPlane(
+    clientX: number,
+    clientY: number,
+    axis: 0 | 1 | 2,
+    planeCoord: number,
+    cellValue: number,
+  ): THREE.Vector3 | null;
   /** open an undo batch */
   begin(label: string): void;
   /** queue a raw-value voxel write inside the open batch */

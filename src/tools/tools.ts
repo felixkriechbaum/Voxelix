@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Tool, ToolContext, PointerInfo, ToolId } from './types';
-import type { BuildPlane } from '@/viewport/Picker';
+import type { BuildPlane, PickResult } from '@/viewport/Picker';
 import {
   clampSelection,
   makeSelection,
@@ -30,6 +30,18 @@ function normalAxis(n: THREE.Vector3): 0 | 1 | 2 {
   const ay = Math.abs(n.y);
   const az = Math.abs(n.z);
   return ax >= ay && ax >= az ? 0 : ay >= az ? 1 : 2;
+}
+
+/**
+ * The plane a drag stroke locks to: the exact face the first hit landed on.
+ * `planeCoord` is where the ray is intersected; `cellValue` is what the picked
+ * cell's locked-axis component is forced to.
+ */
+function lockPlane(hit: PickResult, target: THREE.Vector3, isErase: boolean) {
+  const axis = normalAxis(hit.normal);
+  const solid = isErase ? target : target.clone().sub(hit.normal);
+  const planeCoord = solid.getComponent(axis) + (hit.normal.getComponent(axis) > 0 ? 1 : 0);
+  return { axis, planeCoord, cellValue: target.getComponent(axis) };
 }
 
 /** Every integer cell on the 3D line from `a` to `b`, endpoints included. */
@@ -69,8 +81,7 @@ export class PlaceEraseTool implements Tool {
   private visited = new Set<string>();
   private anchor: THREE.Vector3 | null = null;
   private last: THREE.Vector3 | null = null;
-  private lockAxis: 0 | 1 | 2 = 1;
-  private lockValue = 0;
+  private lock = { axis: 1 as 0 | 1 | 2, planeCoord: 0, cellValue: 0 };
   constructor(public readonly id: 'place' | 'erase') {}
 
   private target(ctx: ToolContext, p: PointerInfo) {
@@ -88,8 +99,7 @@ export class PlaceEraseTool implements Tool {
     this.visited.clear();
     this.anchor = t.clone();
     this.last = null;
-    this.lockAxis = normalAxis(hit.normal);
-    this.lockValue = t.getComponent(this.lockAxis);
+    this.lock = lockPlane(hit, t, this.id === 'erase');
 
     ctx.begin(this.id === 'place' ? 'Place' : 'Erase');
     this.stamp(ctx, t);
@@ -108,7 +118,13 @@ export class PlaceEraseTool implements Tool {
       }
       return;
     }
-    let t = ctx.pickOnPlane(p.clientX, p.clientY, this.lockAxis, this.lockValue);
+    let t = ctx.pickOnPlane(
+      p.clientX,
+      p.clientY,
+      this.lock.axis,
+      this.lock.planeCoord,
+      this.lock.cellValue,
+    );
     if (!t) return;
     if (p.shiftKey && this.anchor) t = axisLock(this.anchor, t);
     this.stamp(ctx, t);
@@ -158,19 +174,18 @@ export class BoxTool implements Tool {
   mode: 'fill' | 'erase' = 'fill';
   private start: THREE.Vector3 | null = null;
   private end: THREE.Vector3 | null = null;
-  private lockAxis: 0 | 1 | 2 = 1;
-  private lockValue = 0;
+  private lock = { axis: 1 as 0 | 1 | 2, planeCoord: 0, cellValue: 0 };
 
   pointerDown(ctx: ToolContext, p: PointerInfo): void {
     if (p.button !== 0) return;
     const hit = ctx.pick(p.clientX, p.clientY);
     if (!hit) return;
-    const v = this.mode === 'erase' && hit.remove ? hit.remove : hit.place;
+    const erasing = this.mode === 'erase' && !!hit.remove;
+    const v = erasing ? hit.remove! : hit.place;
     this.start = clampToGrid(v, ctx);
     this.end = this.start.clone();
     // the box stays flat on the plane of the first corner for the whole drag
-    this.lockAxis = normalAxis(hit.normal);
-    this.lockValue = this.start.getComponent(this.lockAxis);
+    this.lock = lockPlane(hit, v, erasing);
     this.updateCursor(ctx);
   }
 
@@ -181,7 +196,13 @@ export class BoxTool implements Tool {
       else ctx.setCursor(null);
       return;
     }
-    const t = ctx.pickOnPlane(p.clientX, p.clientY, this.lockAxis, this.lockValue);
+    const t = ctx.pickOnPlane(
+      p.clientX,
+      p.clientY,
+      this.lock.axis,
+      this.lock.planeCoord,
+      this.lock.cellValue,
+    );
     if (t) this.end = clampToGrid(t, ctx);
     this.updateCursor(ctx);
   }
@@ -224,8 +245,7 @@ export class PaintTool implements Tool {
   private visited = new Set<string>();
   private anchor: THREE.Vector3 | null = null;
   private last: THREE.Vector3 | null = null;
-  private lockAxis: 0 | 1 | 2 = 1;
-  private lockValue = 0;
+  private lock = { axis: 1 as 0 | 1 | 2, planeCoord: 0, cellValue: 0 };
 
   pointerDown(ctx: ToolContext, p: PointerInfo): void {
     if (p.button !== 0) return;
@@ -235,8 +255,7 @@ export class PaintTool implements Tool {
     this.visited.clear();
     this.anchor = hit.remove.clone();
     this.last = null;
-    this.lockAxis = normalAxis(hit.normal);
-    this.lockValue = hit.remove.getComponent(this.lockAxis);
+    this.lock = lockPlane(hit, hit.remove, true);
     ctx.begin('Paint');
     this.stamp(ctx, hit.remove);
   }
@@ -247,7 +266,13 @@ export class PaintTool implements Tool {
       ctx.setCursor(hit?.remove ? cursorAdd(hit.remove, 0xffe08a) : null);
       return;
     }
-    let t = ctx.pickOnPlane(p.clientX, p.clientY, this.lockAxis, this.lockValue);
+    let t = ctx.pickOnPlane(
+      p.clientX,
+      p.clientY,
+      this.lock.axis,
+      this.lock.planeCoord,
+      this.lock.cellValue,
+    );
     if (!t) return;
     if (p.shiftKey && this.anchor) t = axisLock(this.anchor, t);
     this.stamp(ctx, t);

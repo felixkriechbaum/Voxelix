@@ -105,8 +105,8 @@ export class ToolRunner implements ToolContext {
     return this.viewport.pick(clientX, clientY, this.store.buildPlane, this.store.buildOffset);
   }
 
-  pickOnPlane(clientX: number, clientY: number, axis: 0 | 1 | 2, value: number) {
-    return this.viewport.pickOnPlane(clientX, clientY, axis, value);
+  pickOnPlane(clientX: number, clientY: number, axis: 0 | 1 | 2, planeCoord: number, cellValue: number) {
+    return this.viewport.pickOnPlane(clientX, clientY, axis, planeCoord, cellValue);
   }
 
   begin(label: string): void {

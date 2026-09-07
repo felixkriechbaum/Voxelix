@@ -67,23 +67,22 @@ export class Picker {
   }
 
   /**
-   * Intersect the ray with an axis-aligned plane (`axis` 0/1/2) locked at cell
-   * coordinate `value`, and return the cell there. Used to keep a drag stroke on
-   * the plane it started on instead of chasing whatever surface is under the
-   * cursor.
+   * Intersect the ray with the axis-aligned plane at `planeCoord` (the face the
+   * stroke started on) and return the cell there, with the `axis` component
+   * forced to `cellValue`. Keeps a drag on that plane instead of chasing
+   * whatever surface is under the cursor.
    */
   pickPlane(
     ndc: THREE.Vector2,
     camera: THREE.Camera,
     axis: 0 | 1 | 2,
-    value: number,
+    planeCoord: number,
+    cellValue: number,
   ): THREE.Vector3 | null {
     this.ray.setFromCamera(ndc, camera);
     const normal = new THREE.Vector3();
     normal.setComponent(axis, 1);
-    // sit the plane through the middle of the locked layer so the crossing point
-    // lands on the right in-plane cell
-    const plane = new THREE.Plane(normal, -(value + 0.5));
+    const plane = new THREE.Plane(normal, -planeCoord);
     const point = new THREE.Vector3();
     if (!this.ray.ray.intersectPlane(plane, point)) return null;
     const cell = new THREE.Vector3(
@@ -91,7 +90,7 @@ export class Picker {
       Math.floor(point.y),
       Math.floor(point.z),
     );
-    cell.setComponent(axis, value);
+    cell.setComponent(axis, cellValue);
     return cell;
   }
 }
