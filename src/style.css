@@ -1,14 +1,74 @@
+/* ---------------------------------------------------------------------------
+   Voxelix design tokens
+   The workspace is quiet graphite so the model in the viewport is the hero.
+   Colour lives in exactly two places: the palette swatches, and one warm
+   amber that marks "active" and the primary action.
+   Dark is the default; useTheme() sets [data-theme] to a concrete light/dark.
+--------------------------------------------------------------------------- */
 :root {
-  --bg: #14161d;
-  --bg-panel: #1c1f28;
-  --bg-elev: #252935;
-  --border: #333846;
-  --text: #d7dbe4;
-  --text-dim: #8b91a1;
-  --accent: #5b9dff;
-  --accent-dim: #38507d;
-  --danger: #ff6b6b;
+  --surface-0: #15171c; /* app background, behind panels */
+  --surface-1: #1d2027; /* panels */
+  --surface-2: #272b34; /* raised controls, inputs */
+  --surface-hi: #313641; /* hover */
+  --line: #343a46;
+  --line-strong: #454c5c;
+
+  --ink: #e3e6ed;
+  --ink-dim: #939aa8;
+  --ink-faint: #626879;
+
+  --accent: #f2b134;
+  --accent-hover: #ffc157;
+  --accent-ink: #1b1408;
+
+  --warn: #ef5350;
+  --warn-ink: #180a0a;
+
+  --scrim: rgba(8, 9, 12, 0.62);
+  --shadow: 0 12px 34px -10px rgba(0, 0, 0, 0.6);
+
+  --accent-soft: rgba(242, 177, 52, 0.16); /* selection / hover tint */
+
+  --radius: 4px;
+  --radius-sm: 3px;
+
+  /* aliases kept so component styles need no churn */
+  --bg: var(--surface-0);
+  --bg-panel: var(--surface-1);
+  --bg-elev: var(--surface-2);
+  --border: var(--line);
+  --text: var(--ink);
+  --text-dim: var(--ink-dim);
+  --accent-dim: var(--surface-hi);
+  --danger: var(--warn);
+
   color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --surface-0: #e8eaee;
+  --surface-1: #ffffff;
+  --surface-2: #eef0f4;
+  --surface-hi: #e3e6ec;
+  --line: #d6dae2;
+  --line-strong: #c2c8d2;
+
+  --ink: #1f232b;
+  --ink-dim: #596070;
+  --ink-faint: #8b909e;
+
+  --accent: #b06d12;
+  --accent-hover: #925a0d;
+  --accent-ink: #fff7ec;
+
+  --warn: #ce3439;
+  --warn-ink: #ffffff;
+
+  --accent-soft: rgba(176, 109, 18, 0.14);
+  --scrim: rgba(22, 26, 34, 0.34);
+  --shadow: 0 12px 34px -12px rgba(20, 24, 34, 0.28);
+
+  color-scheme: light;
 }
 
 * {
@@ -23,58 +83,96 @@ body,
 }
 
 body {
-  background: var(--bg);
-  color: var(--text);
-  font: 13px/1.4 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--surface-0);
+  color: var(--ink);
+  font: 13px/1.45 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---- controls ------------------------------------------------------------ */
 button {
   font: inherit;
-  color: var(--text);
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 5px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   padding: 5px 10px;
   cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
 }
-button:hover {
-  border-color: var(--accent-dim);
+button:hover:not(:disabled) {
+  background: var(--surface-hi);
+  border-color: var(--line-strong);
 }
 button.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #0b1220;
+  color: var(--accent-ink);
+}
+button.active:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 button:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
+/* one primary action per surface */
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+button.danger:hover:not(:disabled) {
+  border-color: var(--warn);
+  color: var(--warn);
+  background: var(--surface-2);
+}
+
 input[type='text'],
 input[type='number'] {
   font: inherit;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  color: var(--ink);
+  background: var(--surface-0);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   padding: 4px 6px;
   width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+input[type='text']:focus,
+input[type='number']:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 select {
   font: inherit;
-  color: var(--text);
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   padding: 4px 6px;
 }
 
+/* ---- structure --------------------------------------------------------- */
 .panel {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
 }
 
 .row {
@@ -87,10 +185,19 @@ select {
   flex: 1;
 }
 
+/* section labels — sentence case, no tracking, no shouting */
 h3 {
   margin: 0 0 8px;
   font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-dim);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
 }

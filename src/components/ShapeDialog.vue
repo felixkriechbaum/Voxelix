@@ -72,14 +72,15 @@ function clamp(n: number) {
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--scrim);
   display: grid;
   place-items: center;
-  z-index: 20;
+  z-index: 30;
 }
 .dialog {
   width: 300px;
   padding: 18px;
+  box-shadow: var(--shadow);
 }
 label {
   display: block;
@@ -94,11 +95,5 @@ label.check {
 .row.end {
   margin-top: 16px;
   justify-content: flex-end;
-}
-.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #0b1220;
-  font-weight: 600;
 }
 </style>

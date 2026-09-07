@@ -96,8 +96,10 @@ function ago(ts: number): string {
       <input v-model="name" type="text" @keydown.enter="create" />
 
       <div class="row" style="margin-top: 14px">
-        <button class="primary" @click="create">New project</button>
-        <button @click="open">Open {{ PROJECT_FILE_EXT }}…</button>
+        <button class="primary" title="Start a fresh project" @click="create">New project</button>
+        <button :title="`Open an existing ${PROJECT_FILE_EXT} file`" @click="open">
+          Open file
+        </button>
       </div>
       <p v-if="error" class="err">{{ error }}</p>
 
@@ -133,6 +135,7 @@ function ago(ts: number): string {
 .card {
   width: 380px;
   padding: 28px;
+  box-shadow: var(--shadow);
 }
 .brand {
   display: flex;
@@ -153,18 +156,12 @@ label {
   margin-bottom: 4px;
   color: var(--text-dim);
 }
-.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #0b1220;
-  font-weight: 600;
-}
 .err {
-  color: var(--danger);
+  color: var(--warn);
   margin-top: 10px;
 }
 code {
-  background: var(--bg-elev);
+  background: var(--surface-2);
   padding: 1px 4px;
   border-radius: 3px;
 }
@@ -195,7 +192,8 @@ code {
   background: var(--bg-elev);
 }
 .entry:hover {
-  border-color: var(--accent-dim);
+  border-color: var(--line-strong);
+  background: var(--surface-hi);
 }
 .thumb {
   width: 46px;
@@ -207,7 +205,7 @@ code {
   border: 1px solid var(--border);
 }
 .thumb.ph {
-  background: linear-gradient(135deg, var(--bg-elev), var(--bg));
+  background: var(--surface-2);
 }
 .info {
   min-width: 0;

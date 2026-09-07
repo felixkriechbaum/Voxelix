@@ -30,12 +30,6 @@ function close() {
   gap: 10px;
   padding: 10px 12px;
   max-width: 360px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
-}
-.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #0b1220;
-  font-weight: 600;
+  box-shadow: var(--shadow);
 }
 </style>

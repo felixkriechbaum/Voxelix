@@ -70,7 +70,7 @@ watch(() => [store.activeVersion, store.structureVersion], syncSize);
     <div class="row">
       <h3>Objects</h3>
       <span class="spacer" />
-      <button title="Add object" @click="addObject">+</button>
+      <button title="Add a new object" aria-label="Add object" @click="addObject">+</button>
     </div>
 
     <ul class="list">
@@ -78,6 +78,7 @@ watch(() => [store.activeVersion, store.structureVersion], syncSize);
         v-for="o in store.objects"
         :key="o.id"
         :class="{ sel: o.id === store.activeObjectId }"
+        title="Click to select · double-click to rename · right-click for more"
         @click="store.setActive(o.id)"
         @dblclick="startRename(o.id, o.name)"
         @contextmenu.prevent="openMenu($event, o.id, o.name, o.kind)"
@@ -100,15 +101,24 @@ watch(() => [store.activeVersion, store.structureVersion], syncSize);
     </ul>
 
     <div class="row actions">
-      <button :disabled="!store.activeObjectId" @click="store.duplicateObject(store.activeObjectId!)">
+      <button
+        :disabled="!store.activeObjectId"
+        title="Make an independent copy of this object"
+        @click="store.duplicateObject(store.activeObjectId!)"
+      >
         Duplicate
       </button>
-      <button :disabled="!store.activeObjectId" @click="store.extendObject(store.activeObjectId!)">
+      <button
+        :disabled="!store.activeObjectId"
+        title="Add a linked overlay that edits on top of this object without changing it"
+        @click="store.extendObject(store.activeObjectId!)"
+      >
         Extend
       </button>
       <button
         :disabled="!store.activeObjectId"
         class="danger"
+        title="Delete this object"
         @click="store.removeObject(store.activeObjectId!)"
       >
         Delete
@@ -121,10 +131,12 @@ watch(() => [store.activeVersion, store.structureVersion], syncSize);
         <span v-if="active.kind === 'extend'" class="hint">— overlay grid</span>
       </h3>
       <div class="row">
-        <input v-model.number="size[0]" type="number" min="1" :max="maxVoxels" />
-        <input v-model.number="size[1]" type="number" min="1" :max="maxVoxels" />
-        <input v-model.number="size[2]" type="number" min="1" :max="maxVoxels" />
-        <button @click="applyResize">Set</button>
+        <input v-model.number="size[0]" type="number" min="1" :max="maxVoxels" title="Width (X)" />
+        <input v-model.number="size[1]" type="number" min="1" :max="maxVoxels" title="Height (Y)" />
+        <input v-model.number="size[2]" type="number" min="1" :max="maxVoxels" title="Depth (Z)" />
+        <button title="Resize the grid — voxels outside the new bounds are cut" @click="applyResize">
+          Set
+        </button>
       </div>
     </template>
 
@@ -152,10 +164,11 @@ watch(() => [store.activeVersion, store.structureVersion], syncSize);
   cursor: pointer;
 }
 .list li:hover {
-  background: var(--bg-elev);
+  background: var(--surface-2);
 }
 .list li.sel {
-  background: var(--accent-dim);
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .oname {
   flex: 1;

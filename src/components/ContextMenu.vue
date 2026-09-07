@@ -63,10 +63,10 @@ onBeforeUnmount(() => {
 <style scoped>
 .menu {
   position: fixed;
-  z-index: 40;
-  min-width: 170px;
+  z-index: 45;
+  min-width: 178px;
   padding: 4px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow);
 }
 .item {
   display: block;
@@ -74,19 +74,22 @@ onBeforeUnmount(() => {
   text-align: left;
   background: none;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 6px 9px;
 }
 .item:hover:not(:disabled) {
-  background: var(--accent-dim);
+  background: var(--surface-hi);
+}
+.item.danger {
+  color: var(--warn);
 }
 .item.danger:hover:not(:disabled) {
-  background: var(--danger);
-  color: #150a0a;
+  background: var(--warn);
+  color: var(--warn-ink);
 }
 .sep {
   height: 1px;
-  background: var(--border);
+  background: var(--line);
   margin: 4px 2px;
 }
 </style>

@@ -153,6 +153,12 @@ export class Viewport {
     this.controls.setMode(mode);
   }
 
+  /** Match the editor theme — viewport background + grid colours. */
+  setDark(dark: boolean): void {
+    (this.scene.background as THREE.Color).setHex(dark ? 0x181b23 : 0xe4e7ec);
+    this.gizmos.setDark(dark);
+  }
+
   setView(view: PresetView): void {
     this.controls.setView(view);
   }

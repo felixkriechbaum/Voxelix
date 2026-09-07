@@ -63,7 +63,9 @@ src/
   editor/          ToolRunner (pointer input → tool → history → viewport),
                    session.ts (shared refs to the mounted viewport/runner),
                    autosave.ts (debounced IndexedDB save), selectionOps.ts
-                   (move/recolour/duplicate/delete via ToolContext)
+                   (move/recolour/duplicate/delete via ToolContext),
+                   save.ts (manual .voxproj save, shared by button + Ctrl+S),
+                   theme.ts (light/dark/system, [data-theme] on <html>)
   stores/          Pinia: editor.ts holds the Project (markRaw) + reactive
                    version counters (structureVersion / activeVersion /
                    paletteVersion / editVersion) that components watch, plus
@@ -140,8 +142,9 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   a folder, ortho camera + preset views (numpad 1/3/5/7). Also: live re-mesh
   during drag strokes, Shift = straight-line draw for place/erase/paint.
 - **Done — iter 4 (so far):** letter tool shortcuts + RMB-erase toggle, "reset
-  extend to base", export-scale dialog (N voxels = M metres), fractional brush
-  (full / half / third voxel, auto-subdivides on first use), plane-locked drag
-  strokes, batched chunk meshing, GitHub Pages deploy.
+  extend to base", fractional brush (full / half / third voxel, auto-subdivides
+  on first use), plane-locked drag strokes, batched chunk meshing, GitHub Pages
+  deploy. RLE chunk storage. Settings dialog with light/dark/system theme
+  (viewport + gizmos follow it), Ctrl+S save, export progress overlay, tooltips.
 - **Next — iter 4:** ideas — selection copy/paste across objects, marquee in
   screen space, per-object up-axis/pivot in the export dialog, mirror modelling.

@@ -1,28 +1,36 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import Toolbar from './Toolbar.vue';
 import Outliner from './Outliner.vue';
 import PalettePanel from './PalettePanel.vue';
 import ViewportCanvas from './ViewportCanvas.vue';
 import ShapeDialog from './ShapeDialog.vue';
-import ExportSettingsDialog from './ExportSettingsDialog.vue';
+import SettingsDialog from './SettingsDialog.vue';
 import { useEditorStore } from '@/stores/editor';
 import { useAutosave } from '@/editor/autosave';
+import { useProjectSave } from '@/editor/save';
 
 const store = useEditorStore();
 const showShape = ref(false);
-const showExportSettings = ref(false);
+const showSettings = ref(false);
+const { saveProject } = useProjectSave();
 
 useAutosave();
+
+function onKey(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 's') {
+    e.preventDefault(); // don't let the browser offer to save the page
+    void saveProject();
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKey));
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
   <div class="editor">
-    <Toolbar
-      class="toolbar"
-      @add-shape="showShape = true"
-      @export-settings="showExportSettings = true"
-    />
+    <Toolbar class="toolbar" @add-shape="showShape = true" @settings="showSettings = true" />
     <aside class="side">
       <Outliner />
       <PalettePanel />
@@ -30,8 +38,9 @@ useAutosave();
     <main class="stage">
       <ViewportCanvas />
     </main>
+
     <ShapeDialog v-if="showShape" @close="showShape = false" />
-    <ExportSettingsDialog v-if="showExportSettings" @close="showExportSettings = false" />
+    <SettingsDialog v-if="showSettings" @close="showSettings = false" />
 
     <div v-if="store.exportStatus" class="export-overlay">
       <div class="panel export-card">
@@ -46,7 +55,7 @@ useAutosave();
 .editor {
   height: 100%;
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 264px 1fr;
   grid-template-rows: auto 1fr;
   gap: 8px;
   padding: 8px;
@@ -65,9 +74,9 @@ useAutosave();
 .stage {
   grid-row: 2;
   min-height: 0;
-  border-radius: 8px;
+  border-radius: var(--radius);
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
 }
 .export-overlay {
   position: fixed;
@@ -75,19 +84,20 @@ useAutosave();
   z-index: 40;
   display: grid;
   place-items: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--scrim);
 }
 .export-card {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 22px;
+  padding: 15px 20px;
   font-size: 13px;
+  box-shadow: var(--shadow);
 }
 .spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--border);
+  width: 15px;
+  height: 15px;
+  border: 2px solid var(--line);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;

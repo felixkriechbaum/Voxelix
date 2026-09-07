@@ -63,22 +63,19 @@ function remove() {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: rgba(20, 22, 29, 0.86);
-  width: 148px;
+  width: 150px;
 }
 .hd {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-dim);
   display: flex;
   justify-content: space-between;
   gap: 6px;
 }
 .dim {
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--text);
+  font-weight: 400;
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 .nudge {

@@ -2,9 +2,7 @@
 import { computed, ref } from 'vue';
 import { useEditorStore } from '@/stores/editor';
 import { useSession } from '@/editor/session';
-import { serializeProject } from '@/core/io/projectFile';
 import {
-  saveTextFile,
   saveBinaryFile,
   pickDirectory,
   writeFileToDirectory,
@@ -13,12 +11,14 @@ import {
 } from '@/core/io/fileSystem';
 import { exportObjectToGlb, exportProjectToGlbs } from '@/core/export/exportGlb';
 import { resolveEffectiveData } from '@/core/project/resolve';
+import { useProjectSave } from '@/editor/save';
 import type { ToolId } from '@/tools/types';
 import type { BuildPlane } from '@/viewport/Picker';
 
 const store = useEditorStore();
 const { runner } = useSession();
-const emit = defineEmits<{ (e: 'add-shape'): void; (e: 'export-settings'): void }>();
+const emit = defineEmits<{ (e: 'add-shape'): void; (e: 'settings'): void }>();
+const { saving, saveProject } = useProjectSave();
 
 const busy = ref('');
 
@@ -50,25 +50,6 @@ function pickBrush(f: number) {
   if (store.activeObjectId) store.ensureDetail(store.activeObjectId);
 }
 const currentBrushF = computed(() => Math.min(store.activeDetail, store.voxelFraction));
-
-async function save() {
-  if (!store.project) return;
-  busy.value = 'save';
-  try {
-    const handle = await saveTextFile(
-      `${store.project.name}.voxproj`,
-      serializeProject(store.project),
-      store.fileHandle,
-    );
-    store.fileHandle = handle; // null when cancelled → next save re-prompts
-  } catch (err) {
-    console.error('[save]', err);
-    store.fileHandle = null;
-    alert('Could not save the project file. Press Save again and choose a location.');
-  } finally {
-    busy.value = '';
-  }
-}
 
 async function exportActive() {
   const obj = store.activeObject();
@@ -132,14 +113,14 @@ async function exportAll() {
 
 <template>
   <div class="panel bar">
-    <strong class="name">{{ store.projectName }}</strong>
+    <strong class="name" :title="`Project: ${store.projectName}`">{{ store.projectName }}</strong>
     <span class="divider" />
 
     <button
       v-for="t in tools"
       :key="t.id"
       :class="{ active: store.toolId === t.id }"
-      :title="`${t.label} (${t.key})`"
+      :title="`${t.label} tool — press ${t.key}`"
       @click="store.toolId = t.id"
     >
       {{ t.label }}
@@ -147,8 +128,20 @@ async function exportAll() {
 
     <template v-if="store.toolId === 'box'">
       <span class="divider" />
-      <button :class="{ active: store.boxMode === 'fill' }" @click="store.boxMode = 'fill'">Fill</button>
-      <button :class="{ active: store.boxMode === 'erase' }" @click="store.boxMode = 'erase'">Erase</button>
+      <button
+        :class="{ active: store.boxMode === 'fill' }"
+        title="Fill the box with the current colour"
+        @click="store.boxMode = 'fill'"
+      >
+        Fill
+      </button>
+      <button
+        :class="{ active: store.boxMode === 'erase' }"
+        title="Clear every voxel inside the box"
+        @click="store.boxMode = 'erase'"
+      >
+        Erase
+      </button>
     </template>
 
     <template v-if="['place', 'erase', 'box'].includes(store.toolId)">
@@ -159,7 +152,7 @@ async function exportAll() {
         :key="b.f"
         class="brush"
         :class="{ active: currentBrushF === b.f }"
-        :title="b.label"
+        :title="`${b.label} — the object is subdivided the first time you pick a smaller size`"
         @click="pickBrush(b.f)"
       >
         <span class="sq" :style="{ width: b.size + 'px', height: b.size + 'px' }" />
@@ -169,49 +162,74 @@ async function exportAll() {
     <span class="divider" />
     <button
       :class="{ active: store.rmbErase }"
-      title="Right-click erases the voxel under the cursor instead of opening the context menu"
+      title="When on, a right-click erases the voxel under the cursor instead of opening the menu"
       @click="store.rmbErase = !store.rmbErase"
     >
       RMB erase
     </button>
 
     <span class="divider" />
-    <label class="lbl">Plane</label>
-    <select :value="store.buildPlane" @change="store.buildPlane = ($event.target as HTMLSelectElement).value as BuildPlane">
+    <label class="lbl" title="Where new voxels land when you click empty space">Plane</label>
+    <select
+      :value="store.buildPlane"
+      title="Build plane: ground (XZ), front (XY) or side (YZ)"
+      @change="store.buildPlane = ($event.target as HTMLSelectElement).value as BuildPlane"
+    >
       <option v-for="p in planes" :key="p" :value="p">{{ p.toUpperCase() }}</option>
     </select>
     <input
       class="num"
       type="number"
+      title="Height of the build plane, in voxels"
       :value="store.buildOffset"
       min="0"
       @input="store.buildOffset = Math.max(0, Number(($event.target as HTMLInputElement).value) || 0)"
     />
 
     <span class="divider" />
-    <button @click="emit('add-shape')">+ Shape</button>
-    <button :disabled="!runner" @click="runner?.undo()">Undo</button>
-    <button :disabled="!runner" @click="runner?.redo()">Redo</button>
+    <button title="Add a primitive: box, sphere, cylinder or pyramid" @click="emit('add-shape')">
+      + Shape
+    </button>
+    <button :disabled="!runner" title="Undo — Ctrl+Z" @click="runner?.undo()">Undo</button>
+    <button :disabled="!runner" title="Redo — Ctrl+Shift+Z" @click="runner?.redo()">Redo</button>
 
     <span class="spacer" />
-    <span v-if="store.exportStatus" class="batch">{{ store.exportStatus }}</span>
-    <span v-else-if="autosave.text" class="batch" :class="{ bad: autosave.bad }" :title="autosave.bad ? 'Could not write to browser storage' : 'Autosaved to this browser (IndexedDB)'">{{ autosave.text }}</span>
-    <button :disabled="!!busy" @click="save">Save</button>
-    <button
-      :disabled="!!busy"
-      :title="`Export scale: ${store.exportSettings.refVoxels} voxels = ${store.exportSettings.refMeters} m`"
-      @click="emit('export-settings')"
+    <span v-if="store.exportStatus" class="status">{{ store.exportStatus }}</span>
+    <span
+      v-else-if="autosave.text"
+      class="status"
+      :class="{ bad: autosave.bad }"
+      :title="autosave.bad ? 'Could not write to browser storage' : 'Autosaved to this browser'"
     >
-      Units…
+      {{ autosave.text }}
+    </span>
+
+    <button :disabled="saving" title="Save the project file — Ctrl+S" @click="saveProject">
+      {{ saving ? 'Saving…' : 'Save' }}
     </button>
-    <button :disabled="!!busy" @click="exportActive">Export GLB</button>
+    <button
+      class="icon"
+      title="Settings — theme and export scale"
+      aria-label="Settings"
+      @click="emit('settings')"
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3.2" />
+        <path
+          d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"
+        />
+      </svg>
+    </button>
+    <button :disabled="!!busy" title="Export the active object as .glb" @click="exportActive">
+      Export GLB
+    </button>
     <button
       class="primary"
       :disabled="!!busy || store.objects.length === 0"
-      :title="hasDirectoryPicker ? 'Export every object to a folder' : 'Download a .glb for every object'"
+      :title="hasDirectoryPicker ? 'Export every object to a chosen folder' : 'Download one .glb per object'"
       @click="exportAll"
     >
-      Export all{{ hasDirectoryPicker ? '…' : '' }}
+      Export all
     </button>
   </div>
 </template>
@@ -226,9 +244,14 @@ async function exportAll() {
 }
 .name {
   font-size: 13px;
+  font-weight: 600;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .lbl {
-  color: var(--text-dim);
+  color: var(--ink-dim);
 }
 .brush {
   display: inline-flex;
@@ -237,37 +260,46 @@ async function exportAll() {
   width: 28px;
   height: 28px;
   padding: 0;
+  color: var(--ink-dim);
+}
+.brush.active {
+  color: var(--accent-ink);
 }
 .brush .sq {
   display: block;
   background: currentColor;
   border-radius: 1px;
 }
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  padding: 0;
+  color: var(--ink-dim);
+}
+.icon:hover:not(:disabled) {
+  color: var(--ink);
+}
 .num {
-  width: 54px;
+  width: 52px;
 }
 .divider {
   width: 1px;
   align-self: stretch;
-  background: var(--border);
+  background: var(--line);
   margin: 0 3px;
 }
-.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #0b1220;
-  font-weight: 600;
-}
-.batch {
+.status {
   font-size: 11px;
-  color: var(--text-dim);
+  color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
-  max-width: 220px;
+  max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.batch.bad {
-  color: var(--danger);
+.status.bad {
+  color: var(--warn);
 }
 </style>

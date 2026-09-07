@@ -8,12 +8,14 @@ import { useEditorStore } from '@/stores/editor';
 import { buildActiveRender } from '@/core/project/resolve';
 import { floodRegion } from '@/core/ops/flood';
 import { deleteSelection, moveSelection } from '@/editor/selectionOps';
+import { useTheme } from '@/editor/theme';
 import ContextMenu, { type MenuItem } from './ContextMenu.vue';
 import SelectionPanel from './SelectionPanel.vue';
 import type { ToolId } from '@/tools/types';
 import type { PresetView, ProjectionMode } from '@/viewport/GodotControls';
 
 const store = useEditorStore();
+const { resolved: theme } = useTheme();
 const canvas = ref<HTMLCanvasElement | null>(null);
 let viewport: Viewport | null = null;
 let runner: ToolRunner | null = null;
@@ -113,6 +115,7 @@ onMounted(() => {
   };
 
   viewport.setPalette(store.paletteLinear());
+  viewport.setDark(theme.value === 'dark');
   loadActive();
   viewport.frameActive();
   syncSelectionGizmo();
@@ -311,6 +314,7 @@ watch(
   () => runner?.syncBoxMode(),
 );
 watch(() => store.selection, syncSelectionGizmo, { deep: true });
+watch(theme, (t) => viewport?.setDark(t === 'dark'));
 </script>
 
 <template>
@@ -388,12 +392,14 @@ watch(() => store.selection, syncSelectionGizmo, { deep: true });
   position: absolute;
   left: 10px;
   bottom: 10px;
-  padding: 4px 8px;
+  padding: 5px 9px;
   font-size: 11px;
-  color: var(--text-dim);
-  background: rgba(0, 0, 0, 0.35);
-  border-radius: 4px;
+  color: var(--ink-dim);
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   pointer-events: none;
+  font-variant-numeric: tabular-nums;
 }
 .view-controls {
   position: absolute;
@@ -403,7 +409,6 @@ watch(() => store.selection, syncSelectionGizmo, { deep: true });
   display: flex;
   flex-direction: column;
   gap: 5px;
-  background: rgba(20, 22, 29, 0.82);
 }
 .view-controls button {
   padding: 3px 7px;

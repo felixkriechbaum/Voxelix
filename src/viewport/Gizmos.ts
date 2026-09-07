@@ -6,11 +6,18 @@ export interface CursorBox {
   color: number;
 }
 
+/** Grid / bbox colours per theme: [cell, voxel, bbox]. */
+const GRID_DARK = { cell: 0x2a2f3d, cellLine: 0x23272f, voxel: 0x3a4252, voxelLine: 0x2a2f3d, bbox: 0x4a5568 };
+const GRID_LIGHT = { cell: 0xcfd3db, cellLine: 0xdadde3, voxel: 0xb2b8c4, voxelLine: 0xcfd3db, bbox: 0x9aa1af };
+
 /** Ground grid, object bounding box, axis lines and the edit cursor. */
 export class Gizmos {
   readonly group = new THREE.Group();
   private gridCell: THREE.GridHelper | null = null;
   private gridVoxel: THREE.GridHelper | null = null;
+  private lastSize: [number, number, number] = [16, 16, 16];
+  private lastDetail = 1;
+  private theme = GRID_DARK;
   private bbox: THREE.LineSegments;
   private axes: THREE.Group;
   private cursor: THREE.LineSegments;
@@ -96,7 +103,15 @@ export class Gizmos {
    * @param detail cells per voxel edge. The main grid is drawn per voxel; when
    *   detail > 1 a fainter grid shows the sub-voxel cells underneath.
    */
-  setObjectSize(x: number, y: number, z: number, detail = 1): void {
+  setDark(dark: boolean): void {
+    this.theme = dark ? GRID_DARK : GRID_LIGHT;
+    (this.bbox.material as THREE.LineBasicMaterial).color.setHex(this.theme.bbox);
+    this.setObjectSize(...this.lastSize, this.lastDetail);
+  }
+
+  setObjectSize(x: number, y: number, z: number, detail = this.lastDetail): void {
+    this.lastSize = [x, y, z];
+    this.lastDetail = detail;
     this.bbox.scale.set(x, y, z);
     this.bbox.position.set(x / 2, y / 2, z / 2);
 
@@ -109,9 +124,10 @@ export class Gizmos {
 
     const step = Math.max(1, Math.round(detail));
     const span = Math.max(x, z);
+    const t = this.theme;
 
     if (step > 1) {
-      this.gridCell = new THREE.GridHelper(span, span, 0x2a2f3d, 0x23272f);
+      this.gridCell = new THREE.GridHelper(span, span, t.cell, t.cellLine);
       this.gridCell.position.set(x / 2, 0, z / 2);
       this.group.add(this.gridCell);
     } else {
@@ -119,7 +135,7 @@ export class Gizmos {
     }
 
     const voxels = Math.max(1, Math.round(span / step));
-    this.gridVoxel = new THREE.GridHelper(voxels * step, voxels, 0x3a4252, 0x2a2f3d);
+    this.gridVoxel = new THREE.GridHelper(voxels * step, voxels, t.voxel, t.voxelLine);
     this.gridVoxel.position.set(x / 2, 0.01, z / 2);
     this.group.add(this.gridVoxel);
   }

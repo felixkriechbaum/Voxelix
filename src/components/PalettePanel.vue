@@ -30,12 +30,18 @@ function onColorInput(e: Event) {
         class="swatch"
         :class="{ sel: i === store.currentColor }"
         :style="{ background: hex }"
+        :title="`Slot ${i} — ${hex}`"
         @click="store.setColor(i)"
       />
     </div>
 
     <div class="row edit">
-      <input type="color" :value="currentHex" @input="onColorInput" />
+      <input
+        type="color"
+        :value="currentHex"
+        :title="`Change the colour of slot ${store.currentColor}`"
+        @input="onColorInput"
+      />
       <span class="hex">{{ currentHex }}</span>
     </div>
   </div>
@@ -57,8 +63,11 @@ function onColorInput(e: Event) {
 .swatch {
   padding: 0;
   aspect-ratio: 1;
-  border: 1px solid rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--line);
   border-radius: 2px;
+}
+.swatch:hover {
+  border-color: var(--line-strong);
 }
 .swatch.sel {
   outline: 2px solid var(--accent);
