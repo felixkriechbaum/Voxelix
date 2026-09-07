@@ -341,7 +341,7 @@ watch(() => store.selection, syncSelectionGizmo, { deep: true });
     <div class="hud">
       {{ store.buildPlane.toUpperCase() }} plane @ {{ store.buildOffset }}
       <template v-if="store.activeSubdivision > 1">
-        &nbsp;·&nbsp; {{ store.activeSubdivision }}× grid (½-blocks)
+        &nbsp;·&nbsp; {{ store.activeSubdivision }}× grid · brush: {{ store.brushBlocks ? 'block' : 'fine' }}
       </template>
       &nbsp;·&nbsp;
       <template v-if="store.toolId === 'select'">

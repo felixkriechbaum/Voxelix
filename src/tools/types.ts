@@ -19,6 +19,8 @@ export interface ToolContext {
   readonly data: VoxelData;
   readonly colorIndex: number;
   readonly buildPlane: BuildPlane;
+  /** place/erase footprint in cells (block-aligned when > 1) */
+  readonly brushSize: number;
   pick(clientX: number, clientY: number): PickResult | null;
   /** open an undo batch */
   begin(label: string): void;

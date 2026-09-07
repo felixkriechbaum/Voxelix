@@ -3,6 +3,7 @@ import { computed, markRaw, ref, shallowRef } from 'vue';
 import { Project } from '@/core/project/Project';
 import { clampSubdivision, defaultExportSettings, type ExportSettings } from '@/core/project/types';
 import { paletteToLinearArray } from '@/core/palette';
+import { useSession } from '@/editor/session';
 import type { ToolId } from '@/tools/types';
 import type { BuildPlane } from '@/viewport/Picker';
 import type { Selection } from '@/core/ops/selection';
@@ -31,6 +32,8 @@ export const useEditorStore = defineStore('editor', () => {
   const boxMode = ref<'fill' | 'erase'>('fill');
   /** right-click in the viewport erases a voxel instead of opening the context menu */
   const rmbErase = ref(false);
+  /** place/erase a whole block vs. a single fine cell (only matters when subdivided) */
+  const brushBlocks = ref(true);
   const buildPlane = ref<BuildPlane>('xz');
   const buildOffset = ref(0);
   /** active voxel selection (select tool); per-object, cleared on switch */
@@ -141,7 +144,12 @@ export const useEditorStore = defineStore('editor', () => {
     activeVersion.value++;
   }
 
-  /** Change an object's grid subdivision (cells per block edge). Overlays follow their base. */
+  /**
+   * Change an object's grid subdivision (cells per block edge). The voxel data is
+   * resampled so the object keeps its physical size — finer grid, same shape —
+   * and overlays built on it follow along. Undo history for the touched objects
+   * is dropped (its diffs no longer line up with the grid).
+   */
   function setObjectSubdivision(id: string, n: number) {
     const proj = project.value;
     const obj = proj?.getById(id);
@@ -151,11 +159,20 @@ export const useEditorStore = defineStore('editor', () => {
     if (!target) return;
     const v = clampSubdivision(n);
     if (target.subdivision === v) return;
-    target.subdivision = v;
-    for (const o of proj.objects) if (o.baseId === target.id) o.subdivision = v;
+
+    const factor = v / target.subdivision;
+    const touched = [target, ...proj.objects.filter((o) => o.baseId === target.id)];
+    for (const o of touched) {
+      o.data.resample(factor);
+      o.subdivision = v;
+    }
+    const { runner } = useSession();
+    for (const o of touched) runner.value?.forgetHistory(o.id);
+
     selection.value = null;
     structureVersion.value++;
     activeVersion.value++;
+    editVersion.value++; // persist via autosave
   }
 
   function bumpEdit() {
@@ -208,6 +225,7 @@ export const useEditorStore = defineStore('editor', () => {
     toolId,
     boxMode,
     rmbErase,
+    brushBlocks,
     buildPlane,
     buildOffset,
     selection,

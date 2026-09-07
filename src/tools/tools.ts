@@ -15,6 +15,15 @@ function cursorAdd(v: THREE.Vector3, color = 0x8fd3ff) {
   return { min: v.clone(), max: v.clone().addScalar(1), color };
 }
 
+/** Snap a cell down to the brush grid (block-aligned placement). */
+function brushOrigin(v: THREE.Vector3, b: number): THREE.Vector3 {
+  return new THREE.Vector3(
+    Math.floor(v.x / b) * b,
+    Math.floor(v.y / b) * b,
+    Math.floor(v.z / b) * b,
+  );
+}
+
 /** Every integer cell on the 3D line from `a` to `b`, endpoints included. */
 function lineCells(a: THREE.Vector3, b: THREE.Vector3): Array<[number, number, number]> {
   const dx = b.x - a.x;
@@ -75,7 +84,7 @@ export class PlaceEraseTool implements Tool {
     this.last = null;
 
     this.lockAxis = null;
-    if (this.id === 'erase' && hit && hit.hitObject) {
+    if (this.id === 'erase' && hit && hit.hitObject && ctx.brushSize === 1) {
       const n = hit.normal;
       this.lockAxis = Math.abs(n.x) ? 0 : Math.abs(n.y) ? 1 : 2;
       this.lockValue = t.getComponent(this.lockAxis);
@@ -87,8 +96,15 @@ export class PlaceEraseTool implements Tool {
 
   pointerMove(ctx: ToolContext, p: PointerInfo): void {
     let t = this.target(ctx, p);
+    const color = this.id === 'place' ? 0x4db8ff : 0xff2d2d;
     if (!this.drawing) {
-      ctx.setCursor(t ? cursorAdd(t, this.id === 'place' ? 0x4db8ff : 0xff2d2d) : null);
+      if (t) {
+        const b = ctx.brushSize;
+        const o = brushOrigin(t, b);
+        ctx.setCursor({ min: o, max: o.clone().addScalar(b), color });
+      } else {
+        ctx.setCursor(null);
+      }
       return;
     }
     if (!t) return;
@@ -120,13 +136,22 @@ export class PlaceEraseTool implements Tool {
 
   private stamp(ctx: ToolContext, t: THREE.Vector3): void {
     const value = this.id === 'place' ? ctx.colorIndex + 1 : 0;
-    for (const [x, y, z] of lineCells(this.last ?? t, t)) {
-      if (!ctx.data.inBounds(x, y, z)) continue;
-      if (this.lockAxis !== null && [x, y, z][this.lockAxis] !== this.lockValue) continue;
-      const k = key(x, y, z);
+    const b = ctx.brushSize;
+    for (const [lx, ly, lz] of lineCells(this.last ?? t, t)) {
+      if (this.lockAxis !== null && [lx, ly, lz][this.lockAxis] !== this.lockValue) continue;
+      const ox = Math.floor(lx / b) * b;
+      const oy = Math.floor(ly / b) * b;
+      const oz = Math.floor(lz / b) * b;
+      const k = key(ox, oy, oz);
       if (this.visited.has(k)) continue;
       this.visited.add(k);
-      ctx.write(x, y, z, value);
+      for (let dz = 0; dz < b; dz++)
+        for (let dy = 0; dy < b; dy++)
+          for (let dx = 0; dx < b; dx++) {
+            if (ctx.data.inBounds(ox + dx, oy + dy, oz + dz)) {
+              ctx.write(ox + dx, oy + dy, oz + dz, value);
+            }
+          }
     }
     this.last = t.clone();
   }

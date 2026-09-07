@@ -127,6 +127,25 @@ async function exportAll() {
       <button :class="{ active: store.boxMode === 'erase' }" @click="store.boxMode = 'erase'">Erase</button>
     </template>
 
+    <template v-if="store.activeSubdivision > 1 && (store.toolId === 'place' || store.toolId === 'erase')">
+      <span class="divider" />
+      <label class="lbl">Brush</label>
+      <button
+        :class="{ active: store.brushBlocks }"
+        :title="`Place / erase a full block (${store.activeSubdivision}³ cells)`"
+        @click="store.brushBlocks = true"
+      >
+        Block
+      </button>
+      <button
+        :class="{ active: !store.brushBlocks }"
+        title="Place / erase a single fine cell"
+        @click="store.brushBlocks = false"
+      >
+        Fine
+      </button>
+    </template>
+
     <span class="divider" />
     <button
       :class="{ active: store.rmbErase }"
