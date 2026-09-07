@@ -48,6 +48,14 @@ export class PlaceEraseTool implements Tool {
   private visited = new Set<string>();
   private anchor: THREE.Vector3 | null = null;
   private last: THREE.Vector3 | null = null;
+  /**
+   * Erase only: axis + value of the layer the stroke started on. A drag then
+   * stays in that plane instead of drilling straight into the object as the ray
+   * re-hits the voxels behind each one it clears. Click a different face (or one
+   * layer deeper) to switch the plane.
+   */
+  private lockAxis: 0 | 1 | 2 | null = null;
+  private lockValue = 0;
   constructor(public readonly id: 'place' | 'erase') {}
 
   private target(ctx: ToolContext, p: PointerInfo) {
@@ -58,12 +66,21 @@ export class PlaceEraseTool implements Tool {
 
   pointerDown(ctx: ToolContext, p: PointerInfo): void {
     if (p.button !== 0) return;
-    const t = this.target(ctx, p);
+    const hit = ctx.pick(p.clientX, p.clientY);
+    const t = hit && (this.id === 'place' ? hit.place : hit.remove);
     if (!t || !ctx.data.inBounds(t.x, t.y, t.z)) return;
     this.drawing = true;
     this.visited.clear();
     this.anchor = t.clone();
     this.last = null;
+
+    this.lockAxis = null;
+    if (this.id === 'erase' && hit && hit.hitObject) {
+      const n = hit.normal;
+      this.lockAxis = Math.abs(n.x) ? 0 : Math.abs(n.y) ? 1 : 2;
+      this.lockValue = t.getComponent(this.lockAxis);
+    }
+
     ctx.begin(this.id === 'place' ? 'Place' : 'Erase');
     this.stamp(ctx, t);
   }
@@ -71,10 +88,14 @@ export class PlaceEraseTool implements Tool {
   pointerMove(ctx: ToolContext, p: PointerInfo): void {
     let t = this.target(ctx, p);
     if (!this.drawing) {
-      ctx.setCursor(t ? cursorAdd(t, this.id === 'place' ? 0x8fd3ff : 0xff8f8f) : null);
+      ctx.setCursor(t ? cursorAdd(t, this.id === 'place' ? 0x4db8ff : 0xff2d2d) : null);
       return;
     }
     if (!t) return;
+    if (this.lockAxis !== null) {
+      t = t.clone();
+      t.setComponent(this.lockAxis, this.lockValue); // keep the stroke on its starting layer
+    }
     if (p.shiftKey && this.anchor) t = axisLock(this.anchor, t);
     this.stamp(ctx, t);
   }
@@ -83,6 +104,7 @@ export class PlaceEraseTool implements Tool {
     if (!this.drawing) return;
     this.drawing = false;
     this.anchor = this.last = null;
+    this.lockAxis = null;
     ctx.commit();
   }
 
@@ -90,6 +112,7 @@ export class PlaceEraseTool implements Tool {
     if (this.drawing) {
       this.drawing = false;
       this.anchor = this.last = null;
+      this.lockAxis = null;
       ctx.commit();
     }
     ctx.setCursor(null);
@@ -99,6 +122,7 @@ export class PlaceEraseTool implements Tool {
     const value = this.id === 'place' ? ctx.colorIndex + 1 : 0;
     for (const [x, y, z] of lineCells(this.last ?? t, t)) {
       if (!ctx.data.inBounds(x, y, z)) continue;
+      if (this.lockAxis !== null && [x, y, z][this.lockAxis] !== this.lockValue) continue;
       const k = key(x, y, z);
       if (this.visited.has(k)) continue;
       this.visited.add(k);
@@ -128,7 +152,7 @@ export class BoxTool implements Tool {
   pointerMove(ctx: ToolContext, p: PointerInfo): void {
     const hit = ctx.pick(p.clientX, p.clientY);
     if (!this.start) {
-      if (hit) ctx.setCursor(cursorAdd(hit.place, this.mode === 'erase' ? 0xff8f8f : 0x8fd3ff));
+      if (hit) ctx.setCursor(cursorAdd(hit.place, this.mode === 'erase' ? 0xff2d2d : 0x4db8ff));
       else ctx.setCursor(null);
       return;
     }
@@ -165,7 +189,7 @@ export class BoxTool implements Tool {
     ctx.setCursor({
       min: new THREE.Vector3(a.x, a.y, a.z),
       max: new THREE.Vector3(b.x + 1, b.y + 1, b.z + 1),
-      color: this.mode === 'erase' ? 0xff6b6b : 0x6bd1ff,
+      color: this.mode === 'erase' ? 0xff2d2d : 0x4db8ff,
     });
   }
 }

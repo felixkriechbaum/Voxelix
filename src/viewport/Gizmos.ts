@@ -13,7 +13,9 @@ export class Gizmos {
   private bbox: THREE.LineSegments;
   private axes: THREE.Group;
   private cursor: THREE.LineSegments;
+  private cursorFill: THREE.Mesh;
   private selection: THREE.LineSegments;
+  private selectionFill: THREE.Mesh;
 
   constructor() {
     this.bbox = new THREE.LineSegments(
@@ -25,22 +27,65 @@ export class Gizmos {
     this.axes = buildAxes();
     this.group.add(this.axes);
 
+    this.cursorFill = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.22,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    this.cursorFill.visible = false;
+    this.cursorFill.renderOrder = 1000;
+    this.group.add(this.cursorFill);
+
     this.cursor = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
-      new THREE.LineBasicMaterial({ color: 0xffffff }),
+      new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      }),
     );
     this.cursor.visible = false;
-    this.cursor.renderOrder = 2;
-    (this.cursor.material as THREE.LineBasicMaterial).depthTest = false;
+    this.cursor.renderOrder = 1001;
     this.group.add(this.cursor);
+
+    // translucent fill so the selection reads as a solid volume, not a hairline
+    this.selectionFill = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshBasicMaterial({
+        color: 0x28e0ff,
+        transparent: true,
+        opacity: 0.16,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    this.selectionFill.visible = false;
+    this.selectionFill.renderOrder = 998;
+    this.group.add(this.selectionFill);
 
     this.selection = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
-      new THREE.LineBasicMaterial({ color: 0x7cff9b }),
+      new THREE.LineBasicMaterial({
+        color: 0x28e0ff,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      }),
     );
     this.selection.visible = false;
-    this.selection.renderOrder = 1;
-    (this.selection.material as THREE.LineBasicMaterial).depthTest = false;
+    this.selection.renderOrder = 999;
     this.group.add(this.selection);
 
     this.setObjectSize(16, 16, 16);
@@ -63,13 +108,15 @@ export class Gizmos {
 
   setCursor(box: CursorBox | null): void {
     this.applyBox(this.cursor, box);
+    this.applyBox(this.cursorFill, box);
   }
 
   setSelection(box: CursorBox | null): void {
     this.applyBox(this.selection, box);
+    this.applyBox(this.selectionFill, box);
   }
 
-  private applyBox(target: THREE.LineSegments, box: CursorBox | null): void {
+  private applyBox(target: THREE.LineSegments | THREE.Mesh, box: CursorBox | null): void {
     if (!box) {
       target.visible = false;
       return;

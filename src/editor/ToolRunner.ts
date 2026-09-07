@@ -184,7 +184,11 @@ export class ToolRunner implements ToolContext {
   private afterEdit(): void {
     if (this.ctx?.extend) {
       const project = this.store.project!;
-      this.viewport.refreshEditable(buildActiveRender(this.ctx.object, project).editableData);
+      const render = buildActiveRender(this.ctx.object, project);
+      this.viewport.refreshEditable(render.editableData);
+      // an erase over a base voxel stores a REMOVED marker — the locked base mesh
+      // has to re-mesh too, or the "deleted" voxel stays visible until an object switch
+      if (render.baseContext) this.viewport.refreshBase(render.baseContext);
     } else {
       this.viewport.flush();
     }

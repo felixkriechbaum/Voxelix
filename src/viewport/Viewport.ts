@@ -108,6 +108,11 @@ export class Viewport {
     this.editableView?.setData(data);
   }
 
+  /** Swap only the locked base-context grid (extend overlay punched new holes). */
+  refreshBase(data: VoxelData): void {
+    this.baseView?.setData(data);
+  }
+
   pick(clientX: number, clientY: number, buildPlane: BuildPlane, buildOffset: number): PickResult | null {
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(

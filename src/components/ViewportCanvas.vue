@@ -64,10 +64,22 @@ function syncSelectionGizmo() {
       ? {
           min: new THREE.Vector3(...sel.min),
           max: new THREE.Vector3(sel.max[0] + 1, sel.max[1] + 1, sel.max[2] + 1),
-          color: 0x7cff9b,
+          color: 0x28e0ff,
         }
       : null,
   );
+}
+
+/** Ctrl+A: switch to the select tool and select the active object's filled bounds. */
+function selectAll() {
+  if (!runner) return;
+  const b = runner.data.filledBounds();
+  if (!b) return;
+  store.toolId = 'select';
+  store.setSelection({
+    min: [b.min.x, b.min.y, b.min.z],
+    max: [b.max.x - 1, b.max.y - 1, b.max.z - 1],
+  });
 }
 
 function loadActive() {
@@ -132,16 +144,26 @@ function onKey(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
 
-  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
-    e.preventDefault();
-    if (e.shiftKey) runner?.redo();
-    else runner?.undo();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyY') {
-    e.preventDefault();
-    runner?.redo();
-    return;
+  // Use e.key (layout-aware) for the letter shortcuts: on a QWERTZ keyboard the
+  // physical Z key reports e.code === 'KeyY', which would swap undo and redo.
+  if (e.ctrlKey || e.metaKey) {
+    const key = e.key.toLowerCase();
+    if (key === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) runner?.redo();
+      else runner?.undo();
+      return;
+    }
+    if (key === 'y') {
+      e.preventDefault();
+      runner?.redo();
+      return;
+    }
+    if (key === 'a') {
+      e.preventDefault();
+      selectAll();
+      return;
+    }
   }
   if (e.code === 'KeyF') {
     viewport?.frameActive();
@@ -293,9 +315,9 @@ watch(() => store.selection, syncSelectionGizmo, { deep: true });
     <div class="hud">
       {{ store.buildPlane.toUpperCase() }} plane @ {{ store.buildOffset }} &nbsp;·&nbsp;
       <template v-if="store.toolId === 'select'">
-        drag = box-select · drag inside = move · arrows nudge · Shift+↕ = Y
+        Ctrl+A = select all · drag = box-select · drag inside = move · arrows nudge · Shift+↕ = Y
       </template>
-      <template v-else>MMB orbit · Shift+MMB pan · RMB+WASD fly · Shift draw = straight line · F frame</template>
+      <template v-else>MMB orbit · Shift+MMB pan · RMB+WASD fly · Shift draw = straight line · Ctrl+A select all · F frame</template>
     </div>
     <ContextMenu
       v-if="menu"
