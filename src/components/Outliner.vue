@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { useEditorStore } from '@/stores/editor';
+import { useSession } from '@/editor/session';
 import { MAX_SIZE } from '@/core/voxel/constants';
 import ContextMenu, { type MenuItem } from './ContextMenu.vue';
 
 const store = useEditorStore();
+const { runner } = useSession();
 const renamingId = ref<string | null>(null);
 const renameText = ref('');
 const renameInput = ref<HTMLInputElement | null>(null);
@@ -34,19 +36,18 @@ function applyResize() {
   store.resizeActive(s);
 }
 
-function openMenu(e: MouseEvent, id: string, name: string) {
+function openMenu(e: MouseEvent, id: string, name: string, kind: string) {
   store.setActive(id);
-  menu.value = {
-    x: e.clientX,
-    y: e.clientY,
-    items: [
-      { label: 'Rename', action: () => startRename(id, name) },
-      { label: 'Duplicate', action: () => store.duplicateObject(id) },
-      { label: 'Extend', action: () => store.extendObject(id) },
-      { separator: true },
-      { label: 'Delete', danger: true, action: () => store.removeObject(id) },
-    ],
-  };
+  const items: MenuItem[] = [
+    { label: 'Rename', action: () => startRename(id, name) },
+    { label: 'Duplicate', action: () => store.duplicateObject(id) },
+    { label: 'Extend', action: () => store.extendObject(id) },
+  ];
+  if (kind === 'extend') {
+    items.push({ label: 'Reset extend to base', danger: true, action: () => runner.value?.resetOverlay() });
+  }
+  items.push({ separator: true }, { label: 'Delete', danger: true, action: () => store.removeObject(id) });
+  menu.value = { x: e.clientX, y: e.clientY, items };
 }
 
 function syncSize() {
@@ -72,7 +73,7 @@ watch(() => store.activeVersion, syncSize);
         :class="{ sel: o.id === store.activeObjectId }"
         @click="store.setActive(o.id)"
         @dblclick="startRename(o.id, o.name)"
-        @contextmenu.prevent="openMenu($event, o.id, o.name)"
+        @contextmenu.prevent="openMenu($event, o.id, o.name, o.kind)"
       >
         <input
           v-if="renamingId === o.id"

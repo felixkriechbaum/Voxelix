@@ -235,8 +235,15 @@ function openContextMenu(x: number, y: number) {
       { separator: true },
       { label: 'Duplicate object', action: () => store.duplicateObject(id) },
       { label: 'Extend object', action: () => store.extendObject(id) },
-      { label: 'Delete object', danger: true, action: () => store.removeObject(id) },
     );
+    if (store.activeObject()?.kind === 'extend') {
+      items.push({
+        label: 'Reset extend to base',
+        danger: true,
+        action: () => runner?.resetOverlay(),
+      });
+    }
+    items.push({ label: 'Delete object', danger: true, action: () => store.removeObject(id) });
   }
   menu.value = { x, y, items };
 }

@@ -222,6 +222,24 @@ export class ToolRunner implements ToolContext {
   }
 
   /**
+   * Extend objects only: discard the whole overlay diff (colours + REMOVED
+   * markers) so the object matches its base again. One undoable history batch.
+   */
+  resetOverlay(): boolean {
+    const ctx = this.ctx;
+    if (!ctx || !ctx.extend) return false;
+    const edits: VoxelEdit[] = [];
+    ctx.object.data.forEachEntry((x, y, z, v) => edits.push({ x, y, z, prev: v, next: 0 }));
+    if (edits.length === 0) return false;
+    for (const e of edits) ctx.object.data.setRaw(e.x, e.y, e.z, 0);
+    this.currentHistory().push({ label: 'Reset extend', edits });
+    this.store.bumpEdit();
+    this.syncActive();
+    this.afterEdit();
+    return true;
+  }
+
+  /**
    * Run an external, non-pointer edit (shape dialog, context-menu ops) through
    * the same overlay-aware write path and history as a tool stroke.
    */
