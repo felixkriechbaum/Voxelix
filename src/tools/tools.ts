@@ -208,8 +208,9 @@ export class BoxTool implements Tool {
   }
 
   pointerUp(ctx: ToolContext): void {
-    if (!this.start || !this.end) return;
-    const [a, b] = ordered(this.start, this.end);
+    const box = this.snapped(ctx);
+    if (!box) return;
+    const [a, b] = box;
     ctx.begin(this.mode === 'fill' ? 'Box fill' : 'Box erase');
     for (let z = a.z; z <= b.z; z++)
       for (let y = a.y; y <= b.y; y++)
@@ -227,9 +228,23 @@ export class BoxTool implements Tool {
     ctx.setCursor(null);
   }
 
-  private updateCursor(ctx: ToolContext): void {
-    if (!this.start || !this.end) return;
+  /** The two corners rounded out to whole brush cells (a voxel, a half, a third). */
+  private snapped(ctx: ToolContext): [THREE.Vector3, THREE.Vector3] | null {
+    if (!this.start || !this.end) return null;
+    const g = Math.max(1, ctx.brushSize);
     const [a, b] = ordered(this.start, this.end);
+    const lo = (v: number) => Math.floor(v / g) * g;
+    const hi = (v: number) => Math.floor(v / g) * g + g - 1;
+    return [
+      new THREE.Vector3(lo(a.x), lo(a.y), lo(a.z)),
+      new THREE.Vector3(hi(b.x), hi(b.y), hi(b.z)),
+    ];
+  }
+
+  private updateCursor(ctx: ToolContext): void {
+    const box = this.snapped(ctx);
+    if (!box) return;
+    const [a, b] = box;
     ctx.setCursor({
       min: new THREE.Vector3(a.x, a.y, a.z),
       max: new THREE.Vector3(b.x + 1, b.y + 1, b.z + 1),
