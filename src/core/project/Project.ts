@@ -1,7 +1,12 @@
 import { VoxelData } from '@/core/voxel/VoxelData';
 import { createDefaultPalette, type Palette } from '@/core/palette';
 import { VoxelObject } from './VoxelObject';
-import { defaultExportSettings, type ExportSettings, type ProjectJson } from './types';
+import {
+  defaultExportSettings,
+  normalizeExportSettings,
+  type ExportSettings,
+  type ProjectJson,
+} from './types';
 
 export class Project {
   id: string;
@@ -122,7 +127,7 @@ export class Project {
       id: json.id,
       name: json.name,
       palette: json.palette,
-      exportSettings: json.exportSettings ?? defaultExportSettings(),
+      exportSettings: normalizeExportSettings(json.exportSettings),
       objects: json.objects.map((o) => VoxelObject.fromJSON(o)),
       activeObjectId: json.activeObjectId,
     });

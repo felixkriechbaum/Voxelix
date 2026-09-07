@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, markRaw, ref, shallowRef } from 'vue';
 import { Project } from '@/core/project/Project';
+import { defaultExportSettings, type ExportSettings } from '@/core/project/types';
 import { paletteToLinearArray } from '@/core/palette';
 import type { ToolId } from '@/tools/types';
 import type { BuildPlane } from '@/viewport/Picker';
@@ -50,6 +51,11 @@ export const useEditorStore = defineStore('editor', () => {
   const projectName = computed(() => {
     void structureVersion.value;
     return project.value?.name ?? '';
+  });
+
+  const exportSettings = computed<ExportSettings>(() => {
+    void structureVersion.value;
+    return project.value?.exportSettings ?? defaultExportSettings();
   });
 
   function activeObject() {
@@ -129,6 +135,12 @@ export const useEditorStore = defineStore('editor', () => {
     editVersion.value++;
   }
 
+  function updateExportSettings(patch: Partial<ExportSettings>) {
+    if (!project.value) return;
+    Object.assign(project.value.exportSettings, patch);
+    structureVersion.value++; // project metadata changed — persist it
+  }
+
   function setSelection(s: Selection | null) {
     selection.value = s;
   }
@@ -162,6 +174,7 @@ export const useEditorStore = defineStore('editor', () => {
     autosaveError,
     objects,
     projectName,
+    exportSettings,
     activeObjectId,
     currentColor,
     toolId,
@@ -181,6 +194,7 @@ export const useEditorStore = defineStore('editor', () => {
     renameObject,
     resizeActive,
     bumpEdit,
+    updateExportSettings,
     setSelection,
     clearSelection,
     setColor,

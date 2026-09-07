@@ -18,7 +18,7 @@ import type { BuildPlane } from '@/viewport/Picker';
 
 const store = useEditorStore();
 const { runner } = useSession();
-const emit = defineEmits<{ (e: 'add-shape'): void }>();
+const emit = defineEmits<{ (e: 'add-shape'): void; (e: 'export-settings'): void }>();
 
 const busy = ref('');
 const batchLabel = ref('');
@@ -158,6 +158,13 @@ async function exportAll() {
     <span v-if="busy === 'export-all'" class="batch">{{ batchLabel }}</span>
     <span v-else-if="autosave.text" class="batch" :class="{ bad: autosave.bad }" :title="autosave.bad ? 'Could not write to browser storage' : 'Autosaved to this browser (IndexedDB)'">{{ autosave.text }}</span>
     <button :disabled="!!busy" @click="save">Save</button>
+    <button
+      :disabled="!!busy"
+      :title="`Export scale: ${store.exportSettings.refVoxels} vox = ${store.exportSettings.refMeters} m`"
+      @click="emit('export-settings')"
+    >
+      Units…
+    </button>
     <button :disabled="!!busy" @click="exportActive">Export GLB</button>
     <button
       class="primary"

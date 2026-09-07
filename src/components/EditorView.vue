@@ -5,16 +5,22 @@ import Outliner from './Outliner.vue';
 import PalettePanel from './PalettePanel.vue';
 import ViewportCanvas from './ViewportCanvas.vue';
 import ShapeDialog from './ShapeDialog.vue';
+import ExportSettingsDialog from './ExportSettingsDialog.vue';
 import { useAutosave } from '@/editor/autosave';
 
 const showShape = ref(false);
+const showExportSettings = ref(false);
 
 useAutosave();
 </script>
 
 <template>
   <div class="editor">
-    <Toolbar class="toolbar" @add-shape="showShape = true" />
+    <Toolbar
+      class="toolbar"
+      @add-shape="showShape = true"
+      @export-settings="showExportSettings = true"
+    />
     <aside class="side">
       <Outliner />
       <PalettePanel />
@@ -23,6 +29,7 @@ useAutosave();
       <ViewportCanvas />
     </main>
     <ShapeDialog v-if="showShape" @close="showShape = false" />
+    <ExportSettingsDialog v-if="showExportSettings" @close="showExportSettings = false" />
   </div>
 </template>
 
