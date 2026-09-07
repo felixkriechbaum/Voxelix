@@ -31,12 +31,12 @@ const autosave = computed(() => {
 });
 
 const tools: Array<{ id: ToolId; label: string; key: string }> = [
-  { id: 'place', label: 'Place', key: '1' },
-  { id: 'erase', label: 'Erase', key: '2' },
-  { id: 'box', label: 'Box', key: '3' },
-  { id: 'paint', label: 'Paint', key: '4' },
-  { id: 'eyedropper', label: 'Pick', key: '5' },
-  { id: 'select', label: 'Select', key: '6' },
+  { id: 'place', label: 'Place', key: 'W or 1' },
+  { id: 'erase', label: 'Erase', key: 'E or 2' },
+  { id: 'box', label: 'Box', key: 'R or 3' },
+  { id: 'paint', label: 'Paint', key: 'T or 4' },
+  { id: 'eyedropper', label: 'Pick', key: 'Q or 5' },
+  { id: 'select', label: 'Select', key: 'V or 6' },
 ];
 const planes: BuildPlane[] = ['xz', 'xy', 'yz'];
 
@@ -126,6 +126,15 @@ async function exportAll() {
       <button :class="{ active: store.boxMode === 'fill' }" @click="store.boxMode = 'fill'">Fill</button>
       <button :class="{ active: store.boxMode === 'erase' }" @click="store.boxMode = 'erase'">Erase</button>
     </template>
+
+    <span class="divider" />
+    <button
+      :class="{ active: store.rmbErase }"
+      title="Right-click erases the voxel under the cursor instead of opening the context menu"
+      @click="store.rmbErase = !store.rmbErase"
+    >
+      RMB erase
+    </button>
 
     <span class="divider" />
     <label class="lbl">Plane</label>

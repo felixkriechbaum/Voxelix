@@ -41,6 +41,7 @@ function setView(view: PresetView) {
   viewport?.setView(view);
 }
 
+// digits + a left-hand letter cluster (Q W E R T, V for select)
 const toolKeys: Record<string, ToolId> = {
   Digit1: 'place',
   Digit2: 'erase',
@@ -48,6 +49,12 @@ const toolKeys: Record<string, ToolId> = {
   Digit4: 'paint',
   Digit5: 'eyedropper',
   Digit6: 'select',
+  KeyW: 'place',
+  KeyE: 'erase',
+  KeyR: 'box',
+  KeyT: 'paint',
+  KeyQ: 'eyedropper',
+  KeyV: 'select',
 };
 
 const nudgeKeys: Record<string, [number, number, number]> = {
@@ -95,7 +102,10 @@ onMounted(() => {
   viewport = new Viewport(c);
   runner = new ToolRunner(viewport, store);
   setSession(viewport, runner);
-  viewport.controls.onContextClick = openContextMenu;
+  viewport.controls.onContextClick = (x, y) => {
+    if (store.rmbErase) rmbEraseAt(x, y);
+    else openContextMenu(x, y);
+  };
 
   viewport.setPalette(store.paletteLinear());
   loadActive();
@@ -200,7 +210,16 @@ function onKey(e: KeyboardEvent) {
     }
   }
 
-  if (toolKeys[e.code]) store.toolId = toolKeys[e.code];
+  if (toolKeys[e.code] && !viewport?.controls.navigating) store.toolId = toolKeys[e.code];
+}
+
+/** Right-click erase (toggle in the toolbar): clear the single voxel under the cursor. */
+function rmbEraseAt(x: number, y: number) {
+  if (!runner) return;
+  const hit = runner.pick(x, y);
+  if (!hit?.remove) return;
+  const v = hit.remove;
+  eraseCells([[v.x, v.y, v.z]], 'Erase voxel');
 }
 
 function openContextMenu(x: number, y: number) {
@@ -324,7 +343,10 @@ watch(() => store.selection, syncSelectionGizmo, { deep: true });
       <template v-if="store.toolId === 'select'">
         Ctrl+A = select all · drag = box-select · drag inside = move · arrows nudge · Shift+↕ = Y
       </template>
-      <template v-else>MMB orbit · Shift+MMB pan · RMB+WASD fly · Shift draw = straight line · Ctrl+A select all · F frame</template>
+      <template v-else>
+        Q/W/E/R/T = tools · MMB orbit · Shift+MMB pan · RMB+WASD fly · Shift draw = straight line ·
+        {{ store.rmbErase ? 'RMB erase' : 'RMB menu' }} · F frame
+      </template>
     </div>
     <ContextMenu
       v-if="menu"

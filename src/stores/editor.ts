@@ -28,6 +28,8 @@ export const useEditorStore = defineStore('editor', () => {
   const currentColor = ref(16);
   const toolId = ref<ToolId>('place');
   const boxMode = ref<'fill' | 'erase'>('fill');
+  /** right-click in the viewport erases a voxel instead of opening the context menu */
+  const rmbErase = ref(false);
   const buildPlane = ref<BuildPlane>('xz');
   const buildOffset = ref(0);
   /** active voxel selection (select tool); per-object, cleared on switch */
@@ -164,6 +166,7 @@ export const useEditorStore = defineStore('editor', () => {
     currentColor,
     toolId,
     boxMode,
+    rmbErase,
     buildPlane,
     buildOffset,
     selection,
