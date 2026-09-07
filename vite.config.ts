@@ -3,7 +3,12 @@ import vue from '@vitejs/plugin-vue';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath, URL } from 'node:url';
 
-export default defineConfig({
+// Project-page path on GitHub Pages: https://felixkriechbaum.github.io/Voxelix/
+// Kept off the dev server so `bun run dev` still serves from the root.
+const ghPagesBase = '/Voxelix/';
+
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? ghPagesBase : '/',
   plugins: [
     vue(),
     VitePWA({
@@ -26,8 +31,8 @@ export default defineConfig({
         theme_color: '#14161d',
         background_color: '#14161d',
         display: 'standalone',
-        start_url: '/',
-        scope: '/',
+        start_url: ghPagesBase,
+        scope: ghPagesBase,
         icons: [
           { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
@@ -50,4 +55,4 @@ export default defineConfig({
   worker: {
     format: 'es',
   },
-});
+}));
