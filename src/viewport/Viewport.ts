@@ -19,7 +19,9 @@ export class Viewport {
 
   private editableView: ChunkMeshView | null = null;
   private baseView: ChunkMeshView | null = null;
-  private clock = new THREE.Clock();
+  /** grid cells per block edge for the active object; world = cell / subdivision */
+  private subdivision = 1;
+  private timer = new THREE.Timer();
   private raf = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -90,12 +92,18 @@ export class Viewport {
       this.baseView = null;
     }
 
+    this.subdivision = Math.max(1, render.subdivision);
+    const inv = 1 / this.subdivision;
+    this.editableView.group.scale.setScalar(inv);
+    this.baseView?.group.scale.setScalar(inv);
+
     const d = render.editableData;
     const b = render.baseContext;
     this.gizmos.setObjectSize(
       Math.max(d.sizeX, b?.sizeX ?? 0),
       Math.max(d.sizeY, b?.sizeY ?? 0),
       Math.max(d.sizeZ, b?.sizeZ ?? 0),
+      this.subdivision,
     );
   }
 
@@ -127,7 +135,15 @@ export class Viewport {
       ...(this.editableView?.raycastTargets() ?? []),
       ...(this.baseView?.raycastTargets() ?? []),
     ];
-    return this.picker.pick(ndc, this.controls.camera, targets, size, buildPlane, buildOffset);
+    return this.picker.pick(
+      ndc,
+      this.controls.camera,
+      targets,
+      size,
+      buildPlane,
+      buildOffset,
+      this.subdivision,
+    );
   }
 
   get projection(): ProjectionMode {
@@ -160,7 +176,10 @@ export class Viewport {
     const radius = b
       ? Math.max(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z) * 0.5
       : Math.max(d.sizeX, d.sizeY, d.sizeZ) * 0.5;
-    this.controls.frame(center, Math.max(radius, 3));
+    // bounds are in cells; the scene is drawn at cell / subdivision
+    const inv = 1 / this.subdivision;
+    center.multiplyScalar(inv);
+    this.controls.frame(center, Math.max(radius * inv, 3));
   }
 
   resize(): void {
@@ -195,7 +214,8 @@ export class Viewport {
 
   private loop = (): void => {
     this.raf = requestAnimationFrame(this.loop);
-    this.controls.update(this.clock.getDelta());
+    this.timer.update();
+    this.controls.update(this.timer.getDelta());
     this.renderer.render(this.scene, this.controls.camera);
   };
 

@@ -75,6 +75,7 @@ export class Project {
       baseId: base.id,
       data: new VoxelData(base.data.sizeX, base.data.sizeY, base.data.sizeZ),
       pivot: base.pivot,
+      subdivision: base.subdivision, // overlay grid must line up with the base
     });
     const idx = this.objects.findIndex((o) => o.id === id);
     this.objects.splice(idx + 1, 0, overlay);
@@ -90,6 +91,7 @@ export class Project {
       kind: 'normal',
       data: src.data.clone(),
       pivot: src.pivot,
+      subdivision: src.subdivision,
     });
     const idx = this.objects.findIndex((o) => o.id === id);
     this.objects.splice(idx + 1, 0, copy);
@@ -123,12 +125,21 @@ export class Project {
     if (json.format !== 'voxeleditor-project') {
       throw new Error('Not a voxeleditor project file');
     }
+    const objects = json.objects.map((o) => VoxelObject.fromJSON(o));
+    const byId = new Map(objects.map((o) => [o.id, o]));
+    // an overlay's grid must line up with its base — keep subdivision in sync
+    for (const o of objects) {
+      if (o.kind === 'extend' && o.baseId) {
+        const base = byId.get(o.baseId);
+        if (base) o.subdivision = base.subdivision;
+      }
+    }
     return new Project({
       id: json.id,
       name: json.name,
       palette: json.palette,
       exportSettings: normalizeExportSettings(json.exportSettings),
-      objects: json.objects.map((o) => VoxelObject.fromJSON(o)),
+      objects,
       activeObjectId: json.activeObjectId,
     });
   }

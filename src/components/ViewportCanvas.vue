@@ -339,7 +339,11 @@ watch(() => store.selection, syncSelectionGizmo, { deep: true });
     <SelectionPanel v-if="store.toolId === 'select' && store.selection" />
 
     <div class="hud">
-      {{ store.buildPlane.toUpperCase() }} plane @ {{ store.buildOffset }} &nbsp;·&nbsp;
+      {{ store.buildPlane.toUpperCase() }} plane @ {{ store.buildOffset }}
+      <template v-if="store.activeSubdivision > 1">
+        &nbsp;·&nbsp; {{ store.activeSubdivision }}× grid (½-blocks)
+      </template>
+      &nbsp;·&nbsp;
       <template v-if="store.toolId === 'select'">
         Ctrl+A = select all · drag = box-select · drag inside = move · arrows nudge · Shift+↕ = Y
       </template>

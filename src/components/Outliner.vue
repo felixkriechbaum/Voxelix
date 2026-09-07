@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { useEditorStore } from '@/stores/editor';
 import { useSession } from '@/editor/session';
 import { MAX_SIZE } from '@/core/voxel/constants';
+import { SUBDIVISIONS } from '@/core/project/types';
 import ContextMenu, { type MenuItem } from './ContextMenu.vue';
 
 const store = useEditorStore();
@@ -48,6 +49,10 @@ function openMenu(e: MouseEvent, id: string, name: string, kind: string) {
   }
   items.push({ separator: true }, { label: 'Delete', danger: true, action: () => store.removeObject(id) });
   menu.value = { x: e.clientX, y: e.clientY, items };
+}
+
+function setSubdivision(n: number) {
+  if (store.activeObjectId) store.setObjectSubdivision(store.activeObjectId, n);
 }
 
 function syncSize() {
@@ -118,6 +123,23 @@ watch(() => store.activeVersion, syncSize);
         <input v-model.number="size[1]" type="number" min="1" :max="MAX_SIZE" />
         <input v-model.number="size[2]" type="number" min="1" :max="MAX_SIZE" />
         <button @click="applyResize">Set</button>
+      </div>
+
+      <h3 style="margin-top: 12px">
+        Block grid
+        <span class="hint">— {{ store.activeSubdivision }} cell{{ store.activeSubdivision === 1 ? '' : 's' }} per block</span>
+      </h3>
+      <div class="row">
+        <button
+          v-for="n in SUBDIVISIONS"
+          :key="n"
+          :class="{ active: store.activeSubdivision === n }"
+          :disabled="active.kind === 'extend'"
+          :title="active.kind === 'extend' ? 'Follows the base object' : `${n}× — place ${n === 1 ? 'full' : '1/' + n} blocks`"
+          @click="setSubdivision(n)"
+        >
+          {{ n }}×
+        </button>
       </div>
     </template>
 

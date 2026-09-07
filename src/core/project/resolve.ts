@@ -37,6 +37,15 @@ export function resolveEffectiveData(
   return result;
 }
 
+/** Grid cells per block edge for an object (an overlay follows its base). */
+export function effectiveSubdivision(object: VoxelObject, project: Project): number {
+  if (object.kind === 'extend' && object.baseId) {
+    const base = project.getById(object.baseId);
+    if (base) return base.subdivision;
+  }
+  return object.subdivision;
+}
+
 export interface ActiveRender {
   editableId: string;
   /** grid the tools read and the editable mesh is built from */
@@ -45,16 +54,20 @@ export interface ActiveRender {
   baseContext: VoxelData | null;
   /** for extend objects: resolved base, used to decide place vs. remove-marker */
   baseResolved: VoxelData | null;
+  /** grid cells per block edge (viewport scales the meshes by 1 / this) */
+  subdivision: number;
 }
 
 /** Build the render/edit bundle for whichever object is active. */
 export function buildActiveRender(object: VoxelObject, project: Project): ActiveRender {
+  const subdivision = effectiveSubdivision(object, project);
   if (object.kind !== 'extend' || !object.baseId) {
     return {
       editableId: object.id,
       editableData: object.data,
       baseContext: null,
       baseResolved: null,
+      subdivision,
     };
   }
   const base = project.getById(object.baseId);
@@ -79,7 +92,7 @@ export function buildActiveRender(object: VoxelObject, project: Project): Active
     if (v !== REMOVED) editableData.setRaw(x, y, z, v);
   });
 
-  return { editableId: object.id, editableData, baseContext, baseResolved };
+  return { editableId: object.id, editableData, baseContext, baseResolved, subdivision };
 }
 
 /**

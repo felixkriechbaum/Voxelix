@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, markRaw, ref, shallowRef } from 'vue';
 import { Project } from '@/core/project/Project';
-import { defaultExportSettings, type ExportSettings } from '@/core/project/types';
+import { clampSubdivision, defaultExportSettings, type ExportSettings } from '@/core/project/types';
 import { paletteToLinearArray } from '@/core/palette';
 import type { ToolId } from '@/tools/types';
 import type { BuildPlane } from '@/viewport/Picker';
@@ -56,6 +56,16 @@ export const useEditorStore = defineStore('editor', () => {
   const exportSettings = computed<ExportSettings>(() => {
     void structureVersion.value;
     return project.value?.exportSettings ?? defaultExportSettings();
+  });
+
+  /** grid cells per block edge for the active object (overlays report their base's) */
+  const activeSubdivision = computed(() => {
+    void structureVersion.value;
+    void activeVersion.value;
+    const o = activeObject();
+    if (!o) return 1;
+    if (o.kind === 'extend' && o.baseId) return project.value?.getById(o.baseId)?.subdivision ?? 1;
+    return o.subdivision;
   });
 
   function activeObject() {
@@ -131,6 +141,23 @@ export const useEditorStore = defineStore('editor', () => {
     activeVersion.value++;
   }
 
+  /** Change an object's grid subdivision (cells per block edge). Overlays follow their base. */
+  function setObjectSubdivision(id: string, n: number) {
+    const proj = project.value;
+    const obj = proj?.getById(id);
+    if (!proj || !obj) return;
+    // an overlay can't diverge from its base — redirect to the base
+    const target = obj.kind === 'extend' && obj.baseId ? proj.getById(obj.baseId) : obj;
+    if (!target) return;
+    const v = clampSubdivision(n);
+    if (target.subdivision === v) return;
+    target.subdivision = v;
+    for (const o of proj.objects) if (o.baseId === target.id) o.subdivision = v;
+    selection.value = null;
+    structureVersion.value++;
+    activeVersion.value++;
+  }
+
   function bumpEdit() {
     editVersion.value++;
   }
@@ -175,6 +202,7 @@ export const useEditorStore = defineStore('editor', () => {
     objects,
     projectName,
     exportSettings,
+    activeSubdivision,
     activeObjectId,
     currentColor,
     toolId,
@@ -193,6 +221,7 @@ export const useEditorStore = defineStore('editor', () => {
     removeObject,
     renameObject,
     resizeActive,
+    setObjectSubdivision,
     bumpEdit,
     updateExportSettings,
     setSelection,

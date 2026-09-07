@@ -88,8 +88,16 @@ src/
 
 ### Coordinate conventions
 
-- Voxel `(x,y,z)` fills the unit cube `[x, x+1]`. Meshes sit at the origin.
-- Build planes: XZ (ground, default), XY, YZ, with an integer offset.
+- Voxel `(x,y,z)` fills the unit cube `[x, x+1]` in grid space. Meshes sit at the origin.
+- `VoxelObject.subdivision` (1 / 2 / 4) = grid cells per block edge. `VoxelData`
+  stays integer-celled; the viewport draws the active object's meshes + gizmos at
+  `1 / subdivision` (via `ActiveRender.subdivision`, `Gizmos.setObjectSize`,
+  `Picker` unscales hits) so one block = one world unit, and the exporter divides
+  its per-block scale by it. An `extend` overlay always follows its base's value.
+- Build planes: XZ (ground, default), XY, YZ, with an integer (cell) offset.
+- Export scale: `ExportSettings.refVoxels` **blocks** = `refMeters` metres
+  (`metersPerBlock`); default 16 blocks = 1 m. Legacy `unitsPerVoxel` files load as
+  `{refVoxels: 1, refMeters: <value>}`.
 - Export pivot `bottom-center`: X/Z centred on the filled bounds, Y=0 at the base.
 - Export up-axis: glTF-native Y-up, or a baked Y→Z rotation for Blender.
 
@@ -121,6 +129,8 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   thumbnails, PWA (manifest + service worker, prompt-to-update), batch export to
   a folder, ortho camera + preset views (numpad 1/3/5/7). Also: live re-mesh
   during drag strokes, Shift = straight-line draw for place/erase/paint.
+- **Done — iter 4 (so far):** letter tool shortcuts + RMB-erase toggle, "reset
+  extend to base", export-scale dialog (N blocks = M metres), per-object grid
+  subdivision (½ / ¼ blocks), GitHub Pages deploy.
 - **Next — iter 4:** ideas — selection copy/paste across objects, marquee in
-  screen space, export-settings dialog (units/up-axis/pivot per object), grid
-  snapping options, mirror modelling.
+  screen space, per-object up-axis/pivot in the export dialog, mirror modelling.

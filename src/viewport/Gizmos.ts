@@ -9,7 +9,8 @@ export interface CursorBox {
 /** Ground grid, object bounding box, axis lines and the edit cursor. */
 export class Gizmos {
   readonly group = new THREE.Group();
-  private grid: THREE.GridHelper | null = null;
+  private gridFine: THREE.GridHelper | null = null;
+  private gridBlock: THREE.GridHelper | null = null;
   private bbox: THREE.LineSegments;
   private axes: THREE.Group;
   private cursor: THREE.LineSegments;
@@ -91,19 +92,38 @@ export class Gizmos {
     this.setObjectSize(16, 16, 16);
   }
 
-  setObjectSize(x: number, y: number, z: number): void {
+  /**
+   * @param subdivision grid cells per block edge. The whole gizmo group is drawn
+   *   at 1 / subdivision so one block reads as one world unit; a brighter grid
+   *   marks the block boundaries when subdivision > 1.
+   */
+  setObjectSize(x: number, y: number, z: number, subdivision = 1): void {
+    this.group.scale.setScalar(1 / subdivision);
+    this.axes.scale.setScalar(subdivision); // keep the axis gnomon a constant size
+
     this.bbox.scale.set(x, y, z);
     this.bbox.position.set(x / 2, y / 2, z / 2);
 
-    if (this.grid) {
-      this.group.remove(this.grid);
-      this.grid.geometry.dispose();
-      (this.grid.material as THREE.Material).dispose();
+    for (const g of [this.gridFine, this.gridBlock]) {
+      if (!g) continue;
+      this.group.remove(g);
+      g.geometry.dispose();
+      (g.material as THREE.Material).dispose();
     }
+
     const span = Math.max(x, z);
-    this.grid = new THREE.GridHelper(span, span, 0x3a4252, 0x2a2f3d);
-    this.grid.position.set(x / 2, 0, z / 2);
-    this.group.add(this.grid);
+    this.gridFine = new THREE.GridHelper(span, span, 0x3a4252, 0x2a2f3d);
+    this.gridFine.position.set(x / 2, 0, z / 2);
+    this.group.add(this.gridFine);
+
+    if (subdivision > 1) {
+      const blocks = Math.max(1, Math.round(span / subdivision));
+      this.gridBlock = new THREE.GridHelper(blocks * subdivision, blocks, 0x5b6a86, 0x4a5468);
+      this.gridBlock.position.set(x / 2, 0.002, z / 2);
+      this.group.add(this.gridBlock);
+    } else {
+      this.gridBlock = null;
+    }
   }
 
   setCursor(box: CursorBox | null): void {

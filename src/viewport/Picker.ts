@@ -22,15 +22,18 @@ export class Picker {
     objectSize: { x: number; y: number; z: number },
     buildPlane: BuildPlane,
     buildOffset: number,
+    /** grid cells per block edge; the scene is drawn at cell / subdivision */
+    subdivision = 1,
   ): PickResult | null {
     this.ray.setFromCamera(ndc, camera);
+    const s = Math.max(1, subdivision);
 
     const hits = this.ray.intersectObjects(targets, false);
     if (hits.length > 0 && hits[0].face) {
       const h = hits[0];
       const n = h.face!.normal.clone();
       n.set(Math.round(n.x), Math.round(n.y), Math.round(n.z));
-      const p = h.point;
+      const p = h.point.clone().multiplyScalar(s); // world -> cell coords
       const solid = new THREE.Vector3(
         Math.floor(p.x - n.x * 0.5),
         Math.floor(p.y - n.y * 0.5),
@@ -44,9 +47,10 @@ export class Picker {
       };
     }
 
-    const plane = planeFor(buildPlane, buildOffset);
+    const plane = planeFor(buildPlane, buildOffset / s);
     const point = new THREE.Vector3();
     if (!this.ray.ray.intersectPlane(plane, point)) return null;
+    point.multiplyScalar(s); // world -> cell coords
 
     const place = new THREE.Vector3(
       Math.floor(point.x),

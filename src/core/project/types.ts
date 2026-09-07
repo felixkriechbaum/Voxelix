@@ -13,12 +13,17 @@ export interface VoxelObjectJson {
   data: VoxelDataJson;
   /** per-object export pivot; default 'bottom-center' */
   pivot?: 'bottom-center' | 'min-corner';
+  /** grid cells per block edge (1 = classic full-block grid); default 1 */
+  subdivision?: number;
 }
 
 export interface ExportSettings {
   /**
-   * Scale reference: an edge of `refVoxels` voxels is exported as `refMeters`
-   * metres (glTF units are metres). metres-per-voxel = refMeters / refVoxels.
+   * Scale reference: an edge of `refVoxels` blocks is exported as `refMeters`
+   * metres (glTF units are metres). metres-per-block = refMeters / refVoxels.
+   * A subdivided object has several grid cells per block; the exporter divides
+   * this down accordingly, so the real-world size is unaffected by subdivision.
+   * (`refVoxels` keeps its name from before subdivision existed — 1 block then.)
    */
   refVoxels: number;
   refMeters: number;
@@ -41,12 +46,20 @@ export interface ProjectJson {
 
 export const PROJECT_FILE_EXT = '.voxproj';
 
+/** Allowed grid-subdivision factors (cells per block edge). */
+export const SUBDIVISIONS = [1, 2, 4] as const;
+
+export function clampSubdivision(n: number | undefined): number {
+  const v = Math.round(n ?? 1);
+  return SUBDIVISIONS.includes(v as (typeof SUBDIVISIONS)[number]) ? v : 1;
+}
+
 export function defaultExportSettings(): ExportSettings {
   return { refVoxels: 16, refMeters: 1, upAxis: 'y' };
 }
 
-/** Metres per voxel for the exporter, from the ref pair (or a legacy value). */
-export function metersPerVoxel(s: ExportSettings): number {
+/** Metres per block for the exporter, from the ref pair (or a legacy value). */
+export function metersPerBlock(s: ExportSettings): number {
   if (s.refVoxels > 0 && s.refMeters > 0) return s.refMeters / s.refVoxels;
   return s.unitsPerVoxel && s.unitsPerVoxel > 0 ? s.unitsPerVoxel : 0.1;
 }

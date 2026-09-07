@@ -160,7 +160,7 @@ async function exportAll() {
     <button :disabled="!!busy" @click="save">Save</button>
     <button
       :disabled="!!busy"
-      :title="`Export scale: ${store.exportSettings.refVoxels} vox = ${store.exportSettings.refMeters} m`"
+      :title="`Export scale: ${store.exportSettings.refVoxels} blocks = ${store.exportSettings.refMeters} m`"
       @click="emit('export-settings')"
     >
       Units…
