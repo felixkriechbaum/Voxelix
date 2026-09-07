@@ -21,6 +21,7 @@ import {
   faFileExport,
   faBoxesStacked,
   faShapes,
+  faFolderOpen,
 } from '@fortawesome/free-solid-svg-icons';
 import type { ToolId } from '@/tools/types';
 import type { BuildPlane } from '@/viewport/Picker';
@@ -134,6 +135,14 @@ async function exportAll() {
 
 <template>
   <div class="panel bar">
+    <button
+      class="ic"
+      title="Projects — open or start another (this one is saved automatically)"
+      aria-label="Back to projects"
+      @click="store.closeProject()"
+    >
+      <Icon :icon="faFolderOpen" />
+    </button>
     <strong class="name" :title="`Project: ${store.projectName}`">{{ store.projectName }}</strong>
     <span class="divider" />
 

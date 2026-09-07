@@ -65,7 +65,8 @@ src/
                    autosave.ts (debounced IndexedDB save), selectionOps.ts
                    (move/recolour/duplicate/delete via ToolContext),
                    save.ts (manual .voxproj save, shared by button + Ctrl+S),
-                   theme.ts (light/dark/system, [data-theme] on <html>)
+                   theme.ts (light/dark/system, [data-theme] on <html>),
+                   viewstate.ts (per-project camera, localStorage)
   stores/          Pinia: editor.ts holds the Project (markRaw) + reactive
                    version counters (structureVersion / activeVersion /
                    paletteVersion / editVersion) that components watch, plus
@@ -87,6 +88,9 @@ src/
   neighbour's border voxels change (`VoxelData.dirty`).
 - Autosave writes the whole project (+ a viewport JPEG thumbnail) to IndexedDB
   5s after the last edit; the StartScreen lists those records as recent projects.
+- `App.vue` reopens the last project on boot (`localStorage 'voxelix.lastProject'`
+  → its IndexedDB record). The toolbar folder button (`store.closeProject`) goes
+  back to the StartScreen. Camera view is remembered per project in localStorage.
 
 ### Coordinate conventions
 

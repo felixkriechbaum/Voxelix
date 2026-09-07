@@ -2,6 +2,14 @@ import * as THREE from 'three';
 
 export type ProjectionMode = 'perspective' | 'ortho';
 
+export interface CameraState {
+  target: [number, number, number];
+  distance: number;
+  yaw: number;
+  pitch: number;
+  mode: ProjectionMode;
+}
+
 export type PresetView = 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom' | 'iso';
 
 /**
@@ -33,6 +41,8 @@ export class GodotControls {
 
   /** RMB press-and-release without a drag / fly opens a context menu. */
   onContextClick: ((clientX: number, clientY: number) => void) | null = null;
+  /** fired after any orbit / pan / zoom so the view can be persisted */
+  onChange: (() => void) | null = null;
   private rmbDownAt = new THREE.Vector2();
   private rmbDownTime = 0;
   private rmbMoved = false;
@@ -207,7 +217,28 @@ export class GodotControls {
     }
   }
 
+  /** Serializable orbit + projection state. */
+  snapshot(): CameraState {
+    return {
+      target: [this.target.x, this.target.y, this.target.z],
+      distance: this.distance,
+      yaw: this.yaw,
+      pitch: this.pitch,
+      mode: this.mode,
+    };
+  }
+
+  restore(s: CameraState): void {
+    this.target.set(s.target[0], s.target[1], s.target[2]);
+    this.distance = s.distance;
+    this.yaw = s.yaw;
+    this.pitch = Math.max(this.minPitch, Math.min(this.maxPitch, s.pitch));
+    this.mode = s.mode;
+    this.apply();
+  }
+
   private apply(): void {
+    this.onChange?.();
     const cp = this.pitch;
     const offset = new THREE.Vector3(
       this.distance * Math.cos(cp) * Math.sin(this.yaw),

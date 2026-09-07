@@ -9,6 +9,7 @@ import { buildActiveRender } from '@/core/project/resolve';
 import { floodRegion } from '@/core/ops/flood';
 import { deleteSelection, moveSelection } from '@/editor/selectionOps';
 import { useTheme } from '@/editor/theme';
+import { loadCameraState, makeCameraSaver } from '@/editor/viewstate';
 import ContextMenu, { type MenuItem } from './ContextMenu.vue';
 import SelectionPanel from './SelectionPanel.vue';
 import type { ToolId } from '@/tools/types';
@@ -20,6 +21,11 @@ const canvas = ref<HTMLCanvasElement | null>(null);
 let viewport: Viewport | null = null;
 let runner: ToolRunner | null = null;
 let ro: ResizeObserver | null = null;
+let camSaver: ReturnType<typeof makeCameraSaver> | null = null;
+
+function persistCamera() {
+  if (viewport && camSaver) camSaver.flush(viewport.controls.snapshot());
+}
 
 const menu = ref<{ x: number; y: number; items: MenuItem[] } | null>(null);
 const projection = ref<ProjectionMode>('perspective');
@@ -117,7 +123,21 @@ onMounted(() => {
   viewport.setPalette(store.paletteLinear());
   viewport.setDark(theme.value === 'dark');
   loadActive();
-  viewport.frameActive();
+
+  const pid = store.project?.id;
+  const cam = pid ? loadCameraState(pid) : null;
+  if (cam) {
+    viewport.controls.restore(cam);
+    projection.value = cam.mode;
+  } else {
+    viewport.frameActive();
+  }
+  if (pid) {
+    camSaver = makeCameraSaver(pid);
+    viewport.controls.onChange = () => camSaver?.save(viewport!.controls.snapshot());
+  }
+  window.addEventListener('beforeunload', persistCamera);
+
   syncSelectionGizmo();
 
   ro = new ResizeObserver(() => viewport?.resize());
@@ -131,6 +151,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  persistCamera();
+  window.removeEventListener('beforeunload', persistCamera);
   const c = canvas.value;
   c?.removeEventListener('pointerdown', onDown);
   c?.removeEventListener('pointermove', onMove);
@@ -142,6 +164,7 @@ onBeforeUnmount(() => {
   viewport?.dispose();
   viewport = null;
   runner = null;
+  camSaver = null;
 });
 
 function onDown(e: PointerEvent) {

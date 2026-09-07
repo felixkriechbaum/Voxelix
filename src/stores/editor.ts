@@ -90,10 +90,29 @@ export const useEditorStore = defineStore('editor', () => {
     structureVersion.value++;
     activeVersion.value++;
     paletteVersion.value++;
+    try {
+      localStorage.setItem('voxelix.lastProject', p.id);
+    } catch {
+      /* private mode */
+    }
   }
 
   function newProject(name: string) {
     setProject(Project.createNew(name || 'Untitled'));
+  }
+
+  /** Back to the start screen. Autosave has the project; nothing is lost. */
+  function closeProject() {
+    project.value = null;
+    fileHandle.value = null;
+    activeObjectId.value = null;
+    selection.value = null;
+    try {
+      localStorage.removeItem('voxelix.lastProject');
+    } catch {
+      /* private mode */
+    }
+    structureVersion.value++;
   }
 
   function setActive(id: string) {
@@ -233,6 +252,7 @@ export const useEditorStore = defineStore('editor', () => {
     activeObject,
     setProject,
     newProject,
+    closeProject,
     setActive,
     addObject,
     duplicateObject,
