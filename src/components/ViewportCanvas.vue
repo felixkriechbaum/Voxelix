@@ -108,6 +108,7 @@ onMounted(() => {
   };
 
   viewport.setPalette(store.paletteLinear());
+  viewport.setBlockStep(store.brushSize);
   loadActive();
   viewport.frameActive();
   syncSelectionGizmo();
@@ -286,6 +287,10 @@ watch(
   () => loadActive(),
 );
 watch(
+  () => store.brushSize,
+  (n) => viewport?.setBlockStep(n),
+);
+watch(
   () => store.paletteVersion,
   () => viewport?.setPalette(store.paletteLinear()),
 );
@@ -340,9 +345,7 @@ watch(() => store.selection, syncSelectionGizmo, { deep: true });
 
     <div class="hud">
       {{ store.buildPlane.toUpperCase() }} plane @ {{ store.buildOffset }}
-      <template v-if="store.activeSubdivision > 1">
-        &nbsp;·&nbsp; {{ store.activeSubdivision }}× grid · brush: {{ store.brushBlocks ? 'block' : 'fine' }}
-      </template>
+      <template v-if="store.brushSize > 1">&nbsp;·&nbsp; brush {{ store.brushSize }}³</template>
       &nbsp;·&nbsp;
       <template v-if="store.toolId === 'select'">
         Ctrl+A = select all · drag = box-select · drag inside = move · arrows nudge · Shift+↕ = Y

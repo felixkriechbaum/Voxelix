@@ -2,12 +2,7 @@ import { HistoryStore } from '@/core/history/History';
 import { createTool, BoxTool } from '@/tools/tools';
 import { VoxelData } from '@/core/voxel/VoxelData';
 import { REMOVED } from '@/core/voxel/constants';
-import {
-  buildActiveRender,
-  effectiveSubdivision,
-  overlayWriteValue,
-  resolveEffectiveData,
-} from '@/core/project/resolve';
+import { buildActiveRender, overlayWriteValue, resolveEffectiveData } from '@/core/project/resolve';
 import type { Tool, ToolContext, ToolId, PointerInfo } from '@/tools/types';
 import type { Selection } from '@/core/ops/selection';
 import type { VoxelEdit } from '@/core/voxel/types';
@@ -33,8 +28,6 @@ export class ToolRunner implements ToolContext {
   private histories = new HistoryStore();
   private ctx: ActiveCtx | null = null;
   private liveFlushQueued = false;
-  /** grid cells per block edge for the active object (drives the block brush) */
-  private activeSubdivision = 1;
 
   constructor(
     private viewport: Viewport,
@@ -63,7 +56,6 @@ export class ToolRunner implements ToolContext {
       this.ctx = null;
       return;
     }
-    this.activeSubdivision = effectiveSubdivision(object, project);
     if (object.kind === 'extend' && object.baseId) {
       const base = project.getById(object.baseId);
       const baseResolved = base
@@ -104,13 +96,17 @@ export class ToolRunner implements ToolContext {
     return this.store.buildPlane;
   }
 
-  /** brush footprint in cells: a full block when the block brush is on, else 1 */
+  /** brush footprint in voxels: place / erase an N^3 block at once */
   get brushSize(): number {
-    return this.store.brushBlocks ? Math.max(1, this.activeSubdivision) : 1;
+    return Math.max(1, this.store.brushSize);
   }
 
   pick(clientX: number, clientY: number) {
     return this.viewport.pick(clientX, clientY, this.store.buildPlane, this.store.buildOffset);
+  }
+
+  pickOnPlane(clientX: number, clientY: number, axis: 0 | 1 | 2, value: number) {
+    return this.viewport.pickOnPlane(clientX, clientY, axis, value);
   }
 
   begin(label: string): void {
@@ -192,11 +188,6 @@ export class ToolRunner implements ToolContext {
   // ---- history --------------------------------------------------------
   private currentHistory() {
     return this.histories.for(this.store.activeObjectId ?? '_');
-  }
-
-  /** Drop an object's undo stack — its stored diffs no longer match the grid. */
-  forgetHistory(objectId: string): void {
-    this.histories.drop(objectId);
   }
 
   private afterEdit(): void {

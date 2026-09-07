@@ -24,6 +24,14 @@ function brushOrigin(v: THREE.Vector3, b: number): THREE.Vector3 {
   );
 }
 
+/** The axis (0=x, 1=y, 2=z) a face normal points along. */
+function normalAxis(n: THREE.Vector3): 0 | 1 | 2 {
+  const ax = Math.abs(n.x);
+  const ay = Math.abs(n.y);
+  const az = Math.abs(n.z);
+  return ax >= ay && ax >= az ? 0 : ay >= az ? 1 : 2;
+}
+
 /** Every integer cell on the 3D line from `a` to `b`, endpoints included. */
 function lineCells(a: THREE.Vector3, b: THREE.Vector3): Array<[number, number, number]> {
   const dx = b.x - a.x;
@@ -51,19 +59,17 @@ function axisLock(anchor: THREE.Vector3, t: THREE.Vector3): THREE.Vector3 {
   return out;
 }
 
-/** Place or erase voxels, click or drag. Hold Shift to draw a straight line. */
+/**
+ * Place or erase voxels, click or drag. A drag locks to the plane of the first
+ * hit (the face you clicked) so it never wanders onto another face or drills into
+ * the object. Hold Shift to further constrain to a straight line.
+ */
 export class PlaceEraseTool implements Tool {
   private drawing = false;
   private visited = new Set<string>();
   private anchor: THREE.Vector3 | null = null;
   private last: THREE.Vector3 | null = null;
-  /**
-   * Erase only: axis + value of the layer the stroke started on. A drag then
-   * stays in that plane instead of drilling straight into the object as the ray
-   * re-hits the voxels behind each one it clears. Click a different face (or one
-   * layer deeper) to switch the plane.
-   */
-  private lockAxis: 0 | 1 | 2 | null = null;
+  private lockAxis: 0 | 1 | 2 = 1;
   private lockValue = 0;
   constructor(public readonly id: 'place' | 'erase') {}
 
@@ -77,27 +83,22 @@ export class PlaceEraseTool implements Tool {
     if (p.button !== 0) return;
     const hit = ctx.pick(p.clientX, p.clientY);
     const t = hit && (this.id === 'place' ? hit.place : hit.remove);
-    if (!t || !ctx.data.inBounds(t.x, t.y, t.z)) return;
+    if (!hit || !t || !ctx.data.inBounds(t.x, t.y, t.z)) return;
     this.drawing = true;
     this.visited.clear();
     this.anchor = t.clone();
     this.last = null;
-
-    this.lockAxis = null;
-    if (this.id === 'erase' && hit && hit.hitObject && ctx.brushSize === 1) {
-      const n = hit.normal;
-      this.lockAxis = Math.abs(n.x) ? 0 : Math.abs(n.y) ? 1 : 2;
-      this.lockValue = t.getComponent(this.lockAxis);
-    }
+    this.lockAxis = normalAxis(hit.normal);
+    this.lockValue = t.getComponent(this.lockAxis);
 
     ctx.begin(this.id === 'place' ? 'Place' : 'Erase');
     this.stamp(ctx, t);
   }
 
   pointerMove(ctx: ToolContext, p: PointerInfo): void {
-    let t = this.target(ctx, p);
     const color = this.id === 'place' ? 0x4db8ff : 0xff2d2d;
     if (!this.drawing) {
+      const t = this.target(ctx, p);
       if (t) {
         const b = ctx.brushSize;
         const o = brushOrigin(t, b);
@@ -107,11 +108,8 @@ export class PlaceEraseTool implements Tool {
       }
       return;
     }
+    let t = ctx.pickOnPlane(p.clientX, p.clientY, this.lockAxis, this.lockValue);
     if (!t) return;
-    if (this.lockAxis !== null) {
-      t = t.clone();
-      t.setComponent(this.lockAxis, this.lockValue); // keep the stroke on its starting layer
-    }
     if (p.shiftKey && this.anchor) t = axisLock(this.anchor, t);
     this.stamp(ctx, t);
   }
@@ -120,7 +118,6 @@ export class PlaceEraseTool implements Tool {
     if (!this.drawing) return;
     this.drawing = false;
     this.anchor = this.last = null;
-    this.lockAxis = null;
     ctx.commit();
   }
 
@@ -128,7 +125,6 @@ export class PlaceEraseTool implements Tool {
     if (this.drawing) {
       this.drawing = false;
       this.anchor = this.last = null;
-      this.lockAxis = null;
       ctx.commit();
     }
     ctx.setCursor(null);
@@ -138,7 +134,6 @@ export class PlaceEraseTool implements Tool {
     const value = this.id === 'place' ? ctx.colorIndex + 1 : 0;
     const b = ctx.brushSize;
     for (const [lx, ly, lz] of lineCells(this.last ?? t, t)) {
-      if (this.lockAxis !== null && [lx, ly, lz][this.lockAxis] !== this.lockValue) continue;
       const ox = Math.floor(lx / b) * b;
       const oy = Math.floor(ly / b) * b;
       const oz = Math.floor(lz / b) * b;
@@ -163,6 +158,8 @@ export class BoxTool implements Tool {
   mode: 'fill' | 'erase' = 'fill';
   private start: THREE.Vector3 | null = null;
   private end: THREE.Vector3 | null = null;
+  private lockAxis: 0 | 1 | 2 = 1;
+  private lockValue = 0;
 
   pointerDown(ctx: ToolContext, p: PointerInfo): void {
     if (p.button !== 0) return;
@@ -171,20 +168,21 @@ export class BoxTool implements Tool {
     const v = this.mode === 'erase' && hit.remove ? hit.remove : hit.place;
     this.start = clampToGrid(v, ctx);
     this.end = this.start.clone();
+    // the box stays flat on the plane of the first corner for the whole drag
+    this.lockAxis = normalAxis(hit.normal);
+    this.lockValue = this.start.getComponent(this.lockAxis);
     this.updateCursor(ctx);
   }
 
   pointerMove(ctx: ToolContext, p: PointerInfo): void {
-    const hit = ctx.pick(p.clientX, p.clientY);
     if (!this.start) {
+      const hit = ctx.pick(p.clientX, p.clientY);
       if (hit) ctx.setCursor(cursorAdd(hit.place, this.mode === 'erase' ? 0xff2d2d : 0x4db8ff));
       else ctx.setCursor(null);
       return;
     }
-    if (hit) {
-      const v = this.mode === 'erase' && hit.remove ? hit.remove : hit.place;
-      this.end = clampToGrid(v, ctx);
-    }
+    const t = ctx.pickOnPlane(p.clientX, p.clientY, this.lockAxis, this.lockValue);
+    if (t) this.end = clampToGrid(t, ctx);
     this.updateCursor(ctx);
   }
 
@@ -226,28 +224,32 @@ export class PaintTool implements Tool {
   private visited = new Set<string>();
   private anchor: THREE.Vector3 | null = null;
   private last: THREE.Vector3 | null = null;
+  private lockAxis: 0 | 1 | 2 = 1;
+  private lockValue = 0;
 
   pointerDown(ctx: ToolContext, p: PointerInfo): void {
     if (p.button !== 0) return;
     const hit = ctx.pick(p.clientX, p.clientY);
+    if (!hit?.remove) return;
     this.drawing = true;
     this.visited.clear();
-    this.anchor = hit?.remove ? hit.remove.clone() : null;
+    this.anchor = hit.remove.clone();
     this.last = null;
+    this.lockAxis = normalAxis(hit.normal);
+    this.lockValue = hit.remove.getComponent(this.lockAxis);
     ctx.begin('Paint');
-    if (hit?.remove) this.stamp(ctx, hit.remove);
+    this.stamp(ctx, hit.remove);
   }
 
   pointerMove(ctx: ToolContext, p: PointerInfo): void {
-    const hit = ctx.pick(p.clientX, p.clientY);
     if (!this.drawing) {
+      const hit = ctx.pick(p.clientX, p.clientY);
       ctx.setCursor(hit?.remove ? cursorAdd(hit.remove, 0xffe08a) : null);
       return;
     }
-    if (!hit?.remove) return;
-    let t = hit.remove;
-    if (!this.anchor) this.anchor = t.clone();
-    if (p.shiftKey) t = axisLock(this.anchor, t);
+    let t = ctx.pickOnPlane(p.clientX, p.clientY, this.lockAxis, this.lockValue);
+    if (!t) return;
+    if (p.shiftKey && this.anchor) t = axisLock(this.anchor, t);
     this.stamp(ctx, t);
   }
 

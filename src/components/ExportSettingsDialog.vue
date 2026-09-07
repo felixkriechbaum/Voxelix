@@ -12,7 +12,7 @@ const form = reactive({
   upAxis: s.upAxis,
 });
 
-const perBlock = computed(() => {
+const perVoxel = computed(() => {
   const v = form.refMeters / form.refVoxels;
   return Number.isFinite(v) && v > 0 ? v : 0;
 });
@@ -35,13 +35,12 @@ function apply() {
       <label>Scale reference</label>
       <div class="row scale">
         <input v-model.number="form.refVoxels" type="number" min="1" step="1" />
-        <span>blocks&nbsp;=</span>
+        <span>voxels&nbsp;=</span>
         <input v-model.number="form.refMeters" type="number" min="0.001" step="0.1" />
         <span>metres</span>
       </div>
       <p class="note">
-        1 block = {{ perBlock.toFixed(4) }} m · a 16-block edge = {{ (perBlock * 16).toFixed(2) }} m.
-        Half-blocks (grid subdivision) scale automatically.
+        1 voxel = {{ perVoxel.toFixed(4) }} m · a 16-voxel edge = {{ (perVoxel * 16).toFixed(2) }} m
       </p>
 
       <label>Up axis</label>

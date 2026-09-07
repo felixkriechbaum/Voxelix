@@ -39,6 +39,7 @@ const tools: Array<{ id: ToolId; label: string; key: string }> = [
   { id: 'select', label: 'Select', key: 'V or 6' },
 ];
 const planes: BuildPlane[] = ['xz', 'xy', 'yz'];
+const brushSizes = [1, 2, 4];
 
 async function save() {
   if (!store.project) return;
@@ -127,22 +128,17 @@ async function exportAll() {
       <button :class="{ active: store.boxMode === 'erase' }" @click="store.boxMode = 'erase'">Erase</button>
     </template>
 
-    <template v-if="store.activeSubdivision > 1 && (store.toolId === 'place' || store.toolId === 'erase')">
+    <template v-if="['place', 'erase'].includes(store.toolId)">
       <span class="divider" />
       <label class="lbl">Brush</label>
       <button
-        :class="{ active: store.brushBlocks }"
-        :title="`Place / erase a full block (${store.activeSubdivision}³ cells)`"
-        @click="store.brushBlocks = true"
+        v-for="n in brushSizes"
+        :key="n"
+        :class="{ active: store.brushSize === n }"
+        :title="n === 1 ? 'Single voxel' : `Place / erase a ${n}×${n}×${n} block`"
+        @click="store.brushSize = n"
       >
-        Block
-      </button>
-      <button
-        :class="{ active: !store.brushBlocks }"
-        title="Place / erase a single fine cell"
-        @click="store.brushBlocks = false"
-      >
-        Fine
+        {{ n }}³
       </button>
     </template>
 
@@ -179,7 +175,7 @@ async function exportAll() {
     <button :disabled="!!busy" @click="save">Save</button>
     <button
       :disabled="!!busy"
-      :title="`Export scale: ${store.exportSettings.refVoxels} blocks = ${store.exportSettings.refMeters} m`"
+      :title="`Export scale: ${store.exportSettings.refVoxels} voxels = ${store.exportSettings.refMeters} m`"
       @click="emit('export-settings')"
     >
       Units…

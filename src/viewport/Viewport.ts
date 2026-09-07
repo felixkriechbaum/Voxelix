@@ -19,8 +19,8 @@ export class Viewport {
 
   private editableView: ChunkMeshView | null = null;
   private baseView: ChunkMeshView | null = null;
-  /** grid cells per block edge for the active object; world = cell / subdivision */
-  private subdivision = 1;
+  /** current brush footprint in voxels — drives the block-grid overlay */
+  private blockStep = 1;
   private timer = new THREE.Timer();
   private raf = 0;
 
@@ -92,19 +92,20 @@ export class Viewport {
       this.baseView = null;
     }
 
-    this.subdivision = Math.max(1, render.subdivision);
-    const inv = 1 / this.subdivision;
-    this.editableView.group.scale.setScalar(inv);
-    this.baseView?.group.scale.setScalar(inv);
-
     const d = render.editableData;
     const b = render.baseContext;
     this.gizmos.setObjectSize(
       Math.max(d.sizeX, b?.sizeX ?? 0),
       Math.max(d.sizeY, b?.sizeY ?? 0),
       Math.max(d.sizeZ, b?.sizeZ ?? 0),
-      this.subdivision,
+      this.blockStep,
     );
+  }
+
+  /** Brush footprint in voxels; shows a brighter grid every N cells when N > 1. */
+  setBlockStep(step: number): void {
+    this.blockStep = Math.max(1, step);
+    this.gizmos.setBlockStep(this.blockStep);
   }
 
   flush(): void {
@@ -121,12 +122,15 @@ export class Viewport {
     this.baseView?.setData(data);
   }
 
-  pick(clientX: number, clientY: number, buildPlane: BuildPlane, buildOffset: number): PickResult | null {
+  private ndc(clientX: number, clientY: number): THREE.Vector2 {
     const rect = this.canvas.getBoundingClientRect();
-    const ndc = new THREE.Vector2(
+    return new THREE.Vector2(
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1,
     );
+  }
+
+  pick(clientX: number, clientY: number, buildPlane: BuildPlane, buildOffset: number): PickResult | null {
     const d = this.editableView?.data;
     const size = d
       ? { x: d.sizeX, y: d.sizeY, z: d.sizeZ }
@@ -135,15 +139,12 @@ export class Viewport {
       ...(this.editableView?.raycastTargets() ?? []),
       ...(this.baseView?.raycastTargets() ?? []),
     ];
-    return this.picker.pick(
-      ndc,
-      this.controls.camera,
-      targets,
-      size,
-      buildPlane,
-      buildOffset,
-      this.subdivision,
-    );
+    return this.picker.pick(this.ndc(clientX, clientY), this.controls.camera, targets, size, buildPlane, buildOffset);
+  }
+
+  /** Cell where the ray crosses the axis-`axis` plane locked at cell `value`. */
+  pickOnPlane(clientX: number, clientY: number, axis: 0 | 1 | 2, value: number): THREE.Vector3 | null {
+    return this.picker.pickPlane(this.ndc(clientX, clientY), this.controls.camera, axis, value);
   }
 
   get projection(): ProjectionMode {
@@ -176,10 +177,7 @@ export class Viewport {
     const radius = b
       ? Math.max(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z) * 0.5
       : Math.max(d.sizeX, d.sizeY, d.sizeZ) * 0.5;
-    // bounds are in cells; the scene is drawn at cell / subdivision
-    const inv = 1 / this.subdivision;
-    center.multiplyScalar(inv);
-    this.controls.frame(center, Math.max(radius * inv, 3));
+    this.controls.frame(center, Math.max(radius, 3));
   }
 
   resize(): void {

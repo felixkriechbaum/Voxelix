@@ -11,6 +11,8 @@ export class Gizmos {
   readonly group = new THREE.Group();
   private gridFine: THREE.GridHelper | null = null;
   private gridBlock: THREE.GridHelper | null = null;
+  private lastSize: [number, number, number] = [16, 16, 16];
+  private blockStep = 1;
   private bbox: THREE.LineSegments;
   private axes: THREE.Group;
   private cursor: THREE.LineSegments;
@@ -92,18 +94,21 @@ export class Gizmos {
     this.setObjectSize(16, 16, 16);
   }
 
-  /**
-   * @param subdivision grid cells per block edge. The whole gizmo group is drawn
-   *   at 1 / subdivision so one block reads as one world unit; a brighter grid
-   *   marks the block boundaries when subdivision > 1.
-   */
-  setObjectSize(x: number, y: number, z: number, subdivision = 1): void {
-    this.group.scale.setScalar(1 / subdivision);
-    this.axes.scale.setScalar(subdivision); // keep the axis gnomon a constant size
-
+  setObjectSize(x: number, y: number, z: number, blockStep = this.blockStep): void {
+    this.lastSize = [x, y, z];
+    this.blockStep = Math.max(1, blockStep);
     this.bbox.scale.set(x, y, z);
     this.bbox.position.set(x / 2, y / 2, z / 2);
+    this.rebuildGrid();
+  }
 
+  /** Brush footprint in voxels; a brighter grid marks every Nth line when N > 1. */
+  setBlockStep(step: number): void {
+    this.blockStep = Math.max(1, step);
+    this.rebuildGrid();
+  }
+
+  private rebuildGrid(): void {
     for (const g of [this.gridFine, this.gridBlock]) {
       if (!g) continue;
       this.group.remove(g);
@@ -111,15 +116,16 @@ export class Gizmos {
       (g.material as THREE.Material).dispose();
     }
 
+    const [x, , z] = this.lastSize;
     const span = Math.max(x, z);
     this.gridFine = new THREE.GridHelper(span, span, 0x3a4252, 0x2a2f3d);
     this.gridFine.position.set(x / 2, 0, z / 2);
     this.group.add(this.gridFine);
 
-    if (subdivision > 1) {
-      const blocks = Math.max(1, Math.round(span / subdivision));
-      this.gridBlock = new THREE.GridHelper(blocks * subdivision, blocks, 0x5b6a86, 0x4a5468);
-      this.gridBlock.position.set(x / 2, 0.002, z / 2);
+    if (this.blockStep > 1) {
+      const blocks = Math.max(1, Math.round(span / this.blockStep));
+      this.gridBlock = new THREE.GridHelper(blocks * this.blockStep, blocks, 0x5b6a86, 0x4a5468);
+      this.gridBlock.position.set(x / 2, 0.01, z / 2);
       this.group.add(this.gridBlock);
     } else {
       this.gridBlock = null;

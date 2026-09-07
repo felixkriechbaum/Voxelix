@@ -88,16 +88,17 @@ src/
 
 ### Coordinate conventions
 
-- Voxel `(x,y,z)` fills the unit cube `[x, x+1]` in grid space. Meshes sit at the origin.
-- `VoxelObject.subdivision` (1 / 2 / 4) = grid cells per block edge. `VoxelData`
-  stays integer-celled; the viewport draws the active object's meshes + gizmos at
-  `1 / subdivision` (via `ActiveRender.subdivision`, `Gizmos.setObjectSize`,
-  `Picker` unscales hits) so one block = one world unit, and the exporter divides
-  its per-block scale by it. An `extend` overlay always follows its base's value.
-- Build planes: XZ (ground, default), XY, YZ, with an integer (cell) offset.
-- Export scale: `ExportSettings.refVoxels` **blocks** = `refMeters` metres
-  (`metersPerBlock`); default 16 blocks = 1 m. Legacy `unitsPerVoxel` files load as
-  `{refVoxels: 1, refMeters: <value>}`.
+- Voxel `(x,y,z)` fills the unit cube `[x, x+1]`. Meshes sit at the origin.
+- Build planes: XZ (ground, default), XY, YZ, with an integer offset.
+- Brush size (`editor.ts` `brushSize`, 1/2/4): place/erase an N³ block of voxels
+  at once, block-grid-aligned. Pure placement convenience — never touches
+  existing voxels. `Gizmos` draws a brighter grid every N cells while N > 1.
+- Every drag stroke (place/erase/box/paint) locks to the plane of the first hit
+  (`Picker.pickPlane` / `ToolContext.pickOnPlane`) so it can't wander onto
+  another face or drill inward. Shift adds a straight-line constraint on top.
+- Export scale: `ExportSettings.refVoxels` voxels = `refMeters` metres
+  (`metersPerVoxel`); default 16 voxels = 1 m. Legacy `unitsPerVoxel` files load
+  as `{refVoxels: 1, refMeters: <value>}`.
 - Export pivot `bottom-center`: X/Z centred on the filled bounds, Y=0 at the base.
 - Export up-axis: glTF-native Y-up, or a baked Y→Z rotation for Blender.
 
@@ -130,7 +131,7 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   a folder, ortho camera + preset views (numpad 1/3/5/7). Also: live re-mesh
   during drag strokes, Shift = straight-line draw for place/erase/paint.
 - **Done — iter 4 (so far):** letter tool shortcuts + RMB-erase toggle, "reset
-  extend to base", export-scale dialog (N blocks = M metres), per-object grid
-  subdivision (½ / ¼ blocks), GitHub Pages deploy.
+  extend to base", export-scale dialog (N voxels = M metres), N³ brush sizes,
+  plane-locked drag strokes, GitHub Pages deploy.
 - **Next — iter 4:** ideas — selection copy/paste across objects, marquee in
   screen space, per-object up-axis/pivot in the export dialog, mirror modelling.

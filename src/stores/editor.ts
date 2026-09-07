@@ -1,9 +1,8 @@
 import { defineStore } from 'pinia';
 import { computed, markRaw, ref, shallowRef } from 'vue';
 import { Project } from '@/core/project/Project';
-import { clampSubdivision, defaultExportSettings, type ExportSettings } from '@/core/project/types';
+import { defaultExportSettings, type ExportSettings } from '@/core/project/types';
 import { paletteToLinearArray } from '@/core/palette';
-import { useSession } from '@/editor/session';
 import type { ToolId } from '@/tools/types';
 import type { BuildPlane } from '@/viewport/Picker';
 import type { Selection } from '@/core/ops/selection';
@@ -32,8 +31,8 @@ export const useEditorStore = defineStore('editor', () => {
   const boxMode = ref<'fill' | 'erase'>('fill');
   /** right-click in the viewport erases a voxel instead of opening the context menu */
   const rmbErase = ref(false);
-  /** place/erase a whole block vs. a single fine cell (only matters when subdivided) */
-  const brushBlocks = ref(true);
+  /** place / erase a block of N^3 voxels at once (1 = single voxel) */
+  const brushSize = ref(1);
   const buildPlane = ref<BuildPlane>('xz');
   const buildOffset = ref(0);
   /** active voxel selection (select tool); per-object, cleared on switch */
@@ -59,16 +58,6 @@ export const useEditorStore = defineStore('editor', () => {
   const exportSettings = computed<ExportSettings>(() => {
     void structureVersion.value;
     return project.value?.exportSettings ?? defaultExportSettings();
-  });
-
-  /** grid cells per block edge for the active object (overlays report their base's) */
-  const activeSubdivision = computed(() => {
-    void structureVersion.value;
-    void activeVersion.value;
-    const o = activeObject();
-    if (!o) return 1;
-    if (o.kind === 'extend' && o.baseId) return project.value?.getById(o.baseId)?.subdivision ?? 1;
-    return o.subdivision;
   });
 
   function activeObject() {
@@ -144,37 +133,6 @@ export const useEditorStore = defineStore('editor', () => {
     activeVersion.value++;
   }
 
-  /**
-   * Change an object's grid subdivision (cells per block edge). The voxel data is
-   * resampled so the object keeps its physical size — finer grid, same shape —
-   * and overlays built on it follow along. Undo history for the touched objects
-   * is dropped (its diffs no longer line up with the grid).
-   */
-  function setObjectSubdivision(id: string, n: number) {
-    const proj = project.value;
-    const obj = proj?.getById(id);
-    if (!proj || !obj) return;
-    // an overlay can't diverge from its base — redirect to the base
-    const target = obj.kind === 'extend' && obj.baseId ? proj.getById(obj.baseId) : obj;
-    if (!target) return;
-    const v = clampSubdivision(n);
-    if (target.subdivision === v) return;
-
-    const factor = v / target.subdivision;
-    const touched = [target, ...proj.objects.filter((o) => o.baseId === target.id)];
-    for (const o of touched) {
-      o.data.resample(factor);
-      o.subdivision = v;
-    }
-    const { runner } = useSession();
-    for (const o of touched) runner.value?.forgetHistory(o.id);
-
-    selection.value = null;
-    structureVersion.value++;
-    activeVersion.value++;
-    editVersion.value++; // persist via autosave
-  }
-
   function bumpEdit() {
     editVersion.value++;
   }
@@ -219,13 +177,12 @@ export const useEditorStore = defineStore('editor', () => {
     objects,
     projectName,
     exportSettings,
-    activeSubdivision,
     activeObjectId,
     currentColor,
     toolId,
     boxMode,
     rmbErase,
-    brushBlocks,
+    brushSize,
     buildPlane,
     buildOffset,
     selection,
@@ -239,7 +196,6 @@ export const useEditorStore = defineStore('editor', () => {
     removeObject,
     renameObject,
     resizeActive,
-    setObjectSubdivision,
     bumpEdit,
     updateExportSettings,
     setSelection,

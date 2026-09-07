@@ -22,18 +22,15 @@ export class Picker {
     objectSize: { x: number; y: number; z: number },
     buildPlane: BuildPlane,
     buildOffset: number,
-    /** grid cells per block edge; the scene is drawn at cell / subdivision */
-    subdivision = 1,
   ): PickResult | null {
     this.ray.setFromCamera(ndc, camera);
-    const s = Math.max(1, subdivision);
 
     const hits = this.ray.intersectObjects(targets, false);
     if (hits.length > 0 && hits[0].face) {
       const h = hits[0];
       const n = h.face!.normal.clone();
       n.set(Math.round(n.x), Math.round(n.y), Math.round(n.z));
-      const p = h.point.clone().multiplyScalar(s); // world -> cell coords
+      const p = h.point;
       const solid = new THREE.Vector3(
         Math.floor(p.x - n.x * 0.5),
         Math.floor(p.y - n.y * 0.5),
@@ -47,10 +44,9 @@ export class Picker {
       };
     }
 
-    const plane = planeFor(buildPlane, buildOffset / s);
+    const plane = planeFor(buildPlane, buildOffset);
     const point = new THREE.Vector3();
     if (!this.ray.ray.intersectPlane(plane, point)) return null;
-    point.multiplyScalar(s); // world -> cell coords
 
     const place = new THREE.Vector3(
       Math.floor(point.x),
@@ -68,6 +64,35 @@ export class Picker {
       return null;
     }
     return { place, remove: null, normal: normalFor(buildPlane), hitObject: false };
+  }
+
+  /**
+   * Intersect the ray with an axis-aligned plane (`axis` 0/1/2) locked at cell
+   * coordinate `value`, and return the cell there. Used to keep a drag stroke on
+   * the plane it started on instead of chasing whatever surface is under the
+   * cursor.
+   */
+  pickPlane(
+    ndc: THREE.Vector2,
+    camera: THREE.Camera,
+    axis: 0 | 1 | 2,
+    value: number,
+  ): THREE.Vector3 | null {
+    this.ray.setFromCamera(ndc, camera);
+    const normal = new THREE.Vector3();
+    normal.setComponent(axis, 1);
+    // sit the plane through the middle of the locked layer so the crossing point
+    // lands on the right in-plane cell
+    const plane = new THREE.Plane(normal, -(value + 0.5));
+    const point = new THREE.Vector3();
+    if (!this.ray.ray.intersectPlane(plane, point)) return null;
+    const cell = new THREE.Vector3(
+      Math.floor(point.x),
+      Math.floor(point.y),
+      Math.floor(point.z),
+    );
+    cell.setComponent(axis, value);
+    return cell;
   }
 }
 

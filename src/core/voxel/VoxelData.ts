@@ -213,47 +213,6 @@ export class VoxelData {
     this.forEachFilled((x, y, z, c) => {
       if (next.inBounds(x, y, z)) next.set(x, y, z, c);
     });
-    this.adopt(next);
-  }
-
-  /**
-   * Rescale the grid by an integer factor while preserving physical extent:
-   * `factor` 2 blows every cell up into a 2^3 block (so nothing visually shrinks
-   * when the grid is subdivided); `factor` 0.5 collapses each 2^3 block back to
-   * one cell. Keeps REMOVED overlay markers. Sizes are clamped to MAX_SIZE.
-   */
-  resample(factor: number): void {
-    if (factor === 1 || factor <= 0) return;
-    const next = new VoxelData(
-      Math.round(this.sizeX * factor),
-      Math.round(this.sizeY * factor),
-      Math.round(this.sizeZ * factor),
-    );
-    if (factor > 1) {
-      const f = Math.round(factor);
-      this.forEachEntry((x, y, z, v) => {
-        for (let dz = 0; dz < f; dz++)
-          for (let dy = 0; dy < f; dy++)
-            for (let dx = 0; dx < f; dx++) {
-              if (next.inBounds(x * f + dx, y * f + dy, z * f + dz)) {
-                next.setRaw(x * f + dx, y * f + dy, z * f + dz, v);
-              }
-            }
-      });
-    } else {
-      const f = Math.round(1 / factor);
-      this.forEachEntry((x, y, z, v) => {
-        const px = (x / f) | 0;
-        const py = (y / f) | 0;
-        const pz = (z / f) | 0;
-        // first non-empty cell in a block wins
-        if (next.inBounds(px, py, pz) && next.get(px, py, pz) === 0) next.setRaw(px, py, pz, v);
-      });
-    }
-    this.adopt(next);
-  }
-
-  private adopt(next: VoxelData): void {
     this.sizeX = next.sizeX;
     this.sizeY = next.sizeY;
     this.sizeZ = next.sizeZ;

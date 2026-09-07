@@ -31,9 +31,19 @@ export class ChunkMeshView {
     data.markAllChunksDirty();
   }
 
-  /** Swap in a freshly-derived grid (extend re-resolve) and re-mesh everything. */
+  /** Swap in a freshly-derived grid (extend re-resolve, resize) and re-mesh it.
+   *  Meshes for chunks that no longer exist in the new grid are dropped so a
+   *  shrunk grid can't leave ghosts; surviving chunks keep their mesh (no flicker
+   *  on the per-frame extend refresh) and get their geometry replaced by flush(). */
   setData(data: VoxelData): void {
     this.data = data;
+    const valid = new Set(data.allChunkKeys());
+    for (const [k, m] of this.meshes) {
+      if (valid.has(k)) continue;
+      this.group.remove(m);
+      m.geometry.dispose();
+      this.meshes.delete(k);
+    }
     data.markAllChunksDirty();
     this.flush();
   }

@@ -7,7 +7,7 @@ import { resolveEffectiveData } from '@/core/project/resolve';
 import type { VoxelData } from '@/core/voxel/VoxelData';
 import type { VoxelObject } from '@/core/project/VoxelObject';
 import type { Project } from '@/core/project/Project';
-import { metersPerBlock, type ExportSettings } from '@/core/project/types';
+import { metersPerVoxel, type ExportSettings } from '@/core/project/types';
 
 /** Greedy-mesh every chunk of an object and concatenate into one mesh. */
 export function buildMergedArrays(data: VoxelData, paletteLinear: Float32Array): MeshArrays {
@@ -71,8 +71,7 @@ export async function exportObjectToGlb(
     oz = -(bounds.min.z + bounds.max.z) / 2;
   }
 
-  // export scale is defined per block; a subdivided grid has `subdivision` cells per block
-  const s = metersPerBlock(settings) / Math.max(1, object.subdivision);
+  const s = metersPerVoxel(settings);
   const pos = arrays.positions;
   const nrm = arrays.normals;
   const zUp = settings.upAxis === 'z';
