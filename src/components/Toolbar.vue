@@ -47,12 +47,10 @@ const brushes = [
 ];
 function pickBrush(f: number) {
   store.voxelFraction = f;
-  if (f > 1 && store.activeObjectId) store.ensureDetail(store.activeObjectId);
+  // any brush choice subdivides the object so the three sizes are distinct
+  if (store.activeObjectId) store.ensureDetail(store.activeObjectId);
 }
-// which brush reads as active: fraction is capped by how finely the object is subdivided
-const currentBrushF = computed(() =>
-  store.activeDetail === 1 ? 1 : Math.min(store.activeDetail, store.voxelFraction),
-);
+const currentBrushF = computed(() => Math.min(store.activeDetail, store.voxelFraction));
 
 async function save() {
   if (!store.project) return;

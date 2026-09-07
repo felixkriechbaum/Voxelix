@@ -128,6 +128,9 @@ export class PlaceEraseTool implements Tool {
     if (!t) return;
     if (p.shiftKey && this.anchor) t = axisLock(this.anchor, t);
     this.stamp(ctx, t);
+    const b = Math.max(1, ctx.brushSize);
+    const o = brushOrigin(t, b);
+    ctx.setCursor({ min: o, max: o.clone().addScalar(b), color });
   }
 
   pointerUp(ctx: ToolContext): void {
@@ -190,10 +193,17 @@ export class BoxTool implements Tool {
   }
 
   pointerMove(ctx: ToolContext, p: PointerInfo): void {
+    const color = this.mode === 'erase' ? 0xff2d2d : 0x4db8ff;
     if (!this.start) {
       const hit = ctx.pick(p.clientX, p.clientY);
-      if (hit) ctx.setCursor(cursorAdd(hit.place, this.mode === 'erase' ? 0xff2d2d : 0x4db8ff));
-      else ctx.setCursor(null);
+      const t = hit && (this.mode === 'erase' && hit.remove ? hit.remove : hit.place);
+      if (t) {
+        const b = Math.max(1, ctx.brushSize);
+        const o = brushOrigin(t, b);
+        ctx.setCursor({ min: o, max: o.clone().addScalar(b), color });
+      } else {
+        ctx.setCursor(null);
+      }
       return;
     }
     const t = ctx.pickOnPlane(
@@ -278,7 +288,13 @@ export class PaintTool implements Tool {
   pointerMove(ctx: ToolContext, p: PointerInfo): void {
     if (!this.drawing) {
       const hit = ctx.pick(p.clientX, p.clientY);
-      ctx.setCursor(hit?.remove ? cursorAdd(hit.remove, 0xffe08a) : null);
+      if (hit?.remove) {
+        const b = Math.max(1, ctx.brushSize);
+        const o = brushOrigin(hit.remove, b);
+        ctx.setCursor({ min: o, max: o.clone().addScalar(b), color: 0xffe08a });
+      } else {
+        ctx.setCursor(null);
+      }
       return;
     }
     let t = ctx.pickOnPlane(
@@ -291,6 +307,9 @@ export class PaintTool implements Tool {
     if (!t) return;
     if (p.shiftKey && this.anchor) t = axisLock(this.anchor, t);
     this.stamp(ctx, t);
+    const b = Math.max(1, ctx.brushSize);
+    const o = brushOrigin(t, b);
+    ctx.setCursor({ min: o, max: o.clone().addScalar(b), color: 0xffe08a });
   }
 
   pointerUp(ctx: ToolContext): void {
@@ -311,12 +330,22 @@ export class PaintTool implements Tool {
 
   private stamp(ctx: ToolContext, t: THREE.Vector3): void {
     const value = ctx.colorIndex + 1;
-    for (const [x, y, z] of lineCells(this.last ?? t, t)) {
-      if (!ctx.data.isSolid(x, y, z)) continue;
-      const k = key(x, y, z);
+    const b = Math.max(1, ctx.brushSize);
+    for (const [lx, ly, lz] of lineCells(this.last ?? t, t)) {
+      const ox = Math.floor(lx / b) * b;
+      const oy = Math.floor(ly / b) * b;
+      const oz = Math.floor(lz / b) * b;
+      const k = key(ox, oy, oz);
       if (this.visited.has(k)) continue;
       this.visited.add(k);
-      ctx.write(x, y, z, value);
+      for (let dz = 0; dz < b; dz++)
+        for (let dy = 0; dy < b; dy++)
+          for (let dx = 0; dx < b; dx++) {
+            // paint only recolours what is already there
+            if (ctx.data.isSolid(ox + dx, oy + dy, oz + dz)) {
+              ctx.write(ox + dx, oy + dy, oz + dz, value);
+            }
+          }
     }
     this.last = t.clone();
   }
