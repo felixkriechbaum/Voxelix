@@ -130,6 +130,9 @@ src/
   as `{refVoxels: 1, refMeters: <value>}`.
 - Export pivot `bottom-center`: X/Z centred on the filled bounds, Y=0 at the base.
 - Export up-axis: glTF-native Y-up, or a baked Y→Z rotation for Blender.
+- Export wraps the mesh in a `THREE.Scene` named after the object. Handing
+  `GLTFExporter` a loose Object3D makes it invent its own wrapper hardcoded to
+  `AuxScene`, which is the name Godot then gives the imported scene's root.
 
 ### Extend / overlay objects (the subtle part)
 

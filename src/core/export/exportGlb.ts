@@ -123,8 +123,16 @@ export async function exportObjectToGlb(
   const mesh = new THREE.Mesh(geom, material);
   mesh.name = object.name;
 
+  // Hand the exporter a named Scene, not a bare Mesh: given a loose object it
+  // wraps one itself and hardcodes the name to "AuxScene", which is then what
+  // Godot calls the imported scene's root. With a Scene the object's own name
+  // carries through.
+  const scene = new THREE.Scene();
+  scene.name = object.name;
+  scene.add(mesh);
+
   const exporter = new GLTFExporter();
-  const result = (await exporter.parseAsync(mesh, {
+  const result = (await exporter.parseAsync(scene, {
     binary: true,
     onlyVisible: false,
   })) as ArrayBuffer;
