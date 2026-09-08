@@ -301,11 +301,14 @@ function openContextMenu(x: number, y: number) {
       { label: 'Extend object', action: () => store.extendObject(id) },
     );
     if (store.activeObject()?.kind === 'extend') {
-      items.push({
-        label: 'Reset extend to base',
-        danger: true,
-        action: () => runner?.resetOverlay(),
-      });
+      items.push(
+        { label: 'Re-sync overlay with base', action: () => store.resyncOverlay(id) },
+        {
+          label: 'Reset extend to base',
+          danger: true,
+          action: () => runner?.resetOverlay(),
+        },
+      );
     }
     items.push({ label: 'Delete object', danger: true, action: () => store.removeObject(id) });
   }

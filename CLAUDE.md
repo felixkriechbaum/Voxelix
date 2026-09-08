@@ -130,7 +130,14 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   the bright editable mesh) and `baseContext` (resolved base minus overlay-touched
   cells, the dimmed locked mesh).
 - `overlayWriteValue(value, baseResolved, x, y, z)` — an erase (`value === 0`)
-  becomes `REMOVED` only where the base actually has a voxel, else a plain delete.
+  becomes `REMOVED` only where the base actually has a voxel, else a plain
+  delete. A colour write that **matches the base** stores `0` (inherit), never a
+  redundant copy: tools read the *resolved* grid, so a broad op (bucket flood,
+  box fill, moved selection) would otherwise write every resolved cell back and
+  bake the whole base into the overlay — after which nothing renders as locked
+  base and base edits stop propagating. `compactOverlay()` repairs an overlay
+  that already got baked (drops redundant cells, resolved look unchanged);
+  `store.resyncOverlay` exposes it as "Re-sync overlay with base".
 - `ToolRunner` keeps a live resolved read-view in lockstep with overlay writes so
   tools see "what's visually there" while writes target the overlay.
 

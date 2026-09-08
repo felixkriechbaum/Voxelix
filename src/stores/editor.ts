@@ -4,6 +4,7 @@ import { Project } from '@/core/project/Project';
 import { defaultExportSettings, type ExportSettings } from '@/core/project/types';
 import {
   alignOverlayToBase,
+  compactOverlay,
   effectiveDetail,
   extendFamily,
   resolveEffectiveData,
@@ -191,14 +192,42 @@ export const useEditorStore = defineStore('editor', () => {
     obj.baseId = base.id;
     obj.detail = targetDetail;
 
-    const aligned = alignOverlayToBase(obj.data, resolveEffectiveData(base, proj));
+    const baseResolved = resolveEffectiveData(base, proj);
+    const aligned = alignOverlayToBase(obj.data, baseResolved);
     if (aligned) obj.data = aligned;
+    // keep only what actually differs, so the base stays live underneath
+    obj.data = compactOverlay(obj.data, baseResolved).data;
 
     runner.value?.forgetHistory(id);
     selection.value = null;
     structureVersion.value++;
     activeVersion.value++;
     editVersion.value++;
+  }
+
+  /**
+   * Drop everything an overlay stores that its base already provides, so only
+   * the real difference is left. Repairs an overlay that had the base baked
+   * into it (a broad fill on an extend used to copy every resolved cell in),
+   * which is what makes the base stop showing as dimmed context and stop
+   * propagating its own edits. Returns the number of cells dropped.
+   */
+  function resyncOverlay(id: string): number {
+    const proj = project.value;
+    const obj = proj?.getById(id);
+    if (!proj || !obj || obj.kind !== 'extend' || !obj.baseId) return 0;
+    const base = proj.getById(obj.baseId);
+    if (!base) return 0;
+    const { data, dropped } = compactOverlay(obj.data, resolveEffectiveData(base, proj));
+    if (dropped === 0) return 0;
+    obj.data = data;
+    const { runner } = useSession();
+    runner.value?.forgetHistory(id);
+    selection.value = null;
+    structureVersion.value++;
+    activeVersion.value++;
+    editVersion.value++;
+    return dropped;
   }
 
   /**
@@ -353,6 +382,7 @@ export const useEditorStore = defineStore('editor', () => {
     duplicateObject,
     extendObject,
     setExtendBase,
+    resyncOverlay,
     rotateOverlay,
     removeObject,
     renameObject,

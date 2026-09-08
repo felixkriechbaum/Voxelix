@@ -75,6 +75,7 @@ function openMenu(e: MouseEvent, id: string, name: string, kind: string) {
   ];
   if (kind === 'extend') {
     items.push(
+      { label: 'Re-sync overlay with base', action: () => store.resyncOverlay(id) },
       { label: 'Rotate overlay only ⟲', action: () => store.rotateOverlay(id, -1) },
       { label: 'Rotate overlay only ⟳', action: () => store.rotateOverlay(id, 1) },
       { label: 'Reset extend to base', danger: true, action: () => runner.value?.resetOverlay() },

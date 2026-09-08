@@ -154,9 +154,38 @@ export function buildActiveRender(object: VoxelObject, project: Project): Active
 /**
  * Translate a tool write into an overlay write for an extend object.
  * Returns the raw value to store in the overlay grid.
+ *
+ * A write that matches what the base already has stores 0 — "inherit" — rather
+ * than a redundant copy. Without that, any broad operation (a bucket flood, a
+ * box fill, a moved selection) reads the *resolved* grid and writes every cell
+ * back, baking the whole base into the overlay: nothing renders as locked base
+ * any more and later base edits stop showing through.
  */
 export function overlayWriteValue(value: number, baseResolved: VoxelData, x: number, y: number, z: number): number {
-  if (value !== 0) return value; // place / recolour
+  const base = baseResolved.get(x, y, z);
+  // place / recolour: only store where it actually differs from the base
+  if (value !== 0) return value === base ? 0 : value;
   // erase: only mark REMOVED when the base actually has a voxel here
-  return baseResolved.isSolid(x, y, z) ? REMOVED : 0;
+  return base !== 0 ? REMOVED : 0;
+}
+
+/**
+ * Strip redundant cells from an overlay diff: colours that already match the
+ * base, and REMOVED markers where the base has nothing to remove. What is left
+ * is the real difference, so the base renders as locked context again and later
+ * base edits propagate. Repairs an overlay that got the base baked into it.
+ */
+export function compactOverlay(
+  overlay: VoxelData,
+  baseResolved: VoxelData,
+): { data: VoxelData; dropped: number } {
+  const data = new VoxelData(overlay.sizeX, overlay.sizeY, overlay.sizeZ);
+  let dropped = 0;
+  overlay.forEachEntry((x, y, z, v) => {
+    const base = baseResolved.get(x, y, z);
+    const redundant = v === REMOVED ? base === 0 : v === base;
+    if (redundant) dropped++;
+    else data.setRaw(x, y, z, v);
+  });
+  return { data, dropped };
 }
