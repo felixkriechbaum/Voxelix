@@ -202,7 +202,7 @@ async function exportAll() {
       <label class="lbl" title="Hold Shift on click to recolour every matching voxel in scope, ignoring connectivity">Shift = loose</label>
     </template>
 
-    <template v-if="['place', 'erase', 'box'].includes(store.toolId)">
+    <template v-if="['place', 'erase', 'box', 'paint'].includes(store.toolId)">
       <span class="divider" />
       <label class="lbl">Brush</label>
       <button
