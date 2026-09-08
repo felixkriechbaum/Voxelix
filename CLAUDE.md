@@ -155,8 +155,12 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   top/bottom view (pole up-vector swing in `GodotControls`). Whole-object 90°
   Y-rotation (`VoxelData.rotateY` → `store.rotateActive`, drops history, rotates
   an extend base + its overlays together). Paint-bucket tool (`BucketTool`,
-  spread mode volume/face/outline via `store.bucketMode`; Shift = ignore
-  connectivity). FRONT/+Z
-  and LEFT/−X sprite labels on the ground grid (`Gizmos`, theme-aware).
+  spread mode volume/face/outline via `store.bucketMode`; face = coplanar cells
+  whose outward side is exposed; Shift = ignore connectivity). FRONT/+Z and
+  LEFT/−X sprite labels on the ground grid (`Gizmos`, theme-aware). Single-cell
+  (1/6) brush size. `store.setExtendBase` — re-link / re-parent an overlay
+  keeping its diff (Outliner context menu "Set base → …"); broken-base overlays
+  show "ext ⚠". `resolve.extendFamily` keeps a base + its whole overlay chain
+  together for rotate / subdivide; `Project.remove` cascades transitively.
 - **Next — iter 4:** ideas — selection copy/paste across objects, marquee in
   screen space, per-object up-axis/pivot in the export dialog, mirror modelling.

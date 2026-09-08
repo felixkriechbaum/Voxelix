@@ -46,6 +46,23 @@ function applyResize() {
   store.resizeActive(s);
 }
 
+function baseExists(o: { baseId?: string }): boolean {
+  return !!o.baseId && store.objects.some((x) => x.id === o.baseId);
+}
+
+/** True if making `candidateId` the base of `overlayId` would form a cycle. */
+function wouldCycle(candidateId: string, overlayId: string): boolean {
+  const byId = new Map(store.objects.map((o) => [o.id, o]));
+  let cur = byId.get(candidateId);
+  const seen = new Set<string>();
+  while (cur && cur.kind === 'extend' && cur.baseId) {
+    if (cur.baseId === overlayId || seen.has(cur.id)) return true;
+    seen.add(cur.id);
+    cur = byId.get(cur.baseId);
+  }
+  return false;
+}
+
 function openMenu(e: MouseEvent, id: string, name: string, kind: string) {
   store.setActive(id);
   const items: MenuItem[] = [
@@ -58,6 +75,16 @@ function openMenu(e: MouseEvent, id: string, name: string, kind: string) {
   ];
   if (kind === 'extend') {
     items.push({ label: 'Reset extend to base', danger: true, action: () => runner.value?.resetOverlay() });
+  }
+  const bases = store.objects.filter((o) => o.id !== id && !wouldCycle(o.id, id));
+  if (bases.length) {
+    items.push({ separator: true });
+    for (const b of bases) {
+      items.push({
+        label: `Set base → ${b.name}`,
+        action: () => store.setExtendBase(id, b.id),
+      });
+    }
   }
   items.push({ separator: true }, { label: 'Delete', danger: true, action: () => store.removeObject(id) });
   menu.value = { x: e.clientX, y: e.clientY, items };
@@ -109,7 +136,16 @@ watch(() => [store.activeVersion, store.structureVersion], syncSize);
         />
         <template v-else>
           <span class="oname">{{ o.name }}</span>
-          <span v-if="o.kind === 'extend'" class="tag" title="linked overlay of its base">ext</span>
+          <span
+            v-if="o.kind === 'extend'"
+            class="tag"
+            :class="{ broken: !baseExists(o) }"
+            :title="
+              baseExists(o)
+                ? 'linked overlay of its base'
+                : 'overlay — its base link is broken; right-click → Set base'
+            "
+          >{{ baseExists(o) ? 'ext' : 'ext ⚠' }}</span>
         </template>
       </li>
     </ul>
@@ -220,6 +256,9 @@ watch(() => [store.activeVersion, store.structureVersion], syncSize);
   border-radius: 3px;
   background: var(--surface-2);
   color: var(--ink-dim);
+}
+.tag.broken {
+  color: var(--warn);
 }
 .hint {
   letter-spacing: 0;

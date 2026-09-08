@@ -37,6 +37,21 @@ export function resolveEffectiveData(
   return result;
 }
 
+/**
+ * `object` plus every object that extends it, directly or transitively. Used by
+ * ops that must keep a base and its whole overlay chain in lockstep (rotate,
+ * subdivide).
+ */
+export function extendFamily(object: VoxelObject, project: Project): VoxelObject[] {
+  const family = [object];
+  for (let i = 0; i < family.length; i++) {
+    for (const o of project.objects) {
+      if (o.baseId === family[i].id && !family.includes(o)) family.push(o);
+    }
+  }
+  return family;
+}
+
 /** Grid cells per voxel edge for an object (an overlay follows its base). */
 export function effectiveDetail(object: VoxelObject, project: Project): number {
   if (object.kind === 'extend' && object.baseId) {

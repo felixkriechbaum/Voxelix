@@ -100,8 +100,21 @@ export class Project {
   }
 
   remove(id: string): void {
-    this.objects = this.objects.filter((o) => o.id !== id && o.baseId !== id);
-    if (this.activeObjectId === id) this.activeObjectId = this.objects[0]?.id ?? null;
+    // drop the object and its whole overlay chain (direct + nested)
+    const doomed = new Set<string>([id]);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const o of this.objects) {
+        if (o.baseId && doomed.has(o.baseId) && !doomed.has(o.id)) {
+          doomed.add(o.id);
+          grew = true;
+        }
+      }
+    }
+    this.objects = this.objects.filter((o) => !doomed.has(o.id));
+    if (this.activeObjectId && doomed.has(this.activeObjectId)) {
+      this.activeObjectId = this.objects[0]?.id ?? null;
+    }
   }
 
   rename(id: string, name: string): void {

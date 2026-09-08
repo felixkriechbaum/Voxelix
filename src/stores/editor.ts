@@ -2,13 +2,14 @@ import { defineStore } from 'pinia';
 import { computed, markRaw, ref, shallowRef } from 'vue';
 import { Project } from '@/core/project/Project';
 import { defaultExportSettings, type ExportSettings } from '@/core/project/types';
-import { effectiveDetail } from '@/core/project/resolve';
+import { effectiveDetail, extendFamily } from '@/core/project/resolve';
 import { CELLS_PER_VOXEL } from '@/core/voxel/constants';
 import { paletteToLinearArray } from '@/core/palette';
 import { useSession } from '@/editor/session';
 import type { ToolId } from '@/tools/types';
 import type { BuildPlane } from '@/viewport/Picker';
 import type { Selection } from '@/core/ops/selection';
+import type { VoxelObject } from '@/core/project/VoxelObject';
 
 export const useEditorStore = defineStore('editor', () => {
   const project = shallowRef<Project | null>(null);
@@ -147,6 +148,39 @@ export const useEditorStore = defineStore('editor', () => {
     if (o) setActive(o.id);
   }
 
+  /**
+   * (Re)link `id` as an overlay of `baseId`, keeping the object's own voxel diff
+   * — for reconnecting an extend whose base link broke, or re-parenting it. The
+   * grid is subdivided to match the base if needed; undo history is dropped
+   * because the cells may not line up 1:1 with the new base. Rejects a choice
+   * that would form a cycle.
+   */
+  function setExtendBase(id: string, baseId: string) {
+    const proj = project.value;
+    if (!proj) return;
+    const obj = proj.getById(id);
+    const base = proj.getById(baseId);
+    if (!obj || !base || obj.id === base.id) return;
+    // walk up from the candidate base — if it leads back to `id`, it's a cycle
+    let cur: VoxelObject | null = base;
+    const seen = new Set<string>();
+    while (cur && cur.kind === 'extend' && cur.baseId) {
+      if (cur.baseId === id || seen.has(cur.id)) return;
+      seen.add(cur.id);
+      cur = proj.getById(cur.baseId);
+    }
+    if (obj.detail < base.detail) obj.data.upscale(base.detail / obj.detail);
+    obj.kind = 'extend';
+    obj.baseId = base.id;
+    obj.detail = base.detail;
+    const { runner } = useSession();
+    runner.value?.forgetHistory(id);
+    selection.value = null;
+    structureVersion.value++;
+    activeVersion.value++;
+    editVersion.value++;
+  }
+
   function removeObject(id: string) {
     if (!project.value) return;
     project.value.remove(id);
@@ -182,7 +216,7 @@ export const useEditorStore = defineStore('editor', () => {
     if (!target || target.detail >= CELLS_PER_VOXEL) return;
 
     const factor = CELLS_PER_VOXEL / target.detail;
-    const touched = [target, ...proj.objects.filter((o) => o.baseId === target.id)];
+    const touched = extendFamily(target, proj);
     for (const o of touched) {
       o.data.upscale(factor);
       o.detail = CELLS_PER_VOXEL;
@@ -208,7 +242,7 @@ export const useEditorStore = defineStore('editor', () => {
     if (!proj || !obj) return;
     const base = obj.kind === 'extend' && obj.baseId ? proj.getById(obj.baseId) : obj;
     if (!base) return;
-    const touched = [base, ...proj.objects.filter((o) => o.baseId === base.id)];
+    const touched = extendFamily(base, proj);
     for (const o of touched) o.data.rotateY(dir);
     const { runner } = useSession();
     for (const o of touched) runner.value?.forgetHistory(o.id);
@@ -282,6 +316,7 @@ export const useEditorStore = defineStore('editor', () => {
     addObject,
     duplicateObject,
     extendObject,
+    setExtendBase,
     removeObject,
     renameObject,
     resizeActive,
