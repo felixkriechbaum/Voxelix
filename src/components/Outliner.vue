@@ -5,7 +5,7 @@ import { useSession } from '@/editor/session';
 import { MAX_SIZE } from '@/core/voxel/constants';
 import ContextMenu, { type MenuItem } from './ContextMenu.vue';
 import Icon from './Icon.vue';
-import { faPlus, faClone, faCodeBranch, faTrash } from '@fortawesome/free-solid-svg-icons';
+import { faPlus, faClone, faCodeBranch, faTrash } from '@fortawesome/pro-solid-svg-icons';
 
 const store = useEditorStore();
 const { runner } = useSession();

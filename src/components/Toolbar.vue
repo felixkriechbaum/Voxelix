@@ -22,7 +22,7 @@ import {
   faBoxesStacked,
   faShapes,
   faFolderOpen,
-} from '@fortawesome/free-solid-svg-icons';
+} from '@fortawesome/pro-solid-svg-icons';
 import type { ToolId } from '@/tools/types';
 import type { BuildPlane } from '@/viewport/Picker';
 

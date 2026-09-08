@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { IconDefinition } from '@fortawesome/free-solid-svg-icons';
+import type { IconDefinition } from '@fortawesome/pro-solid-svg-icons';
 
 const props = defineProps<{ icon: IconDefinition; size?: number }>();
 const paths = () => {
