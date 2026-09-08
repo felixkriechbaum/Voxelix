@@ -359,7 +359,9 @@ type Cell = [number, number, number];
 /**
  * Paint bucket. The spread mode decides how far a click reaches:
  *  - `volume`  6-connected flood of the same colour through the object
- *  - `face`    the coplanar same-colour patch on the clicked face's plane
+ *  - `face`    the coplanar same-colour patch on the clicked face's *skin* —
+ *              cells whose neighbour toward the camera-facing normal is empty,
+ *              so the inside of a wall never gets painted when you click it
  *  - `outline` just the border ring of that face patch
  * Hold Shift to drop the connectivity requirement (every matching cell in
  * scope). One undo step.
@@ -410,15 +412,29 @@ function bucketCells(
       : floodRegion(data, seed[0], seed[1], seed[2], true);
   }
   const axis = normalAxis(normal);
+  const sign = normal.getComponent(axis) >= 0 ? 1 : -1;
   const plane = seed[axis];
+  // a cell is part of the clicked face only if the cell just outside it (toward
+  // the face normal) is empty — otherwise it's buried and shouldn't be painted
+  const onFace = (x: number, y: number, z: number): boolean => {
+    const n: Cell = [x, y, z];
+    n[axis] += sign;
+    return data.get(n[0], n[1], n[2]) === 0;
+  };
   const region = loose
-    ? sameColourCells(data, colour, (x, y, z) => [x, y, z][axis] === plane)
-    : faceFlood(data, seed, axis, colour);
+    ? sameColourCells(data, colour, (x, y, z) => [x, y, z][axis] === plane && onFace(x, y, z))
+    : faceFlood(data, seed, axis, colour, onFace);
   return mode === 'outline' ? planeOutline(region, axis) : region;
 }
 
-/** 4-connected flood within the plane fixed on `axis`, same colour only. */
-function faceFlood(data: VoxelData, seed: Cell, axis: 0 | 1 | 2, colour: number): Cell[] {
+/** 4-connected flood within the plane fixed on `axis`, same colour + on the face. */
+function faceFlood(
+  data: VoxelData,
+  seed: Cell,
+  axis: 0 | 1 | 2,
+  colour: number,
+  onFace: (x: number, y: number, z: number) => boolean,
+): Cell[] {
   const [u, w] = otherAxes(axis);
   const plane = seed[axis];
   const seen = new Set<string>();
@@ -429,7 +445,7 @@ function faceFlood(data: VoxelData, seed: Cell, axis: 0 | 1 | 2, colour: number)
     const c = stack.pop()!;
     if (c[axis] !== plane || seen.has(k(c))) continue;
     seen.add(k(c));
-    if (data.getColor(c[0], c[1], c[2]) !== colour) continue;
+    if (data.getColor(c[0], c[1], c[2]) !== colour || !onFace(c[0], c[1], c[2])) continue;
     out.push(c);
     for (const d of [-1, 1]) {
       const a: Cell = [c[0], c[1], c[2]];
