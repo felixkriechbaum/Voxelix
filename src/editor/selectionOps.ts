@@ -57,6 +57,24 @@ export function deleteSelection(ctx: ToolContext, sel: Selection): void {
 }
 
 /**
+ * Extend overlays: hand every cell in the selection back to the base, undoing
+ * this overlay's changes there and nowhere else. Walks the whole box rather
+ * than only the solid cells — a REMOVED marker reads as empty in the resolved
+ * view, and reverting a deletion is the main reason to reach for this.
+ */
+export function revertSelectionToBase(ctx: ToolContext, sel: Selection): void {
+  const cells: Array<[number, number, number]> = [];
+  if (sel.cells) {
+    for (const [x, y, z] of sel.cells) cells.push([x, y, z]);
+  } else {
+    for (let z = sel.min[2]; z <= sel.max[2]; z++)
+      for (let y = sel.min[1]; y <= sel.max[1]; y++)
+        for (let x = sel.min[0]; x <= sel.max[0]; x++) cells.push([x, y, z]);
+  }
+  ctx.revertToBase(cells, 'Revert selection to base');
+}
+
+/**
  * Stamp a copy of the selection next to itself and select the copy. Prefers an
  * offset of one selection-width along X, then Z, then a (1,1,1) nudge.
  */

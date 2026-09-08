@@ -8,6 +8,7 @@ import {
   duplicateSelection,
   moveSelection,
   recolourSelection,
+  revertSelectionToBase,
 } from '@/editor/selectionOps';
 
 const store = useEditorStore();
@@ -15,6 +16,11 @@ const { runner } = useSession();
 
 const dims = computed(() => (store.selection ? selectionDims(store.selection) : null));
 const smartCount = computed(() => store.selection?.cells?.length ?? null);
+const isExtend = computed(() => {
+  void store.activeVersion;
+  void store.structureVersion;
+  return store.activeObject()?.kind === 'extend';
+});
 
 function nudge(d: [number, number, number]) {
   if (runner.value && store.selection) moveSelection(runner.value, store.selection, d);
@@ -27,6 +33,9 @@ function duplicate() {
 }
 function remove() {
   if (runner.value && store.selection) deleteSelection(runner.value, store.selection);
+}
+function toBase() {
+  if (runner.value && store.selection) revertSelectionToBase(runner.value, store.selection);
 }
 </script>
 
@@ -52,6 +61,14 @@ function remove() {
       <button title="Stamp a copy alongside" @click="duplicate">Duplicate</button>
       <button class="danger" title="Delete voxels (Del)" @click="remove">Delete</button>
       <button title="Clear selection (Esc)" @click="store.clearSelection()">Deselect</button>
+      <button
+        v-if="isExtend"
+        class="wide"
+        title="Drop this overlay's changes inside the selection so those cells inherit from the base again — everything outside stays as it is"
+        @click="toBase"
+      >
+        Give back to base
+      </button>
     </div>
   </div>
 </template>
@@ -93,6 +110,9 @@ function remove() {
 .sel button {
   padding: 4px 6px;
   font-size: 11px;
+}
+.acts .wide {
+  grid-column: 1 / -1;
 }
 .sel .danger:hover {
   border-color: var(--danger);

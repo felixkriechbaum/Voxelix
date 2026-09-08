@@ -267,6 +267,29 @@ export class ToolRunner implements ToolContext {
   }
 
   /**
+   * Extend overlays only: drop the overlay's own entry at these cells so they
+   * inherit from the base again. Writing 0 instead would store a REMOVED marker
+   * — an explicit deletion — so this needs its own path. One undoable batch.
+   */
+  revertToBase(cells: Array<[number, number, number]>, label = 'Revert to base'): boolean {
+    const ctx = this.ctx;
+    if (!ctx || !ctx.extend) return false;
+    const edits: VoxelEdit[] = [];
+    for (const [x, y, z] of cells) {
+      const prev = ctx.object.data.get(x, y, z);
+      if (prev === 0) continue; // nothing of ours here — already inherited
+      ctx.object.data.setRaw(x, y, z, 0);
+      edits.push({ x, y, z, prev, next: 0 });
+      ctx.readData.setRaw(x, y, z, ctx.baseResolved!.get(x, y, z));
+    }
+    if (edits.length === 0) return false;
+    this.currentHistory().push({ label, edits });
+    this.store.bumpEdit();
+    this.afterEdit();
+    return true;
+  }
+
+  /**
    * Run an external, non-pointer edit (shape dialog, context-menu ops) through
    * the same overlay-aware write path and history as a tool stroke.
    */

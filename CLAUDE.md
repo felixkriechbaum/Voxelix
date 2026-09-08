@@ -138,6 +138,11 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   base and base edits stop propagating. `compactOverlay()` repairs an overlay
   that already got baked (drops redundant cells, resolved look unchanged);
   `store.resyncOverlay` exposes it as "Re-sync overlay with base".
+- `ToolRunner.revertToBase(cells)` (on `ToolContext`) clears the overlay's own
+  entries at those cells so they inherit again — writing 0 would instead record
+  an explicit `REMOVED`, so reverting needs its own path. Reached from the
+  viewport context menu (voxel / connected region) and the selection panel's
+  "Give back to base", which walks the whole box so deletions are revertible.
 - `ToolRunner` keeps a live resolved read-view in lockstep with overlay writes so
   tools see "what's visually there" while writes target the overlay.
 

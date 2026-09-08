@@ -52,6 +52,12 @@ export interface ToolContext {
   commit(): void;
   /** discard the open batch (no history entry) */
   cancel(): void;
+  /**
+   * Extend overlays only: drop the overlay's own entry at these cells so they
+   * inherit from the base again. Distinct from writing 0, which records an
+   * explicit deletion. Returns false when the active object isn't an overlay.
+   */
+  revertToBase(cells: Array<[number, number, number]>, label?: string): boolean;
   setCursor(box: CursorBox | null): void;
   /** eyedropper / paint helpers */
   pickColor(index: number): void;

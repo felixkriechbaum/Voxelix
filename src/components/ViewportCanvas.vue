@@ -284,8 +284,24 @@ function openContextMenu(x: number, y: number) {
         action: () =>
           fillCells(floodRegion(runner!.data, v.x, v.y, v.z, true), store.currentColor, 'Fill region'),
       },
-      { separator: true },
     );
+    if (store.activeObject()?.kind === 'extend') {
+      items.push(
+        {
+          label: 'Give voxel back to base',
+          action: () => runner!.revertToBase([[v.x, v.y, v.z]], 'Revert voxel to base'),
+        },
+        {
+          label: 'Give connected region back to base',
+          action: () =>
+            runner!.revertToBase(
+              floodRegion(runner!.data, v.x, v.y, v.z, true),
+              'Revert region to base',
+            ),
+        },
+      );
+    }
+    items.push({ separator: true });
   }
 
   items.push({ label: 'Frame view (F)', action: () => viewport?.frameActive() });
