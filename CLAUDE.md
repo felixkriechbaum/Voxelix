@@ -159,8 +159,11 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   whose outward side is exposed; Shift = ignore connectivity). FRONT/+Z and
   LEFT/−X sprite labels on the ground grid (`Gizmos`, theme-aware). Single-cell
   (1/6) brush size. `store.setExtendBase` — re-link / re-parent an overlay
-  keeping its diff (Outliner context menu "Set base → …"); broken-base overlays
-  show "ext ⚠". `resolve.extendFamily` keeps a base + its whole overlay chain
-  together for rotate / subdivide; `Project.remove` cascades transitively.
+  keeping its diff (Outliner context menu "Set base → …"), matching detail and
+  auto-rotating it back into orientation via `resolve.alignOverlayToBase` (best
+  90° fit of REMOVED markers onto base voxels); broken-base overlays show
+  "ext ⚠". `store.rotateOverlay` — spin just an overlay's diff to re-align it by
+  hand. `resolve.extendFamily` keeps a base + its whole overlay chain together
+  for rotate / subdivide; `Project.remove` cascades transitively.
 - **Next — iter 4:** ideas — selection copy/paste across objects, marquee in
   screen space, per-object up-axis/pivot in the export dialog, mirror modelling.

@@ -2,7 +2,12 @@ import { defineStore } from 'pinia';
 import { computed, markRaw, ref, shallowRef } from 'vue';
 import { Project } from '@/core/project/Project';
 import { defaultExportSettings, type ExportSettings } from '@/core/project/types';
-import { effectiveDetail, extendFamily } from '@/core/project/resolve';
+import {
+  alignOverlayToBase,
+  effectiveDetail,
+  extendFamily,
+  resolveEffectiveData,
+} from '@/core/project/resolve';
 import { CELLS_PER_VOXEL } from '@/core/voxel/constants';
 import { paletteToLinearArray } from '@/core/palette';
 import { useSession } from '@/editor/session';
@@ -151,9 +156,9 @@ export const useEditorStore = defineStore('editor', () => {
   /**
    * (Re)link `id` as an overlay of `baseId`, keeping the object's own voxel diff
    * — for reconnecting an extend whose base link broke, or re-parenting it. The
-   * grid is subdivided to match the base if needed; undo history is dropped
-   * because the cells may not line up 1:1 with the new base. Rejects a choice
-   * that would form a cycle.
+   * grids are subdivided to a common detail if needed, and the overlay is
+   * auto-rotated when its orientation clearly drifted from the base. Undo
+   * history is dropped; a cycle is rejected.
    */
   function setExtendBase(id: string, baseId: string) {
     const proj = project.value;
@@ -169,10 +174,41 @@ export const useEditorStore = defineStore('editor', () => {
       seen.add(cur.id);
       cur = proj.getById(cur.baseId);
     }
-    if (obj.detail < base.detail) obj.data.upscale(base.detail / obj.detail);
+
+    const { runner } = useSession();
+    // bring the base family and the overlay to one cell resolution
+    const targetDetail = Math.max(obj.detail, base.detail);
+    for (const o of extendFamily(base, proj)) {
+      if (o.detail < targetDetail) {
+        o.data.upscale(targetDetail / o.detail);
+        o.detail = targetDetail;
+        runner.value?.forgetHistory(o.id);
+      }
+    }
+    if (obj.detail < targetDetail) obj.data.upscale(targetDetail / obj.detail);
+
     obj.kind = 'extend';
     obj.baseId = base.id;
-    obj.detail = base.detail;
+    obj.detail = targetDetail;
+
+    const aligned = alignOverlayToBase(obj.data, resolveEffectiveData(base, proj));
+    if (aligned) obj.data = aligned;
+
+    runner.value?.forgetHistory(id);
+    selection.value = null;
+    structureVersion.value++;
+    activeVersion.value++;
+    editVersion.value++;
+  }
+
+  /**
+   * Rotate an overlay's own diff 90° about the vertical axis, leaving its base
+   * untouched — for nudging a drifted overlay back into line with its base.
+   */
+  function rotateOverlay(id: string, dir: 1 | -1) {
+    const obj = project.value?.getById(id);
+    if (!obj) return;
+    obj.data.rotateY(dir);
     const { runner } = useSession();
     runner.value?.forgetHistory(id);
     selection.value = null;
@@ -317,6 +353,7 @@ export const useEditorStore = defineStore('editor', () => {
     duplicateObject,
     extendObject,
     setExtendBase,
+    rotateOverlay,
     removeObject,
     renameObject,
     resizeActive,

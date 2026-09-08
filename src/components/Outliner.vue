@@ -74,7 +74,11 @@ function openMenu(e: MouseEvent, id: string, name: string, kind: string) {
     { label: 'Rotate 90° ⟳', action: () => store.rotateActive(1) },
   ];
   if (kind === 'extend') {
-    items.push({ label: 'Reset extend to base', danger: true, action: () => runner.value?.resetOverlay() });
+    items.push(
+      { label: 'Rotate overlay only ⟲', action: () => store.rotateOverlay(id, -1) },
+      { label: 'Rotate overlay only ⟳', action: () => store.rotateOverlay(id, 1) },
+      { label: 'Reset extend to base', danger: true, action: () => runner.value?.resetOverlay() },
+    );
   }
   const bases = store.objects.filter((o) => o.id !== id && !wouldCycle(o.id, id));
   if (bases.length) {

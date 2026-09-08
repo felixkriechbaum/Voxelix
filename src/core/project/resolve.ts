@@ -52,6 +52,47 @@ export function extendFamily(object: VoxelObject, project: Project): VoxelObject
   return family;
 }
 
+function rotatedClone(data: VoxelData, quarterTurns: number): VoxelData {
+  const out = data.clone();
+  for (let i = 0; i < (quarterTurns & 3); i++) out.rotateY(1);
+  return out;
+}
+
+/** Fraction of an overlay's REMOVED markers that land on an actual base voxel. */
+function removedOnBase(overlay: VoxelData, base: VoxelData): number {
+  let total = 0;
+  let hits = 0;
+  overlay.forEachEntry((x, y, z, v) => {
+    if (v !== REMOVED) return;
+    total++;
+    if (base.isSolid(x, y, z)) hits++;
+  });
+  return total === 0 ? 0 : hits / total;
+}
+
+/**
+ * When an overlay's grid has drifted out of orientation with its base (base
+ * rotated, overlay not), pick the 90° Y-rotation of the overlay that lines its
+ * REMOVED markers back up with base voxels. Returns a rotated clone, or null
+ * when the current orientation is already the best fit.
+ */
+export function alignOverlayToBase(overlay: VoxelData, base: VoxelData): VoxelData | null {
+  const swapped = overlay.sizeX === base.sizeZ && overlay.sizeZ === base.sizeX;
+  const same = overlay.sizeX === base.sizeX && overlay.sizeZ === base.sizeZ;
+  if (same) {
+    // dims already match — only spin 180° if it clearly improves the fit
+    const r2 = rotatedClone(overlay, 2);
+    return removedOnBase(r2, base) > removedOnBase(overlay, base) + 0.15 ? r2 : null;
+  }
+  if (swapped) {
+    // must be a quarter turn off; take whichever direction fits better
+    const r1 = rotatedClone(overlay, 1);
+    const r3 = rotatedClone(overlay, 3);
+    return removedOnBase(r1, base) >= removedOnBase(r3, base) ? r1 : r3;
+  }
+  return null; // dimensions not related by a rotation — leave it alone
+}
+
 /** Grid cells per voxel edge for an object (an overlay follows its base). */
 export function effectiveDetail(object: VoxelObject, project: Project): number {
   if (object.kind === 'extend' && object.baseId) {
