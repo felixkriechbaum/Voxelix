@@ -246,14 +246,11 @@ function onKey(e: KeyboardEvent) {
   if (toolKeys[e.code] && !viewport?.controls.navigating) store.toolId = toolKeys[e.code];
 }
 
-/** Right-click erase (toggle in the toolbar): clear the block under the cursor,
- *  matching the current brush size. */
-function rmbEraseAt(x: number, y: number) {
-  if (!runner) return;
-  const hit = runner.pick(x, y);
-  if (!hit?.remove) return;
-  const v = hit.remove;
-  const b = Math.max(1, runner.brushSize);
+/** The block the current brush covers at `v`, snapped to the brush grid. Every
+ *  single-voxel action goes through this so it matches the brush the toolbar
+ *  shows, instead of silently acting on one grid cell. */
+function brushCellsAt(v: { x: number; y: number; z: number }): Array<[number, number, number]> {
+  const b = Math.max(1, runner?.brushSize ?? 1);
   const ox = Math.floor(v.x / b) * b;
   const oy = Math.floor(v.y / b) * b;
   const oz = Math.floor(v.z / b) * b;
@@ -261,7 +258,16 @@ function rmbEraseAt(x: number, y: number) {
   for (let dz = 0; dz < b; dz++)
     for (let dy = 0; dy < b; dy++)
       for (let dx = 0; dx < b; dx++) cells.push([ox + dx, oy + dy, oz + dz]);
-  eraseCells(cells, 'Erase');
+  return cells;
+}
+
+/** Right-click erase (toggle in the toolbar): clear the block under the cursor,
+ *  matching the current brush size. */
+function rmbEraseAt(x: number, y: number) {
+  if (!runner) return;
+  const hit = runner.pick(x, y);
+  if (!hit?.remove) return;
+  eraseCells(brushCellsAt(hit.remove), 'Erase');
 }
 
 function openContextMenu(x: number, y: number) {
@@ -274,7 +280,10 @@ function openContextMenu(x: number, y: number) {
     const colour = runner.data.getColor(v.x, v.y, v.z);
     items.push(
       { label: 'Pick colour', action: () => colour >= 0 && store.setColor(colour) },
-      { label: 'Erase voxel', action: () => eraseCells([[v.x, v.y, v.z]], 'Erase voxel') },
+      {
+        label: `Erase here (${brushLabel.value.replace('brush: ', '')})`,
+        action: () => eraseCells(brushCellsAt(v), 'Erase voxel'),
+      },
       {
         label: 'Erase connected (same colour)',
         action: () => eraseCells(floodRegion(runner!.data, v.x, v.y, v.z, true), 'Erase region'),
@@ -288,8 +297,8 @@ function openContextMenu(x: number, y: number) {
     if (store.activeObject()?.kind === 'extend') {
       items.push(
         {
-          label: 'Give voxel back to base',
-          action: () => runner!.revertToBase([[v.x, v.y, v.z]], 'Revert voxel to base'),
+          label: `Give back to base (${brushLabel.value.replace('brush: ', '')})`,
+          action: () => runner!.revertToBase(brushCellsAt(v), 'Revert voxel to base'),
         },
         {
           label: 'Give connected region back to base',

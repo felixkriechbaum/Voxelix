@@ -17,6 +17,17 @@ const { saveProject } = useProjectSave();
 
 useAutosave();
 
+/**
+ * Right-click is a modelling gesture here, and the app's own menus are rendered
+ * on top — so the browser menu is suppressed across the whole editor, not just
+ * on the canvas. Text fields keep theirs, where copy/paste is worth having.
+ */
+function onContextMenu(e: MouseEvent) {
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  e.preventDefault();
+}
+
 function onKey(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 's') {
     e.preventDefault(); // don't let the browser offer to save the page
@@ -29,7 +40,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
-  <div class="editor">
+  <div class="editor" @contextmenu="onContextMenu">
     <Toolbar class="toolbar" @add-shape="showShape = true" @settings="showSettings = true" />
     <aside class="side">
       <Outliner />
