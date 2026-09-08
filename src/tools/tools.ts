@@ -190,8 +190,12 @@ export class BoxTool implements Tool {
     const v = erasing ? hit.remove! : hit.place;
     this.start = clampToGrid(v, ctx);
     this.end = this.start.clone();
-    // the box stays flat on the plane of the first corner for the whole drag
-    this.lock = lockPlane(hit, v, erasing);
+    // The toolbar's Plane setting decides the drag plane — not whichever face
+    // the ray happened to land on, which made the box orientation feel random.
+    // The depth still comes from the first corner, so you start where you click.
+    const axis = planeNormalAxis(ctx.buildPlane);
+    const cellValue = this.start.getComponent(axis);
+    this.lock = { axis, planeCoord: cellValue + 0.5, cellValue };
     this.updateCursor(ctx);
   }
 
@@ -534,6 +538,13 @@ function planeAxes(plane: BuildPlane): [number, number] {
   if (plane === 'xy') return [0, 1];
   if (plane === 'yz') return [1, 2];
   return [0, 2];
+}
+
+/** The axis a build plane is normal to: XZ lies flat (Y), XY faces front (Z), YZ side-on (X). */
+function planeNormalAxis(plane: BuildPlane): 0 | 1 | 2 {
+  if (plane === 'xy') return 2;
+  if (plane === 'yz') return 0;
+  return 1; // xz — the ground plane
 }
 
 /**

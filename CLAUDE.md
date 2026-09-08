@@ -111,9 +111,16 @@ src/
   internally).
 - Meshing is batched: `ChunkMesher.meshChunks` posts every dirty chunk in one
   worker message (a 6× grid has 216 chunks for a 16-voxel object).
-- Every drag stroke (place/erase/box/paint) locks to the plane of the first hit
-  (`Picker.pickPlane` / `ToolContext.pickOnPlane`) so it can't wander onto
-  another face or drill inward. Shift adds a straight-line constraint on top.
+- Drag strokes lock to a plane (`Picker.pickPlane` / `ToolContext.pickOnPlane`)
+  so they can't wander onto another face or drill inward. Which plane differs
+  by tool, on purpose:
+  - place/erase/paint lock to **the face the stroke started on** (`lockPlane`)
+    — they are surface-drawing tools, so following the clicked face is right.
+  - box locks to **the toolbar's Plane setting** (`planeNormalAxis`), at the
+    depth of the first corner. Deriving it from the clicked face made the box
+    orientation depend on where the ray happened to land, which reads as random.
+
+  Shift adds a straight-line constraint on top (place/erase/paint).
 - Export scale: `ExportSettings.refVoxels` voxels = `refMeters` metres
   (`metersPerVoxel`); default 16 voxels = 1 m. Legacy `unitsPerVoxel` files load
   as `{refVoxels: 1, refMeters: <value>}`.

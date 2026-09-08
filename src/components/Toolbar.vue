@@ -229,7 +229,11 @@ async function exportAll() {
     </button>
 
     <span class="divider" />
-    <label class="lbl" title="Where new voxels land when you click empty space">Plane</label>
+    <label
+      class="lbl"
+      title="Where new voxels land when you click empty space — and the plane a Box drag stays in"
+      >Plane</label
+    >
     <select
       :value="store.buildPlane"
       title="Build plane: ground (XZ), front (XY) or side (YZ)"

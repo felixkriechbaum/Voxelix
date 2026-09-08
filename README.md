@@ -34,6 +34,8 @@ bun run typecheck
 - Tools: `1`/`W` place · `2`/`E` erase · `3`/`R` box · `4`/`T` paint ·
   `5`/`G` bucket · `6`/`Q` eyedropper · `7`/`V` select
 - Hold `Shift` while drawing to lock the stroke to one axis (straight line)
+- Box drags stay in the plane the toolbar's `Plane` selector names (XZ/XY/YZ),
+  at the depth of the first corner; place/erase/paint follow the clicked face
 - Bucket: click to reflood a same-colour region with the current colour. Spread
   mode (toolbar): `Volume` 3D flood · `Face` the clicked face's skin (coplanar
   cells whose outward side is exposed) · `Outline` just that patch's border ring.
