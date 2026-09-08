@@ -4,7 +4,7 @@ import type { PickResult, BuildPlane } from '@/viewport/Picker';
 import type { CursorBox } from '@/viewport/Gizmos';
 import type { Selection } from '@/core/ops/selection';
 
-export type ToolId = 'place' | 'erase' | 'box' | 'paint' | 'eyedropper' | 'select';
+export type ToolId = 'place' | 'erase' | 'box' | 'paint' | 'bucket' | 'eyedropper' | 'select';
 
 export interface PointerInfo {
   clientX: number;

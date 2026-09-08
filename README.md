@@ -31,8 +31,13 @@ bun run typecheck
 - Camera: MMB orbit · Shift+MMB pan · wheel zoom · RMB + WASD/QE fly · `F` frame
 - Views: Numpad `1`/`3`/`7` front/right/top (Shift = opposite), `5` toggles ortho;
   also a Persp/Ortho + preset-view panel in the viewport
-- Tools: `1` place · `2` erase · `3` box · `4` paint · `5` eyedropper · `6` select
+- Tools: `1`/`W` place · `2`/`E` erase · `3`/`R` box · `4`/`T` paint ·
+  `5`/`G` bucket · `6`/`Q` eyedropper · `7`/`V` select
 - Hold `Shift` while drawing to lock the stroke to one axis (straight line)
+- Bucket: click to reflood a connected same-colour region with the current
+  colour; `Shift`+click recolours every voxel of that colour in the object
+- Rotate a whole object 90° about the vertical axis from the outliner buttons
+  or either context menu
 - Select: drag a box, drag inside it to slide the voxels, arrow keys nudge
   (`Shift`+↕ for Y), `Del` clears, `Esc` deselects
 - `Ctrl+Z` / `Ctrl+Shift+Z` undo/redo (per object)

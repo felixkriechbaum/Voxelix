@@ -194,6 +194,28 @@ export const useEditorStore = defineStore('editor', () => {
     editVersion.value++;
   }
 
+  /**
+   * Rotate the active object 90° about the vertical axis (`dir === 1` clockwise
+   * seen from above). An extend object rotates together with its base and every
+   * sibling overlay so the diffs stay aligned. Undo history for the touched
+   * objects is dropped — a rotation remaps the whole grid.
+   */
+  function rotateActive(dir: 1 | -1) {
+    const proj = project.value;
+    const obj = activeObject();
+    if (!proj || !obj) return;
+    const base = obj.kind === 'extend' && obj.baseId ? proj.getById(obj.baseId) : obj;
+    if (!base) return;
+    const touched = [base, ...proj.objects.filter((o) => o.baseId === base.id)];
+    for (const o of touched) o.data.rotateY(dir);
+    const { runner } = useSession();
+    for (const o of touched) runner.value?.forgetHistory(o.id);
+    selection.value = null;
+    structureVersion.value++;
+    activeVersion.value++;
+    editVersion.value++;
+  }
+
   function bumpEdit() {
     editVersion.value++;
   }
@@ -260,6 +282,7 @@ export const useEditorStore = defineStore('editor', () => {
     removeObject,
     renameObject,
     resizeActive,
+    rotateActive,
     ensureDetail,
     bumpEdit,
     updateExportSettings,

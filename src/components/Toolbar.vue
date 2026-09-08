@@ -56,8 +56,9 @@ const tools: Array<{ id: ToolId; label: string; key: string }> = [
   { id: 'erase', label: 'Erase', key: 'E or 2' },
   { id: 'box', label: 'Box', key: 'R or 3' },
   { id: 'paint', label: 'Paint', key: 'T or 4' },
-  { id: 'eyedropper', label: 'Pick', key: 'Q or 5' },
-  { id: 'select', label: 'Select', key: 'V or 6' },
+  { id: 'bucket', label: 'Bucket', key: 'G or 5' },
+  { id: 'eyedropper', label: 'Pick', key: 'Q or 6' },
+  { id: 'select', label: 'Select', key: 'V or 7' },
 ];
 const planes: BuildPlane[] = ['xz', 'xy', 'yz'];
 

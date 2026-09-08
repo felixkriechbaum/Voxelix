@@ -54,18 +54,20 @@ function setView(view: PresetView) {
   viewport?.setView(view);
 }
 
-// digits + a left-hand letter cluster (Q W E R T, V for select)
+// digits + a left-hand letter cluster (Q W E R T G, V for select)
 const toolKeys: Record<string, ToolId> = {
   Digit1: 'place',
   Digit2: 'erase',
   Digit3: 'box',
   Digit4: 'paint',
-  Digit5: 'eyedropper',
-  Digit6: 'select',
+  Digit5: 'bucket',
+  Digit6: 'eyedropper',
+  Digit7: 'select',
   KeyW: 'place',
   KeyE: 'erase',
   KeyR: 'box',
   KeyT: 'paint',
+  KeyG: 'bucket',
   KeyQ: 'eyedropper',
   KeyV: 'select',
 };
@@ -292,6 +294,9 @@ function openContextMenu(x: number, y: number) {
   if (id) {
     items.push(
       { separator: true },
+      { label: 'Rotate object 90° ⟲', action: () => store.rotateActive(-1) },
+      { label: 'Rotate object 90° ⟳', action: () => store.rotateActive(1) },
+      { separator: true },
       { label: 'Duplicate object', action: () => store.duplicateObject(id) },
       { label: 'Extend object', action: () => store.extendObject(id) },
     );
@@ -393,7 +398,7 @@ watch(theme, (t) => viewport?.setDark(t === 'dark'));
         double-click = same-colour region · drag = box · drag inside = move · arrows nudge · Shift+↕ = Y · Ctrl+A = all
       </template>
       <template v-else>
-        Q/W/E/R/T = tools · MMB orbit · Shift+MMB pan · RMB+WASD fly · Shift draw = straight line ·
+        Q/W/E/R/T/G = tools · MMB orbit · Shift+MMB pan · RMB+WASD fly · Shift draw = straight line ·
         {{ store.rmbErase ? 'RMB erase' : 'RMB menu' }} · F frame
       </template>
     </div>

@@ -237,6 +237,23 @@ export class VoxelData {
     this.adopt(next);
   }
 
+  /**
+   * Rotate every cell 90° about the vertical (Y) axis, swapping the X and Z
+   * dimensions. `dir === 1` turns clockwise seen from above, `-1` the other way.
+   * Keeps REMOVED overlay markers. Result size is clamped to MAX_SIZE.
+   */
+  rotateY(dir: 1 | -1): void {
+    const next = new VoxelData(this.sizeZ, this.sizeY, this.sizeX);
+    const maxX = this.sizeX - 1;
+    const maxZ = this.sizeZ - 1;
+    this.forEachEntry((x, y, z, v) => {
+      const nx = dir === 1 ? z : maxZ - z;
+      const nz = dir === 1 ? maxX - x : x;
+      if (next.inBounds(nx, y, nz)) next.setRaw(nx, y, nz, v);
+    });
+    this.adopt(next);
+  }
+
   private adopt(next: VoxelData): void {
     this.sizeX = next.sizeX;
     this.sizeY = next.sizeY;

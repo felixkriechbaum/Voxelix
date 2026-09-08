@@ -5,7 +5,14 @@ import { useSession } from '@/editor/session';
 import { MAX_SIZE } from '@/core/voxel/constants';
 import ContextMenu, { type MenuItem } from './ContextMenu.vue';
 import Icon from './Icon.vue';
-import { faPlus, faClone, faCodeBranch, faTrash } from '@fortawesome/pro-solid-svg-icons';
+import {
+  faPlus,
+  faClone,
+  faCodeBranch,
+  faTrash,
+  faRotateLeft,
+  faRotateRight,
+} from '@fortawesome/pro-solid-svg-icons';
 
 const store = useEditorStore();
 const { runner } = useSession();
@@ -45,6 +52,9 @@ function openMenu(e: MouseEvent, id: string, name: string, kind: string) {
     { label: 'Rename', action: () => startRename(id, name) },
     { label: 'Duplicate', action: () => store.duplicateObject(id) },
     { label: 'Extend', action: () => store.extendObject(id) },
+    { separator: true },
+    { label: 'Rotate 90° ⟲', action: () => store.rotateActive(-1) },
+    { label: 'Rotate 90° ⟳', action: () => store.rotateActive(1) },
   ];
   if (kind === 'extend') {
     items.push({ label: 'Reset extend to base', danger: true, action: () => runner.value?.resetOverlay() });
@@ -122,6 +132,24 @@ watch(() => [store.activeVersion, store.structureVersion], syncSize);
         @click="store.extendObject(store.activeObjectId!)"
       >
         <Icon :icon="faCodeBranch" />
+      </button>
+      <button
+        class="ic"
+        :disabled="!store.activeObjectId"
+        title="Rotate the whole object 90° counter-clockwise (Y axis) — clears this object's undo history"
+        aria-label="Rotate object left"
+        @click="store.rotateActive(-1)"
+      >
+        <Icon :icon="faRotateLeft" />
+      </button>
+      <button
+        class="ic"
+        :disabled="!store.activeObjectId"
+        title="Rotate the whole object 90° clockwise (Y axis) — clears this object's undo history"
+        aria-label="Rotate object right"
+        @click="store.rotateActive(1)"
+      >
+        <Icon :icon="faRotateRight" />
       </button>
       <span class="spacer" />
       <button

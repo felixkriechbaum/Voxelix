@@ -10,6 +10,7 @@ import {
 } from '@/core/ops/selection';
 import { floodRegion } from '@/core/ops/flood';
 import { moveSelection } from '@/editor/selectionOps';
+import type { VoxelData } from '@/core/voxel/VoxelData';
 
 const key = (x: number, y: number, z: number) => `${x},${y},${z}`;
 
@@ -353,6 +354,54 @@ export class PaintTool implements Tool {
   }
 }
 
+/**
+ * Paint bucket: click a voxel to reflood its connected same-colour region with
+ * the current palette colour. Hold Shift to recolour every voxel of that colour
+ * in the object, connected or not. One undo step.
+ */
+export class BucketTool implements Tool {
+  readonly id: ToolId = 'bucket';
+
+  pointerDown(ctx: ToolContext, p: PointerInfo): void {
+    if (p.button !== 0) return;
+    const hit = ctx.pick(p.clientX, p.clientY);
+    if (!hit?.remove) return;
+    const { x, y, z } = hit.remove;
+    const from = ctx.data.getColor(x, y, z);
+    if (from < 0 || from === ctx.colorIndex) return;
+
+    const cells = p.shiftKey
+      ? sameColourCells(ctx.data, from)
+      : floodRegion(ctx.data, x, y, z, true);
+    if (cells.length === 0) return;
+
+    const value = ctx.colorIndex + 1;
+    ctx.begin(p.shiftKey ? 'Bucket (all)' : 'Bucket fill');
+    for (const [cx, cy, cz] of cells) ctx.write(cx, cy, cz, value);
+    ctx.commit();
+  }
+
+  pointerMove(ctx: ToolContext, p: PointerInfo): void {
+    const hit = ctx.pick(p.clientX, p.clientY);
+    ctx.setCursor(hit?.remove ? cursorAdd(hit.remove, 0xffe08a) : null);
+  }
+
+  pointerUp(): void {}
+
+  clearPreview(ctx: ToolContext): void {
+    ctx.setCursor(null);
+  }
+}
+
+/** Every filled cell whose palette index matches `colorIndex`. */
+function sameColourCells(data: VoxelData, colorIndex: number): Array<[number, number, number]> {
+  const out: Array<[number, number, number]> = [];
+  data.forEachFilled((x, y, z, c) => {
+    if (c === colorIndex) out.push([x, y, z]);
+  });
+  return out;
+}
+
 /** Pick the colour of the voxel under the cursor into the active palette slot. */
 export class EyedropperTool implements Tool {
   readonly id: ToolId = 'eyedropper';
@@ -510,6 +559,8 @@ export function createTool(id: ToolId): Tool {
       return new BoxTool();
     case 'paint':
       return new PaintTool();
+    case 'bucket':
+      return new BucketTool();
     case 'eyedropper':
       return new EyedropperTool();
     case 'select':

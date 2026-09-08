@@ -1,5 +1,13 @@
 import * as THREE from 'three';
 
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+/**
+ * up vector for a dead-on top / bottom view, where WORLD_UP is degenerate.
+ * -Z so the top view keeps +X pointing screen-right (not mirrored) with the
+ * object's front edge nearest the viewer.
+ */
+const POLE_UP = new THREE.Vector3(0, 0, -1);
+
 export type ProjectionMode = 'perspective' | 'ortho';
 
 export interface CameraState {
@@ -106,8 +114,8 @@ export class GodotControls {
       case 'back': this.yaw = p; this.pitch = 0; break;
       case 'right': this.yaw = p / 2; this.pitch = 0; break;
       case 'left': this.yaw = -p / 2; this.pitch = 0; break;
-      case 'top': this.yaw = 0; this.pitch = this.maxPitch; break;
-      case 'bottom': this.yaw = 0; this.pitch = this.minPitch; break;
+      case 'top': this.yaw = 0; this.pitch = Math.PI / 2; break;
+      case 'bottom': this.yaw = 0; this.pitch = -Math.PI / 2; break;
       case 'iso': this.yaw = p / 4; this.pitch = Math.atan(Math.SQRT1_2); break;
     }
     this.apply();
@@ -232,7 +240,7 @@ export class GodotControls {
     this.target.set(s.target[0], s.target[1], s.target[2]);
     this.distance = s.distance;
     this.yaw = s.yaw;
-    this.pitch = Math.max(this.minPitch, Math.min(this.maxPitch, s.pitch));
+    this.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, s.pitch));
     this.mode = s.mode;
     this.apply();
   }
@@ -245,6 +253,14 @@ export class GodotControls {
       this.distance * Math.sin(cp),
       this.distance * Math.cos(cp) * Math.cos(this.yaw),
     );
+
+    // A dead-on top / bottom view looks along ±Y, parallel to WORLD_UP, and
+    // lookAt() can't resolve roll — swing `up` into the ground plane so the
+    // snapped view is stable (only preset top/bottom reach this pitch; an orbit
+    // drag stays clamped short of it).
+    const up = Math.abs(cp) > Math.PI / 2 - 1e-3 ? POLE_UP : WORLD_UP;
+    this.perspective.up.copy(up);
+    this.ortho.up.copy(up);
 
     this.perspective.position.copy(this.target).add(offset);
     this.perspective.lookAt(this.target);
