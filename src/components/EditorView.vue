@@ -4,6 +4,7 @@ import Toolbar from './Toolbar.vue';
 import Outliner from './Outliner.vue';
 import PalettePanel from './PalettePanel.vue';
 import ViewportCanvas from './ViewportCanvas.vue';
+import SupportLink from './SupportLink.vue';
 import ShapeDialog from './ShapeDialog.vue';
 import SettingsDialog from './SettingsDialog.vue';
 import Toasts from './Toasts.vue';
@@ -46,6 +47,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
     <aside class="side">
       <Outliner />
       <PalettePanel />
+      <SupportLink />
     </aside>
     <main class="stage">
       <ViewportCanvas />
