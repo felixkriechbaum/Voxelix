@@ -102,10 +102,11 @@ src/
   (lossless, shape unchanged), one-way. `ActiveRender.detail` drives the per-voxel
   grid overlay + the export cell scale; an `extend` overlay follows its base.
   No viewport rescaling — the object grows in cell space and `frameActive` refits.
-- Brush (`editor.ts` `voxelFraction` 1/2/3): places a `detail / fraction`-cell
-  cube, grid-aligned — a full voxel, a half, or a third. The toolbar shows it as
-  three squares. Switching it never mutates existing voxels. Outliner size input
-  and the shape dialog are in voxels (× detail internally).
+- Brush (`editor.ts` `voxelFraction` 1/2/3/6): places a `detail / fraction`-cell
+  cube, grid-aligned — a full voxel, a half, a third, or a single cell (1/6).
+  The toolbar shows it as a row of squares. Switching it never mutates existing
+  voxels. Outliner size input and the shape dialog are in voxels (× detail
+  internally).
 - Meshing is batched: `ChunkMesher.meshChunks` posts every dirty chunk in one
   worker message (a 6× grid has 216 chunks for a 16-voxel object).
 - Every drag stroke (place/erase/box/paint) locks to the plane of the first hit

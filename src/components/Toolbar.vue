@@ -66,10 +66,11 @@ const brushes = [
   { f: 1, size: 16, label: 'Full voxel' },
   { f: 2, size: 10, label: 'Half voxel' },
   { f: 3, size: 6, label: 'Third of a voxel' },
+  { f: 6, size: 3, label: 'Single cell (sixth of a voxel)' },
 ];
 function pickBrush(f: number) {
   store.voxelFraction = f;
-  // any brush choice subdivides the object so the three sizes are distinct
+  // any sub-voxel choice subdivides the object so the smaller sizes are distinct
   if (store.activeObjectId) store.ensureDetail(store.activeObjectId);
 }
 const currentBrushF = computed(() => Math.min(store.activeDetail, store.voxelFraction));
