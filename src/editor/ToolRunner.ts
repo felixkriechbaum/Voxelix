@@ -104,6 +104,10 @@ export class ToolRunner implements ToolContext {
     return this.store.buildPlane;
   }
 
+  get bucketMode() {
+    return this.store.bucketMode;
+  }
+
   /** brush footprint in grid cells: a voxel (detail cells) divided by the chosen fraction */
   get brushSize(): number {
     const frac = Math.min(this.activeDetail, Math.max(1, this.store.voxelFraction));

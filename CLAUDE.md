@@ -154,7 +154,8 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   top/bottom view (pole up-vector swing in `GodotControls`). Whole-object 90°
   Y-rotation (`VoxelData.rotateY` → `store.rotateActive`, drops history, rotates
   an extend base + its overlays together). Paint-bucket tool (`BucketTool`,
-  connected same-colour reflood; Shift = every voxel of that colour). FRONT/+Z
+  spread mode volume/face/outline via `store.bucketMode`; Shift = ignore
+  connectivity). FRONT/+Z
   and LEFT/−X sprite labels on the ground grid (`Gizmos`, theme-aware).
 - **Next — iter 4:** ideas — selection copy/paste across objects, marquee in
   screen space, per-object up-axis/pivot in the export dialog, mirror modelling.

@@ -6,6 +6,15 @@ import type { Selection } from '@/core/ops/selection';
 
 export type ToolId = 'place' | 'erase' | 'box' | 'paint' | 'bucket' | 'eyedropper' | 'select';
 
+/** How far a paint-bucket click spreads. */
+export type BucketMode =
+  /** 6-connected flood through the whole object */
+  | 'volume'
+  /** flood only across the clicked face's surface plane */
+  | 'face'
+  /** just the border ring of what 'face' would select */
+  | 'outline';
+
 export interface PointerInfo {
   clientX: number;
   clientY: number;
@@ -24,6 +33,8 @@ export interface ToolContext {
   readonly buildPlane: BuildPlane;
   /** place/erase footprint in cells (block-aligned when > 1) */
   readonly brushSize: number;
+  /** how far a paint-bucket click spreads */
+  readonly bucketMode: BucketMode;
   pick(clientX: number, clientY: number): PickResult | null;
   /** cell where the ray crosses the plane at `planeCoord`, axis forced to `cellValue` */
   pickOnPlane(

@@ -35,6 +35,8 @@ export const useEditorStore = defineStore('editor', () => {
   const currentColor = ref(16);
   const toolId = ref<ToolId>('place');
   const boxMode = ref<'fill' | 'erase'>('fill');
+  /** paint-bucket spread: whole volume, just the clicked face, or its outline */
+  const bucketMode = ref<'volume' | 'face' | 'outline'>('volume');
   /** right-click in the viewport erases a voxel instead of opening the context menu */
   const rmbErase = ref(false);
   /** brush size as a fraction of a voxel: 1 = full voxel, 2 = half, 3 = third */
@@ -266,6 +268,7 @@ export const useEditorStore = defineStore('editor', () => {
     currentColor,
     toolId,
     boxMode,
+    bucketMode,
     rmbErase,
     voxelFraction,
     buildPlane,

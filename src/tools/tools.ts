@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Tool, ToolContext, PointerInfo, ToolId } from './types';
+import type { Tool, ToolContext, PointerInfo, ToolId, BucketMode } from './types';
 import type { BuildPlane, PickResult } from '@/viewport/Picker';
 import {
   cellSelection,
@@ -354,10 +354,15 @@ export class PaintTool implements Tool {
   }
 }
 
+type Cell = [number, number, number];
+
 /**
- * Paint bucket: click a voxel to reflood its connected same-colour region with
- * the current palette colour. Hold Shift to recolour every voxel of that colour
- * in the object, connected or not. One undo step.
+ * Paint bucket. The spread mode decides how far a click reaches:
+ *  - `volume`  6-connected flood of the same colour through the object
+ *  - `face`    the coplanar same-colour patch on the clicked face's plane
+ *  - `outline` just the border ring of that face patch
+ * Hold Shift to drop the connectivity requirement (every matching cell in
+ * scope). One undo step.
  */
 export class BucketTool implements Tool {
   readonly id: ToolId = 'bucket';
@@ -366,17 +371,15 @@ export class BucketTool implements Tool {
     if (p.button !== 0) return;
     const hit = ctx.pick(p.clientX, p.clientY);
     if (!hit?.remove) return;
-    const { x, y, z } = hit.remove;
-    const from = ctx.data.getColor(x, y, z);
+    const seed: Cell = [hit.remove.x, hit.remove.y, hit.remove.z];
+    const from = ctx.data.getColor(seed[0], seed[1], seed[2]);
     if (from < 0 || from === ctx.colorIndex) return;
 
-    const cells = p.shiftKey
-      ? sameColourCells(ctx.data, from)
-      : floodRegion(ctx.data, x, y, z, true);
+    const cells = bucketCells(ctx.data, seed, hit.normal, from, ctx.bucketMode, p.shiftKey);
     if (cells.length === 0) return;
 
     const value = ctx.colorIndex + 1;
-    ctx.begin(p.shiftKey ? 'Bucket (all)' : 'Bucket fill');
+    ctx.begin(`Bucket (${ctx.bucketMode})`);
     for (const [cx, cy, cz] of cells) ctx.write(cx, cy, cz, value);
     ctx.commit();
   }
@@ -393,13 +396,89 @@ export class BucketTool implements Tool {
   }
 }
 
-/** Every filled cell whose palette index matches `colorIndex`. */
-function sameColourCells(data: VoxelData, colorIndex: number): Array<[number, number, number]> {
-  const out: Array<[number, number, number]> = [];
+function bucketCells(
+  data: VoxelData,
+  seed: Cell,
+  normal: THREE.Vector3,
+  colour: number,
+  mode: BucketMode,
+  loose: boolean,
+): Cell[] {
+  if (mode === 'volume') {
+    return loose
+      ? sameColourCells(data, colour, () => true)
+      : floodRegion(data, seed[0], seed[1], seed[2], true);
+  }
+  const axis = normalAxis(normal);
+  const plane = seed[axis];
+  const region = loose
+    ? sameColourCells(data, colour, (x, y, z) => [x, y, z][axis] === plane)
+    : faceFlood(data, seed, axis, colour);
+  return mode === 'outline' ? planeOutline(region, axis) : region;
+}
+
+/** 4-connected flood within the plane fixed on `axis`, same colour only. */
+function faceFlood(data: VoxelData, seed: Cell, axis: 0 | 1 | 2, colour: number): Cell[] {
+  const [u, w] = otherAxes(axis);
+  const plane = seed[axis];
+  const seen = new Set<string>();
+  const out: Cell[] = [];
+  const stack: Cell[] = [seed];
+  const k = (c: Cell) => `${c[0]},${c[1]},${c[2]}`;
+  while (stack.length) {
+    const c = stack.pop()!;
+    if (c[axis] !== plane || seen.has(k(c))) continue;
+    seen.add(k(c));
+    if (data.getColor(c[0], c[1], c[2]) !== colour) continue;
+    out.push(c);
+    for (const d of [-1, 1]) {
+      const a: Cell = [c[0], c[1], c[2]];
+      a[u] += d;
+      stack.push(a);
+      const b: Cell = [c[0], c[1], c[2]];
+      b[w] += d;
+      stack.push(b);
+    }
+  }
+  return out;
+}
+
+/** Border cells of a coplanar region — those missing an in-plane neighbour. */
+function planeOutline(region: Cell[], axis: 0 | 1 | 2): Cell[] {
+  const [u, w] = otherAxes(axis);
+  const inSet = new Set(region.map((c) => `${c[0]},${c[1]},${c[2]}`));
+  const has = (c: Cell) => inSet.has(`${c[0]},${c[1]},${c[2]}`);
+  return region.filter((c) => {
+    for (const d of [-1, 1]) {
+      const a: Cell = [c[0], c[1], c[2]];
+      a[u] += d;
+      if (!has(a)) return true;
+      const b: Cell = [c[0], c[1], c[2]];
+      b[w] += d;
+      if (!has(b)) return true;
+    }
+    return false;
+  });
+}
+
+/** Every filled cell of `colour` that also passes `where`. */
+function sameColourCells(
+  data: VoxelData,
+  colour: number,
+  where: (x: number, y: number, z: number) => boolean,
+): Cell[] {
+  const out: Cell[] = [];
   data.forEachFilled((x, y, z, c) => {
-    if (c === colorIndex) out.push([x, y, z]);
+    if (c === colour && where(x, y, z)) out.push([x, y, z]);
   });
   return out;
+}
+
+/** The two axes that aren't `axis`, as a tuple. */
+function otherAxes(axis: 0 | 1 | 2): [0 | 1 | 2, 0 | 1 | 2] {
+  if (axis === 0) return [1, 2];
+  if (axis === 1) return [0, 2];
+  return [0, 1];
 }
 
 /** Pick the colour of the voxel under the cursor into the active palette slot. */

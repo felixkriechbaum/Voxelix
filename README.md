@@ -34,8 +34,10 @@ bun run typecheck
 - Tools: `1`/`W` place · `2`/`E` erase · `3`/`R` box · `4`/`T` paint ·
   `5`/`G` bucket · `6`/`Q` eyedropper · `7`/`V` select
 - Hold `Shift` while drawing to lock the stroke to one axis (straight line)
-- Bucket: click to reflood a connected same-colour region with the current
-  colour; `Shift`+click recolours every voxel of that colour in the object
+- Bucket: click to reflood a same-colour region with the current colour. Spread
+  mode (toolbar): `Volume` 3D flood · `Face` the clicked surface layer ·
+  `Outline` just that layer's border ring. `Shift`+click ignores connectivity
+  (every matching voxel in scope)
 - Rotate a whole object 90° about the vertical axis from the outliner buttons
   or either context menu
 - Select: drag a box, drag inside it to slide the voxels, arrow keys nudge

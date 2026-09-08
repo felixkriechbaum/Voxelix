@@ -175,6 +175,33 @@ async function exportAll() {
       </button>
     </template>
 
+    <template v-if="store.toolId === 'bucket'">
+      <span class="divider" />
+      <label class="lbl">Spread</label>
+      <button
+        :class="{ active: store.bucketMode === 'volume' }"
+        title="Whole connected region of this colour, through the object (3D flood)"
+        @click="store.bucketMode = 'volume'"
+      >
+        Volume
+      </button>
+      <button
+        :class="{ active: store.bucketMode === 'face' }"
+        title="Only the clicked face's surface layer — the coplanar patch of this colour"
+        @click="store.bucketMode = 'face'"
+      >
+        Face
+      </button>
+      <button
+        :class="{ active: store.bucketMode === 'outline' }"
+        title="Only the border ring of that face patch"
+        @click="store.bucketMode = 'outline'"
+      >
+        Outline
+      </button>
+      <label class="lbl" title="Hold Shift on click to recolour every matching voxel in scope, ignoring connectivity">Shift = loose</label>
+    </template>
+
     <template v-if="['place', 'erase', 'box'].includes(store.toolId)">
       <span class="divider" />
       <label class="lbl">Brush</label>
