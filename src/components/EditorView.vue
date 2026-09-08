@@ -6,6 +6,7 @@ import PalettePanel from './PalettePanel.vue';
 import ViewportCanvas from './ViewportCanvas.vue';
 import ShapeDialog from './ShapeDialog.vue';
 import SettingsDialog from './SettingsDialog.vue';
+import Toasts from './Toasts.vue';
 import { useEditorStore } from '@/stores/editor';
 import { useAutosave } from '@/editor/autosave';
 import { useProjectSave } from '@/editor/save';
@@ -52,6 +53,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 
     <ShapeDialog v-if="showShape" @close="showShape = false" />
     <SettingsDialog v-if="showSettings" @close="showSettings = false" />
+    <Toasts />
 
     <div v-if="store.exportStatus" class="export-overlay">
       <div class="panel export-card">

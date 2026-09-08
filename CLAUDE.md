@@ -66,7 +66,9 @@ src/
                    (move/recolour/duplicate/delete via ToolContext),
                    save.ts (manual .voxproj save, shared by button + Ctrl+S),
                    theme.ts (light/dark/system, [data-theme] on <html>),
-                   viewstate.ts (per-project camera, localStorage)
+                   viewstate.ts (per-project camera, localStorage),
+                   toasts.ts (module-state queue; toast() from anywhere,
+                   rendered by Toasts.vue — use it instead of alert())
   stores/          Pinia: editor.ts holds the Project (markRaw) + reactive
                    version counters (structureVersion / activeVersion /
                    paletteVersion / editVersion) that components watch, plus

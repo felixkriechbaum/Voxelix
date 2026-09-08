@@ -56,17 +56,27 @@ async function writeText(handle: FileSystemFileHandle, text: string): Promise<vo
   await writable.close();
 }
 
+/** `downloaded` is the no-File-System-Access fallback — a success, but there is
+ *  no handle to write to next time. `cancelled` means the user dismissed the
+ *  picker, so nothing was written. */
+export type SaveOutcome = 'saved' | 'downloaded' | 'cancelled';
+
+export interface SaveResult {
+  handle: FileSystemFileHandle | null;
+  outcome: SaveOutcome;
+}
+
 export async function saveTextFile(
   suggestedName: string,
   text: string,
   handle: FileSystemFileHandle | null,
-): Promise<FileSystemFileHandle | null> {
+): Promise<SaveResult> {
   if (handle && (await canWrite(handle))) {
     try {
       await writeText(handle, text);
-      return handle;
+      return { handle, outcome: 'saved' };
     } catch (err) {
-      if ((err as DOMException).name === 'AbortError') return handle;
+      if ((err as DOMException).name === 'AbortError') return { handle, outcome: 'cancelled' };
       // the handle went stale (file moved / permission revoked) — re-pick below
     }
   }
@@ -77,14 +87,14 @@ export async function saveTextFile(
         types: [{ description: 'Project', accept: { 'application/json': ['.voxproj'] } }],
       });
       await writeText(h, text);
-      return h;
+      return { handle: h, outcome: 'saved' };
     } catch (err) {
-      if ((err as DOMException).name === 'AbortError') return null;
+      if ((err as DOMException).name === 'AbortError') return { handle: null, outcome: 'cancelled' };
       throw err;
     }
   }
   downloadBlob(suggestedName, new Blob([text], { type: 'application/json' }));
-  return null;
+  return { handle: null, outcome: 'downloaded' };
 }
 
 export async function saveBinaryFile(suggestedName: string, blob: Blob): Promise<void> {

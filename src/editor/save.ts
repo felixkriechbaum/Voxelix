@@ -2,6 +2,7 @@ import { ref } from 'vue';
 import { useEditorStore } from '@/stores/editor';
 import { serializeProject } from '@/core/io/projectFile';
 import { saveTextFile } from '@/core/io/fileSystem';
+import { toast } from '@/editor/toasts';
 
 const saving = ref(false);
 
@@ -17,16 +18,19 @@ export function useProjectSave() {
     saving.value = true;
     try {
       await new Promise((r) => setTimeout(r)); // let the "Saving…" spinner paint
-      const handle = await saveTextFile(
-        `${store.project.name}.voxproj`,
+      const name = `${store.project.name}.voxproj`;
+      const { handle, outcome } = await saveTextFile(
+        name,
         serializeProject(store.project),
         store.fileHandle,
       );
       store.fileHandle = handle; // null when cancelled → next save re-prompts
+      if (outcome === 'saved') toast(`Saved ${name}`);
+      else if (outcome === 'downloaded') toast(`Downloaded ${name}`);
     } catch (err) {
       console.error('[save]', err);
       store.fileHandle = null;
-      alert('Could not save the project file. Press Save again and choose a location.');
+      toast('Could not save — press Save again and pick a location', 'warn', 5000);
     } finally {
       saving.value = false;
     }

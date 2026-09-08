@@ -4,6 +4,7 @@ import { useEditorStore } from '@/stores/editor';
 import { useSession } from '@/editor/session';
 import { MAX_SIZE } from '@/core/voxel/constants';
 import ContextMenu, { type MenuItem } from './ContextMenu.vue';
+import { toast } from '@/editor/toasts';
 import Icon from './Icon.vue';
 import {
   faPlus,
@@ -46,6 +47,15 @@ function applyResize() {
   store.resizeActive(s);
 }
 
+function resync(id: string) {
+  const dropped = store.resyncOverlay(id);
+  toast(
+    dropped > 0
+      ? `Gave ${dropped.toLocaleString()} cells back to the base`
+      : 'Overlay was already in sync — nothing to drop',
+  );
+}
+
 function baseExists(o: { baseId?: string }): boolean {
   return !!o.baseId && store.objects.some((x) => x.id === o.baseId);
 }
@@ -75,7 +85,7 @@ function openMenu(e: MouseEvent, id: string, name: string, kind: string) {
   ];
   if (kind === 'extend') {
     items.push(
-      { label: 'Re-sync overlay with base', action: () => store.resyncOverlay(id) },
+      { label: 'Re-sync overlay with base', action: () => resync(id) },
       { label: 'Rotate overlay only ⟲', action: () => store.rotateOverlay(id, -1) },
       { label: 'Rotate overlay only ⟳', action: () => store.rotateOverlay(id, 1) },
       { label: 'Reset extend to base', danger: true, action: () => runner.value?.resetOverlay() },

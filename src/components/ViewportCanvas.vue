@@ -11,6 +11,7 @@ import { deleteSelection, moveSelection } from '@/editor/selectionOps';
 import { useTheme } from '@/editor/theme';
 import { loadCameraState, makeCameraSaver } from '@/editor/viewstate';
 import ContextMenu, { type MenuItem } from './ContextMenu.vue';
+import { toast } from '@/editor/toasts';
 import SelectionPanel from './SelectionPanel.vue';
 import type { ToolId } from '@/tools/types';
 import type { PresetView, ProjectionMode } from '@/viewport/GodotControls';
@@ -327,7 +328,17 @@ function openContextMenu(x: number, y: number) {
     );
     if (store.activeObject()?.kind === 'extend') {
       items.push(
-        { label: 'Re-sync overlay with base', action: () => store.resyncOverlay(id) },
+        {
+          label: 'Re-sync overlay with base',
+          action: () => {
+            const dropped = store.resyncOverlay(id);
+            toast(
+              dropped > 0
+                ? `Gave ${dropped.toLocaleString()} cells back to the base`
+                : 'Overlay was already in sync — nothing to drop',
+            );
+          },
+        },
         {
           label: 'Reset extend to base',
           danger: true,
