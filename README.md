@@ -29,7 +29,7 @@ bun run typecheck
 ## Controls
 
 - Camera: MMB orbit · Shift+MMB pan · wheel zoom · RMB + WASD/QE fly · `F` frame
-- Views: Numpad `1`/`3`/`7` front/right/top (Ctrl = opposite), `5` toggles ortho;
+- Views: Numpad `1`/`3`/`7` front/right/top (Shift = opposite), `5` toggles ortho;
   also a Persp/Ortho + preset-view panel in the viewport
 - Tools: `1` place · `2` erase · `3` box · `4` paint · `5` eyedropper · `6` select
 - Hold `Shift` while drawing to lock the stroke to one axis (straight line)

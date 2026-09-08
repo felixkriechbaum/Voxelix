@@ -37,11 +37,11 @@ const brushLabel = computed(() => {
 
 const presetViews: Array<{ id: PresetView; label: string; badge: string; hint: string }> = [
   { id: 'front', label: 'Front', badge: 'Num 1', hint: 'Numpad 1' },
-  { id: 'back', label: 'Back', badge: '⌃1', hint: 'Ctrl + Numpad 1' },
+  { id: 'back', label: 'Back', badge: '⇧1', hint: 'Shift + Numpad 1' },
   { id: 'right', label: 'Right', badge: 'Num 3', hint: 'Numpad 3' },
-  { id: 'left', label: 'Left', badge: '⌃3', hint: 'Ctrl + Numpad 3' },
+  { id: 'left', label: 'Left', badge: '⇧3', hint: 'Shift + Numpad 3' },
   { id: 'top', label: 'Top', badge: 'Num 7', hint: 'Numpad 7' },
-  { id: 'bottom', label: 'Bottom', badge: '⌃7', hint: 'Ctrl + Numpad 7' },
+  { id: 'bottom', label: 'Bottom', badge: '⇧7', hint: 'Shift + Numpad 7' },
   { id: 'iso', label: 'Iso', badge: '', hint: 'Isometric view' },
 ];
 
@@ -214,9 +214,9 @@ function onKey(e: KeyboardEvent) {
     setProjection(projection.value === 'ortho' ? 'perspective' : 'ortho');
     return;
   }
-  if (e.code === 'Numpad1') return setView(e.ctrlKey || e.metaKey ? 'back' : 'front');
-  if (e.code === 'Numpad3') return setView(e.ctrlKey || e.metaKey ? 'left' : 'right');
-  if (e.code === 'Numpad7') return setView(e.ctrlKey || e.metaKey ? 'bottom' : 'top');
+  if (e.code === 'Numpad1') return setView(e.shiftKey ? 'back' : 'front');
+  if (e.code === 'Numpad3') return setView(e.shiftKey ? 'left' : 'right');
+  if (e.code === 'Numpad7') return setView(e.shiftKey ? 'bottom' : 'top');
 
   if (store.toolId === 'select' && store.selection && runner) {
     const sel = store.selection;
