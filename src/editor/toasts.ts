@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 
-export type ToastKind = 'ok' | 'warn';
+export type ToastKind = 'success' | 'info' | 'error';
 
 export interface Toast {
   id: number;
@@ -20,7 +20,7 @@ export function useToasts() {
  * Post a short confirmation. Dismisses itself; posting the same text again
  * replaces the standing one rather than stacking a duplicate (Ctrl+S twice).
  */
-export function toast(text: string, kind: ToastKind = 'ok', ms = 2600): void {
+export function toast(text: string, kind: ToastKind = 'info', ms = 2600): void {
   const id = nextId++;
   items.value = [...items.value.filter((t) => t.text !== text), { id, text, kind }];
   setTimeout(() => dismissToast(id), ms);

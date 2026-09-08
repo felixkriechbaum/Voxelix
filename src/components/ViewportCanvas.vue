@@ -332,11 +332,11 @@ function openContextMenu(x: number, y: number) {
           label: 'Re-sync overlay with base',
           action: () => {
             const dropped = store.resyncOverlay(id);
-            toast(
-              dropped > 0
-                ? `Gave ${dropped.toLocaleString()} cells back to the base`
-                : 'Overlay was already in sync — nothing to drop',
-            );
+            if (dropped > 0) {
+              toast(`Gave ${dropped.toLocaleString()} cells back to the base`, 'success');
+            } else {
+              toast('Overlay was already in sync — nothing to drop', 'info');
+            }
           },
         },
         {

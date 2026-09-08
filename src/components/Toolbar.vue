@@ -12,6 +12,7 @@ import {
 import { exportObjectToGlb, exportProjectToGlbs } from '@/core/export/exportGlb';
 import { resolveEffectiveData } from '@/core/project/resolve';
 import { useProjectSave } from '@/editor/save';
+import { toast } from '@/editor/toasts';
 import Icon from './Icon.vue';
 import {
   faRotateLeft,
@@ -85,7 +86,7 @@ async function exportActive() {
     const data = resolveEffectiveData(obj, store.project);
     const file = await exportObjectToGlb(obj, data, store.project.palette, store.project.exportSettings);
     if (!file) {
-      alert('Object is empty — nothing to export.');
+      toast('Object is empty — nothing to export', 'info');
       return;
     }
     await saveBinaryFile(file.name, file.blob);
@@ -113,7 +114,7 @@ async function exportAll() {
         : `Finishing (${done}/${total})…`;
     });
     if (files.length === 0) {
-      alert('No objects with voxels to export.');
+      toast('No objects with voxels to export', 'info');
       return;
     }
     if (dir) {

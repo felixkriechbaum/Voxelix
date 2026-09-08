@@ -25,12 +25,12 @@ export function useProjectSave() {
         store.fileHandle,
       );
       store.fileHandle = handle; // null when cancelled → next save re-prompts
-      if (outcome === 'saved') toast(`Saved ${name}`);
-      else if (outcome === 'downloaded') toast(`Downloaded ${name}`);
+      if (outcome === 'saved') toast(`Saved ${name}`, 'success');
+      else if (outcome === 'downloaded') toast(`Downloaded ${name}`, 'success');
     } catch (err) {
       console.error('[save]', err);
       store.fileHandle = null;
-      toast('Could not save — press Save again and pick a location', 'warn', 5000);
+      toast('Could not save — press Save again and pick a location', 'error', 5000);
     } finally {
       saving.value = false;
     }
