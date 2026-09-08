@@ -86,6 +86,10 @@ src/
   implements `ToolContext`, applies voxel writes, records `{x,y,z,prev,next}`
   diffs, pushes history batches, and tells the `Viewport` to re-mesh. During a
   drag the batch re-meshes once per frame (rAF-coalesced) so strokes show live.
+- Switching to an object with nothing rendered (a fresh one, or one fully
+  erased) refits the camera. `Picker.pick` only accepts a click that lands
+  inside the active grid's bounds, so a camera still framed on a larger object
+  leaves a small new one silently unclickable — no hit, no error, nothing.
 - Meshing is always off-thread. A chunk is re-meshed when its voxels or a
   neighbour's border voxels change (`VoxelData.dirty`).
 - Autosave writes the whole project (+ a viewport JPEG thumbnail) to IndexedDB

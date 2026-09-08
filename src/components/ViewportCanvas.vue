@@ -105,12 +105,26 @@ function selectAll() {
   });
 }
 
+/** id of the object the viewport last loaded, to spot an actual switch */
+let loadedId: string | null = null;
+
 function loadActive() {
   const obj = store.activeObject();
   const project = store.project;
   if (!viewport || !runner || !obj || !project) return;
   runner.syncActive();
-  viewport.setActiveRender(buildActiveRender(obj, project));
+  const render = buildActiveRender(obj, project);
+  viewport.setActiveRender(render);
+
+  const switched = obj.id !== loadedId;
+  loadedId = obj.id;
+  // Nothing is drawn for a brand-new (or emptied) object, and the camera is
+  // still framed on whatever was open before. Its grid would sit off to the
+  // side, so every click falls outside the pick window and silently does
+  // nothing — refit so the new object is actually reachable.
+  const nothingToSee =
+    render.editableData.isEmpty() && (!render.baseContext || render.baseContext.isEmpty());
+  if (switched && nothingToSee) viewport.frameActive();
 }
 
 onMounted(() => {
