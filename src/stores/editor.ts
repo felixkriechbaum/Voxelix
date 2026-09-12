@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, markRaw, ref, shallowRef } from 'vue';
 import { Project } from '@/core/project/Project';
-import { defaultExportSettings, type ExportSettings } from '@/core/project/types';
+import { defaultExportSettings, type ColorAdjust, type ExportSettings } from '@/core/project/types';
 import {
   alignOverlayToBase,
   compactOverlay,
@@ -267,6 +267,15 @@ export const useEditorStore = defineStore('editor', () => {
     activeVersion.value++;
   }
 
+  /** Saturation/brightness shift for one object, applied at mesh/export time —
+   *  the palette itself is left untouched, so other objects are unaffected. */
+  function setColorAdjust(id: string, adjust: ColorAdjust) {
+    const o = project.value?.getById(id);
+    if (!o) return;
+    o.colorAdjust = adjust.saturation === 0 && adjust.brightness === 0 ? undefined : adjust;
+    activeVersion.value++;
+  }
+
   /**
    * Subdivide an object's grid to CELLS_PER_VOXEL cells per voxel so a fractional
    * brush has somewhere to land. Lossless (VoxelData.upscale keeps the shape),
@@ -387,6 +396,7 @@ export const useEditorStore = defineStore('editor', () => {
     removeObject,
     renameObject,
     resizeActive,
+    setColorAdjust,
     rotateActive,
     ensureDetail,
     bumpEdit,

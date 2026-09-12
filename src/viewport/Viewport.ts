@@ -6,6 +6,8 @@ import { ChunkMeshView } from './ChunkMeshView';
 import { ChunkMesher } from '@/core/mesh/ChunkMesher';
 import type { ActiveRender } from '@/core/project/resolve';
 import type { VoxelData } from '@/core/voxel/VoxelData';
+import { adjustPaletteLinear } from '@/core/palette';
+import type { ColorAdjust } from '@/core/project/types';
 
 export class Viewport {
   readonly scene = new THREE.Scene();
@@ -21,6 +23,8 @@ export class Viewport {
   private baseView: ChunkMeshView | null = null;
   private timer = new THREE.Timer();
   private raf = 0;
+  private paletteLinear: Float32Array<ArrayBufferLike> = new Float32Array(768);
+  private activeColorAdjust: ColorAdjust | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.scene.background = new THREE.Color(0x181b23);
@@ -56,23 +60,33 @@ export class Viewport {
   }
 
   setPalette(paletteLinear: Float32Array<ArrayBufferLike>): void {
+    this.paletteLinear = paletteLinear;
     this.mesher.setPalette(paletteLinear);
-    for (const view of [this.editableView, this.baseView]) {
-      if (!view) continue;
-      view.data.markAllChunksDirty();
-      view.flush();
-    }
+    this.editableView?.setPaletteOverride(this.colorAdjustOverride());
+    this.baseView?.data.markAllChunksDirty();
+    this.baseView?.flush();
+  }
+
+  /** The active object's saturation/brightness shift applied to a copy of the
+   *  current palette, or null when it has none — the palette itself is never
+   *  mutated, so other objects sharing its slots are unaffected. */
+  private colorAdjustOverride(): Float32Array | null {
+    const adj = this.activeColorAdjust;
+    if (!adj || (adj.saturation === 0 && adj.brightness === 0)) return null;
+    return adjustPaletteLinear(this.paletteLinear, adj.saturation, adj.brightness);
   }
 
   /** Install / refresh the active render bundle (editable grid + optional locked base). */
   setActiveRender(render: ActiveRender): void {
+    this.activeColorAdjust = render.colorAdjust;
     if (this.editableView && this.editableView.id === render.editableId) {
       this.editableView.setData(render.editableData);
+      this.editableView.setPaletteOverride(this.colorAdjustOverride());
     } else {
       this.editableView?.dispose();
       this.editableView = new ChunkMeshView(render.editableId, render.editableData, this.mesher);
       this.scene.add(this.editableView.group);
-      this.editableView.flush();
+      this.editableView.setPaletteOverride(this.colorAdjustOverride());
     }
 
     if (render.baseContext) {

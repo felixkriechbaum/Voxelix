@@ -26,6 +26,8 @@ const active = computed(() => store.activeObject());
 /** edited in voxels (grid cells / detail) */
 const size = ref<[number, number, number]>([16, 16, 16]);
 const maxVoxels = computed(() => Math.floor(MAX_SIZE / store.activeDetail));
+/** saturation/brightness shift, in percent (-100..100) for the sliders */
+const colorAdjustPct = ref<[number, number]>([0, 0]);
 
 function startRename(id: string, current: string) {
   renamingId.value = id;
@@ -111,9 +113,26 @@ function syncSize() {
     number,
     number,
   ];
+  colorAdjustPct.value = [
+    Math.round((a.colorAdjust?.saturation ?? 0) * 100),
+    Math.round((a.colorAdjust?.brightness ?? 0) * 100),
+  ];
 }
 syncSize();
 watch(() => [store.activeVersion, store.structureVersion], syncSize);
+
+function applyColorAdjust() {
+  const a = active.value;
+  if (!a) return;
+  store.setColorAdjust(a.id, {
+    saturation: colorAdjustPct.value[0] / 100,
+    brightness: colorAdjustPct.value[1] / 100,
+  });
+}
+function resetColorAdjust() {
+  colorAdjustPct.value = [0, 0];
+  applyColorAdjust();
+}
 </script>
 
 <template>
@@ -224,6 +243,39 @@ watch(() => [store.activeVersion, store.structureVersion], syncSize);
           Set
         </button>
       </div>
+
+      <h3 style="margin-top: 12px">
+        Colour
+        <button
+          class="reset"
+          title="Reset saturation and brightness for this object"
+          @click="resetColorAdjust"
+        >
+          Reset
+        </button>
+      </h3>
+      <div class="row slider">
+        <label>Sättigung</label>
+        <input
+          v-model.number="colorAdjustPct[0]"
+          type="range"
+          min="-100"
+          max="100"
+          @input="applyColorAdjust"
+        />
+        <span class="pct">{{ colorAdjustPct[0] }}%</span>
+      </div>
+      <div class="row slider">
+        <label>Helligkeit</label>
+        <input
+          v-model.number="colorAdjustPct[1]"
+          type="range"
+          min="-100"
+          max="100"
+          @input="applyColorAdjust"
+        />
+        <span class="pct">{{ colorAdjustPct[1] }}%</span>
+      </div>
     </template>
 
     <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menu.items" @close="menu = null" />
@@ -294,5 +346,37 @@ watch(() => [store.activeVersion, store.structureVersion], syncSize);
 .ic.danger:hover:not(:disabled) {
   color: var(--warn);
   border-color: var(--warn);
+}
+.outliner h3 .reset {
+  float: right;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ink-dim);
+}
+.outliner h3 .reset:hover {
+  color: var(--ink);
+}
+.slider {
+  gap: 6px;
+  margin-top: 4px;
+}
+.slider label {
+  width: 62px;
+  flex: none;
+  color: var(--ink-dim);
+  font-size: 11px;
+}
+.slider input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}
+.slider .pct {
+  width: 3.2em;
+  flex: none;
+  text-align: right;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
 }
 </style>

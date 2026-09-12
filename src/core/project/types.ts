@@ -15,6 +15,14 @@ export interface VoxelObjectJson {
   pivot?: 'bottom-center' | 'min-corner';
   /** grid cells per voxel edge; default 1 */
   detail?: number;
+  /** per-object saturation/brightness shift applied at mesh/export time; the
+   *  palette itself is left untouched. Shifts are in [-1, 1]; absent = 0/0. */
+  colorAdjust?: ColorAdjust;
+}
+
+export interface ColorAdjust {
+  saturation: number;
+  brightness: number;
 }
 
 export interface ExportSettings {

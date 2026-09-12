@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { greedyMesh } from '@/core/mesh/greedyMesh';
 import type { MeshArrays } from '@/core/mesh/meshTypes';
-import { paletteToLinearArray, type Palette } from '@/core/palette';
+import { adjustPaletteLinear, paletteToLinearArray, type Palette } from '@/core/palette';
 import { resolveEffectiveData } from '@/core/project/resolve';
 import type { VoxelData } from '@/core/voxel/VoxelData';
 import type { VoxelObject } from '@/core/project/VoxelObject';
@@ -65,7 +65,11 @@ export async function exportObjectToGlb(
   const bounds = effectiveData.filledBounds();
   if (!bounds) return null;
 
-  const paletteLinear = paletteToLinearArray(palette);
+  let paletteLinear = paletteToLinearArray(palette);
+  const adj = object.colorAdjust;
+  if (adj && (adj.saturation !== 0 || adj.brightness !== 0)) {
+    paletteLinear = adjustPaletteLinear(paletteLinear, adj.saturation, adj.brightness);
+  }
   const arrays = await buildMergedArrays(effectiveData, paletteLinear);
 
   let ox: number;

@@ -13,6 +13,7 @@ export class ChunkMeshView {
   readonly group = new THREE.Group();
   private meshes = new Map<number, THREE.Mesh>();
   private material: THREE.MeshStandardMaterial;
+  private paletteOverride: Float32Array | undefined;
 
   constructor(
     public readonly id: string,
@@ -50,9 +51,17 @@ export class ChunkMeshView {
 
   flush(): void {
     if (this.data.dirty.size > 0) {
-      this.mesher.meshChunks(this.id, this.data, this.data.dirty);
+      this.mesher.meshChunks(this.id, this.data, this.data.dirty, this.paletteOverride);
     }
     this.data.dirty.clear();
+  }
+
+  /** Re-mesh with a per-object palette override (e.g. a saturation/brightness
+   *  shift), or null to fall back to the shared project palette. */
+  setPaletteOverride(palette: Float32Array | null): void {
+    this.paletteOverride = palette ?? undefined;
+    this.data.markAllChunksDirty();
+    this.flush();
   }
 
   applyResult(r: MeshResult): void {

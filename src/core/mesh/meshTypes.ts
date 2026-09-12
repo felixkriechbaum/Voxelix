@@ -13,6 +13,9 @@ export interface MeshJob {
   padded: Uint16Array;
   /** chunk world-space origin */
   origin: [number, number, number];
+  /** per-object palette override (e.g. a saturation/brightness shift); falls
+   *  back to the shared palette set via the 'palette' message when absent */
+  palette?: Float32Array;
 }
 
 /** Result posted back from the mesher worker. */

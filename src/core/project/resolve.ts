@@ -2,6 +2,7 @@ import { VoxelData } from '@/core/voxel/VoxelData';
 import { REMOVED } from '@/core/voxel/constants';
 import type { Project } from './Project';
 import type { VoxelObject } from './VoxelObject';
+import type { ColorAdjust } from './types';
 
 /**
  * The voxel grid an object actually represents once extend-overlays are applied.
@@ -112,11 +113,14 @@ export interface ActiveRender {
   baseResolved: VoxelData | null;
   /** grid cells per voxel edge — drives the voxel-grid overlay */
   detail: number;
+  /** the active object's own saturation/brightness shift, or null if unset */
+  colorAdjust: ColorAdjust | null;
 }
 
 /** Build the render/edit bundle for whichever object is active. */
 export function buildActiveRender(object: VoxelObject, project: Project): ActiveRender {
   const detail = effectiveDetail(object, project);
+  const colorAdjust = object.colorAdjust ?? null;
   if (object.kind !== 'extend' || !object.baseId) {
     return {
       editableId: object.id,
@@ -124,6 +128,7 @@ export function buildActiveRender(object: VoxelObject, project: Project): Active
       baseContext: null,
       baseResolved: null,
       detail,
+      colorAdjust,
     };
   }
   const base = project.getById(object.baseId);
@@ -148,7 +153,7 @@ export function buildActiveRender(object: VoxelObject, project: Project): Active
     if (v !== REMOVED) editableData.setRaw(x, y, z, v);
   });
 
-  return { editableId: object.id, editableData, baseContext, baseResolved, detail };
+  return { editableId: object.id, editableData, baseContext, baseResolved, detail, colorAdjust };
 }
 
 /**

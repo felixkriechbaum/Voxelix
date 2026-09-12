@@ -1,6 +1,6 @@
 import { VoxelData } from '@/core/voxel/VoxelData';
 import { CELLS_PER_VOXEL } from '@/core/voxel/constants';
-import type { ObjectKind, VoxelObjectJson } from './types';
+import type { ColorAdjust, ObjectKind, VoxelObjectJson } from './types';
 
 export class VoxelObject {
   id: string;
@@ -11,6 +11,8 @@ export class VoxelObject {
   pivot: 'bottom-center' | 'min-corner';
   /** grid cells per voxel edge: 1 = coarse, or CELLS_PER_VOXEL once subdivided */
   detail: number;
+  /** per-object saturation/brightness shift; undefined = unchanged */
+  colorAdjust?: ColorAdjust;
 
   constructor(opts: {
     id?: string;
@@ -20,6 +22,7 @@ export class VoxelObject {
     data: VoxelData;
     pivot?: 'bottom-center' | 'min-corner';
     detail?: number;
+    colorAdjust?: ColorAdjust;
   }) {
     this.id = opts.id ?? crypto.randomUUID();
     this.name = opts.name;
@@ -28,6 +31,7 @@ export class VoxelObject {
     this.data = opts.data;
     this.pivot = opts.pivot ?? 'bottom-center';
     this.detail = Math.min(CELLS_PER_VOXEL, Math.max(1, Math.round(opts.detail ?? 1)));
+    this.colorAdjust = opts.colorAdjust;
   }
 
   toJSON(): VoxelObjectJson {
@@ -39,6 +43,7 @@ export class VoxelObject {
       data: this.data.toJSON(),
       pivot: this.pivot,
       detail: this.detail,
+      colorAdjust: this.colorAdjust,
     };
   }
 
@@ -51,6 +56,7 @@ export class VoxelObject {
       data: VoxelData.fromJSON(json.data),
       pivot: json.pivot,
       detail: json.detail,
+      colorAdjust: json.colorAdjust,
     });
   }
 }

@@ -9,7 +9,7 @@ type Inbound =
 let paletteLinear: Float32Array<ArrayBufferLike> = new Float32Array(768);
 
 function run(job: MeshJob): void {
-  const mesh = greedyMesh(job.padded, paletteLinear, job.origin[0], job.origin[1], job.origin[2]);
+  const mesh = greedyMesh(job.padded, job.palette ?? paletteLinear, job.origin[0], job.origin[1], job.origin[2]);
   const result: MeshResult = {
     objectId: job.objectId,
     chunkKey: job.chunkKey,
