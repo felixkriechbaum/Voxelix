@@ -63,8 +63,7 @@ export class Viewport {
     this.paletteLinear = paletteLinear;
     this.mesher.setPalette(paletteLinear);
     this.editableView?.setPaletteOverride(this.colorAdjustOverride());
-    this.baseView?.data.markAllChunksDirty();
-    this.baseView?.flush();
+    this.baseView?.setPaletteOverride(this.colorAdjustOverride());
   }
 
   /** The active object's saturation/brightness shift applied to a copy of the
@@ -93,11 +92,12 @@ export class Viewport {
       const baseId = `${render.editableId}::base`;
       if (this.baseView && this.baseView.id === baseId) {
         this.baseView.setData(render.baseContext);
+        this.baseView.setPaletteOverride(this.colorAdjustOverride());
       } else {
         this.baseView?.dispose();
         this.baseView = new ChunkMeshView(baseId, render.baseContext, this.mesher, { dimmed: true });
         this.scene.add(this.baseView.group);
-        this.baseView.flush();
+        this.baseView.setPaletteOverride(this.colorAdjustOverride());
       }
     } else {
       this.baseView?.dispose();
