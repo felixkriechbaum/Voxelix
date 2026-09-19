@@ -35,6 +35,10 @@ const brushLabel = computed(() => {
   const f = Math.min(store.activeDetail, store.voxelFraction);
   return f <= 1 ? 'brush: full voxel' : `brush: 1/${f} voxel`;
 });
+const buildOffsetLabel = computed(() => {
+  const voxels = store.buildOffset / store.activeDetail;
+  return Number.isInteger(voxels) ? String(voxels) : voxels.toFixed(2).replace(/0+$/, '');
+});
 
 const presetViews: Array<{ id: PresetView; label: string; badge: string; hint: string }> = [
   { id: 'front', label: 'Front', badge: 'Num 1', hint: 'Numpad 1' },
@@ -200,7 +204,11 @@ function onLeave() {
 
 function onKey(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null;
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  if (
+    menu.value ||
+    document.querySelector('[aria-modal="true"]') ||
+    (t && (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(t.tagName) || t.isContentEditable))
+  ) return;
 
   // Use e.key (layout-aware) for the letter shortcuts: on a QWERTZ keyboard the
   // physical Z key reports e.code === 'KeyY', which would swap undo and redo.
@@ -222,7 +230,9 @@ function onKey(e: KeyboardEvent) {
       selectAll();
       return;
     }
+    return;
   }
+  if (e.altKey) return;
   if (e.code === 'KeyF') {
     viewport?.frameActive();
     return;
@@ -289,6 +299,11 @@ function openContextMenu(x: number, y: number) {
   if (!runner) return;
   const hit = runner.pick(x, y);
   const items: MenuItem[] = [];
+  const activeObject = store.activeObject();
+  const canInherit =
+    activeObject?.kind === 'extend' &&
+    !!activeObject.baseId &&
+    !!store.project?.getById(activeObject.baseId);
 
   if (hit?.remove) {
     const v = { ...hit.remove };
@@ -309,7 +324,7 @@ function openContextMenu(x: number, y: number) {
           fillCells(floodRegion(runner!.data, v.x, v.y, v.z, true), store.currentColor, 'Fill region'),
       },
     );
-    if (store.activeObject()?.kind === 'extend') {
+    if (canInherit) {
       items.push(
         {
           label: `Give back to base (${brushLabel.value.replace('brush: ', '')})`,
@@ -340,10 +355,11 @@ function openContextMenu(x: number, y: number) {
       { label: 'Duplicate object', action: () => store.duplicateObject(id) },
       { label: 'Extend object', action: () => store.extendObject(id) },
     );
-    if (store.activeObject()?.kind === 'extend') {
+    if (activeObject?.kind === 'extend') {
       items.push(
         {
           label: 'Re-sync overlay with base',
+          disabled: !canInherit,
           action: () => {
             const dropped = store.resyncOverlay(id);
             if (dropped > 0) {
@@ -356,6 +372,7 @@ function openContextMenu(x: number, y: number) {
         {
           label: 'Reset extend to base',
           danger: true,
+          disabled: !canInherit,
           action: () => runner?.resetOverlay(),
         },
       );
@@ -415,6 +432,7 @@ watch(theme, (t) => viewport?.setDark(t === 'dark'));
       <div class="seg">
         <button
           :class="{ active: projection === 'perspective' }"
+          :aria-pressed="projection === 'perspective'"
           title="Perspective camera — toggle with Numpad 5"
           @click="setProjection('perspective')"
         >
@@ -422,6 +440,7 @@ watch(theme, (t) => viewport?.setDark(t === 'dark'));
         </button>
         <button
           :class="{ active: projection === 'ortho' }"
+          :aria-pressed="projection === 'ortho'"
           title="Orthographic camera — toggle with Numpad 5"
           @click="setProjection('ortho')"
         >
@@ -444,7 +463,7 @@ watch(theme, (t) => viewport?.setDark(t === 'dark'));
     <SelectionPanel v-if="store.toolId === 'select' && store.selection" />
 
     <div class="hud">
-      {{ store.buildPlane.toUpperCase() }} plane @ {{ store.buildOffset }}
+      {{ store.buildPlane.toUpperCase() }} plane @ {{ buildOffsetLabel }} voxel{{ buildOffsetLabel === '1' ? '' : 's' }}
       <template v-if="store.activeDetail > 1">&nbsp;·&nbsp; {{ brushLabel }}</template>
       &nbsp;·&nbsp;
       <template v-if="store.toolId === 'select'">

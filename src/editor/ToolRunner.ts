@@ -254,7 +254,7 @@ export class ToolRunner implements ToolContext {
    */
   resetOverlay(): boolean {
     const ctx = this.ctx;
-    if (!ctx || !ctx.extend) return false;
+    if (!ctx || !ctx.extend || !this.hasLinkedBase(ctx)) return false;
     const edits: VoxelEdit[] = [];
     ctx.object.data.forEachEntry((x, y, z, v) => edits.push({ x, y, z, prev: v, next: 0 }));
     if (edits.length === 0) return false;
@@ -273,7 +273,7 @@ export class ToolRunner implements ToolContext {
    */
   revertToBase(cells: Array<[number, number, number]>, label = 'Revert to base'): boolean {
     const ctx = this.ctx;
-    if (!ctx || !ctx.extend) return false;
+    if (!ctx || !ctx.extend || !this.hasLinkedBase(ctx)) return false;
     const edits: VoxelEdit[] = [];
     for (const [x, y, z] of cells) {
       const prev = ctx.object.data.get(x, y, z);
@@ -287,6 +287,10 @@ export class ToolRunner implements ToolContext {
     this.store.bumpEdit();
     this.afterEdit();
     return true;
+  }
+
+  private hasLinkedBase(ctx: ActiveCtx): boolean {
+    return !!ctx.object.baseId && !!this.store.project?.getById(ctx.object.baseId);
   }
 
   /**

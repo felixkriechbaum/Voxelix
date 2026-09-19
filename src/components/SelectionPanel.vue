@@ -16,10 +16,11 @@ const { runner } = useSession();
 
 const dims = computed(() => (store.selection ? selectionDims(store.selection) : null));
 const smartCount = computed(() => store.selection?.cells?.length ?? null);
-const isExtend = computed(() => {
+const canGiveBack = computed(() => {
   void store.activeVersion;
   void store.structureVersion;
-  return store.activeObject()?.kind === 'extend';
+  const obj = store.activeObject();
+  return obj?.kind === 'extend' && !!obj.baseId && !!store.project?.getById(obj.baseId);
 });
 
 function nudge(d: [number, number, number]) {
@@ -62,7 +63,7 @@ function toBase() {
       <button class="danger" title="Delete voxels (Del)" @click="remove">Delete</button>
       <button title="Clear selection (Esc)" @click="store.clearSelection()">Deselect</button>
       <button
-        v-if="isExtend"
+        v-if="canGiveBack"
         class="wide"
         title="Drop this overlay's changes inside the selection so those cells inherit from the base again — everything outside stays as it is"
         @click="toBase"

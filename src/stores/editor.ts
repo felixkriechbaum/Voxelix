@@ -125,7 +125,7 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   function setActive(id: string) {
-    if (!project.value) return;
+    if (!project.value || activeObjectId.value === id || !project.value.getById(id)) return;
     activeObjectId.value = id;
     project.value.activeObjectId = id;
     buildOffset.value = 0;
@@ -248,8 +248,13 @@ export const useEditorStore = defineStore('editor', () => {
 
   function removeObject(id: string) {
     if (!project.value) return;
+    const previousActive = activeObjectId.value;
     project.value.remove(id);
     activeObjectId.value = project.value.activeObjectId;
+    if (activeObjectId.value !== previousActive) {
+      buildOffset.value = 0;
+      selection.value = null;
+    }
     structureVersion.value++;
     activeVersion.value++;
   }

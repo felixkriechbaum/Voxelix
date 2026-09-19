@@ -210,8 +210,8 @@ export class VoxelData {
 
   resize(sizeX: number, sizeY: number, sizeZ: number): void {
     const next = new VoxelData(sizeX, sizeY, sizeZ);
-    this.forEachFilled((x, y, z, c) => {
-      if (next.inBounds(x, y, z)) next.set(x, y, z, c);
+    this.forEachEntry((x, y, z, value) => {
+      if (next.inBounds(x, y, z)) next.setRaw(x, y, z, value);
     });
     this.adopt(next);
   }

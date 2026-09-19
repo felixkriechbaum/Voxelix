@@ -1,6 +1,7 @@
 import { VoxelData } from '@/core/voxel/VoxelData';
 import { createDefaultPalette, type Palette } from '@/core/palette';
 import { VoxelObject } from './VoxelObject';
+import { resolveEffectiveData } from './resolve';
 import { CELLS_PER_VOXEL } from '@/core/voxel/constants';
 import {
   defaultExportSettings,
@@ -48,8 +49,8 @@ export class Project {
     return this.objects.find((o) => o.id === id) ?? null;
   }
 
-  private uniqueName(base: string): string {
-    const names = new Set(this.objects.map((o) => o.name));
+  private uniqueName(base: string, excludeId?: string): string {
+    const names = new Set(this.objects.filter((o) => o.id !== excludeId).map((o) => o.name));
     if (!names.has(base)) return base;
     for (let i = 2; ; i++) {
       const candidate = `${base} ${i}`;
@@ -87,12 +88,16 @@ export class Project {
   duplicate(id: string): VoxelObject | null {
     const src = this.getById(id);
     if (!src) return null;
+    const resolved = resolveEffectiveData(src, this);
+    const data = new VoxelData(resolved.sizeX, resolved.sizeY, resolved.sizeZ);
+    resolved.forEachFilled((x, y, z, color) => data.set(x, y, z, color));
     const copy = new VoxelObject({
       name: this.uniqueName(`${src.name} copy`),
       kind: 'normal',
-      data: src.data.clone(),
+      data,
       pivot: src.pivot,
       detail: src.detail,
+      colorAdjust: src.colorAdjust ? { ...src.colorAdjust } : undefined,
     });
     const idx = this.objects.findIndex((o) => o.id === id);
     this.objects.splice(idx + 1, 0, copy);
@@ -119,7 +124,7 @@ export class Project {
 
   rename(id: string, name: string): void {
     const obj = this.getById(id);
-    if (obj) obj.name = this.uniqueName(name.trim() || obj.name);
+    if (obj) obj.name = this.uniqueName(name.trim() || obj.name, id);
   }
 
   toJSON(): ProjectJson {

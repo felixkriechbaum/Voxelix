@@ -18,14 +18,14 @@ const MAX_WAIT_MS = 30_000;
  * active-object or palette mutation marks the project dirty; a flush also fires
  * when the tab is hidden or unloaded. Call once from the editor view's setup.
  */
-export function useAutosave(): void {
+export function useAutosave(): { flushAutosave: () => Promise<void> } {
   const store = useEditorStore();
   const { viewport } = useSession();
-  if (!isProjectStoreAvailable()) return;
+  if (!isProjectStoreAvailable()) return { flushAutosave: async () => {} };
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   let dirty = false;
-  let flushing = false;
+  let flushPromise: Promise<void> | null = null;
   let dirtySince = 0;
   let currentId: string | null = store.project?.id ?? null;
   /** preserved across rewrites; resolved from the existing record on first flush */
@@ -40,39 +40,50 @@ export function useAutosave(): void {
 
   async function flush(): Promise<void> {
     clearTimer();
-    const project = store.project;
-    if (!project || !dirty || flushing) return;
-
-    flushing = true;
-    dirty = false;
-    dirtySince = 0;
-    store.autosaveBusy = true;
-    try {
-      if (createdAt === 0) {
-        const existing = await getProjectRecord(project.id);
-        createdAt = existing?.createdAt ?? Date.now();
+    while (true) {
+      if (flushPromise) {
+        await flushPromise;
+        continue;
       }
-      const record: ProjectRecord = {
-        id: project.id,
-        name: project.name,
-        objectCount: project.objects.length,
-        createdAt,
-        updatedAt: Date.now(),
-        json: project.toJSON(),
-        thumbnail: viewport.value?.captureThumbnail() ?? undefined,
-      };
-      await putProjectRecord(record);
-      store.autosaveAt = record.updatedAt;
-      store.autosaveError = false;
-    } catch (err) {
-      console.warn('[autosave] write failed', err);
-      dirty = true; // try again on the next change
-      store.autosaveError = true;
-    } finally {
-      flushing = false;
-      store.autosaveBusy = false;
+      const project = store.project;
+      if (!project || !dirty) return;
+
+      dirty = false;
+      dirtySince = 0;
+      store.autosaveBusy = true;
+      flushPromise = (async () => {
+        try {
+          if (createdAt === 0) {
+            const existing = await getProjectRecord(project.id);
+            createdAt = existing?.createdAt ?? Date.now();
+          }
+          const record: ProjectRecord = {
+            id: project.id,
+            name: project.name,
+            objectCount: project.objects.length,
+            createdAt,
+            updatedAt: Date.now(),
+            json: project.toJSON(),
+            thumbnail: viewport.value?.captureThumbnail() ?? undefined,
+          };
+          await putProjectRecord(record);
+          store.autosaveAt = record.updatedAt;
+          store.autosaveError = false;
+        } catch (err) {
+          console.warn('[autosave] write failed', err);
+          dirty = true; // try again on the next change
+          store.autosaveError = true;
+        } finally {
+          store.autosaveBusy = false;
+        }
+      })();
+      await flushPromise;
+      flushPromise = null;
+      if (store.autosaveError) {
+        if (dirty) schedule();
+        return;
+      }
     }
-    if (dirty) schedule();
   }
 
   function schedule(): void {
@@ -132,4 +143,6 @@ export function useAutosave(): void {
     stopWatch();
     void flush();
   });
+
+  return { flushAutosave: flush };
 }

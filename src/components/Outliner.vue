@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch, type ComponentPublicInstance } from 'vue';
 import { useEditorStore } from '@/stores/editor';
 import { useSession } from '@/editor/session';
 import { MAX_SIZE } from '@/core/voxel/constants';
@@ -21,6 +21,7 @@ const renamingId = ref<string | null>(null);
 const renameText = ref('');
 const renameInput = ref<HTMLInputElement | null>(null);
 const menu = ref<{ x: number; y: number; items: MenuItem[] } | null>(null);
+const deleteTargetId = ref<string | null>(null);
 
 const active = computed(() => store.activeObject());
 /** edited in voxels (grid cells / detail) */
@@ -33,6 +34,19 @@ function startRename(id: string, current: string) {
   renamingId.value = id;
   renameText.value = current;
   nextTick(() => renameInput.value?.select());
+}
+function setRenameInput(el: Element | ComponentPublicInstance | null) {
+  renameInput.value = el instanceof HTMLInputElement ? el : null;
+}
+function onObjectKey(e: KeyboardEvent, id: string, name: string) {
+  if (e.target instanceof HTMLInputElement) return;
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    store.setActive(id);
+  } else if (e.key === 'F2') {
+    e.preventDefault();
+    startRename(id, name);
+  }
 }
 function commitRename() {
   if (renamingId.value) store.renameObject(renamingId.value, renameText.value);
@@ -57,6 +71,34 @@ function resync(id: string) {
 
 function baseExists(o: { baseId?: string }): boolean {
   return !!o.baseId && store.objects.some((x) => x.id === o.baseId);
+}
+
+const deleteInfo = computed(() => {
+  const id = deleteTargetId.value;
+  if (!id) return null;
+  const target = store.objects.find((o) => o.id === id);
+  if (!target) return null;
+  const doomed = new Set([id]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const o of store.objects) {
+      if (o.baseId && doomed.has(o.baseId) && !doomed.has(o.id)) {
+        doomed.add(o.id);
+        grew = true;
+      }
+    }
+  }
+  return { id, name: target.name, linked: doomed.size - 1 };
+});
+
+function requestDelete(id: string) {
+  menu.value = null;
+  deleteTargetId.value = id;
+}
+function confirmDelete() {
+  if (!deleteTargetId.value) return;
+  store.removeObject(deleteTargetId.value);
+  deleteTargetId.value = null;
 }
 
 /** True if making `candidateId` the base of `overlayId` would form a cycle. */
@@ -87,7 +129,12 @@ function openMenu(e: MouseEvent, id: string, name: string, kind: string) {
       { label: 'Re-sync overlay with base', action: () => resync(id) },
       { label: 'Rotate overlay only ⟲', action: () => store.rotateOverlay(id, -1) },
       { label: 'Rotate overlay only ⟳', action: () => store.rotateOverlay(id, 1) },
-      { label: 'Reset extend to base', danger: true, action: () => runner.value?.resetOverlay() },
+      {
+        label: 'Reset extend to base',
+        danger: true,
+        disabled: !baseExists(store.objects.find((o) => o.id === id) ?? {}),
+        action: () => runner.value?.resetOverlay(),
+      },
     );
   }
   const bases = store.objects.filter((o) => o.id !== id && !wouldCycle(o.id, id));
@@ -100,7 +147,7 @@ function openMenu(e: MouseEvent, id: string, name: string, kind: string) {
       });
     }
   }
-  items.push({ separator: true }, { label: 'Delete', danger: true, action: () => store.removeObject(id) });
+  items.push({ separator: true }, { label: 'Delete', danger: true, action: () => requestDelete(id) });
   menu.value = { x: e.clientX, y: e.clientY, items };
 }
 
@@ -145,19 +192,24 @@ function resetColorAdjust() {
       </button>
     </div>
 
-    <ul class="list">
+    <ul class="list" aria-label="Project objects">
       <li
         v-for="o in store.objects"
         :key="o.id"
         :class="{ sel: o.id === store.activeObjectId }"
+        :role="renamingId === o.id ? undefined : 'button'"
+        :aria-pressed="renamingId === o.id ? undefined : o.id === store.activeObjectId"
+        :aria-current="o.id === store.activeObjectId ? 'true' : undefined"
+        :tabindex="renamingId === o.id ? -1 : 0"
         title="Click to select · double-click to rename · right-click for more"
         @click="store.setActive(o.id)"
         @dblclick="startRename(o.id, o.name)"
         @contextmenu.prevent="openMenu($event, o.id, o.name, o.kind)"
+        @keydown="onObjectKey($event, o.id, o.name)"
       >
         <input
           v-if="renamingId === o.id"
-          ref="renameInput"
+          :ref="setRenameInput"
           v-model="renameText"
           type="text"
           @keydown.enter="commitRename"
@@ -224,10 +276,21 @@ function resetColorAdjust() {
         :disabled="!store.activeObjectId"
         title="Delete this object"
         aria-label="Delete object"
-        @click="store.removeObject(store.activeObjectId!)"
+        @click="requestDelete(store.activeObjectId!)"
       >
         <Icon :icon="faTrash" />
       </button>
+    </div>
+
+    <div v-if="deleteInfo" class="delete-confirm" role="alert">
+      <p>
+        Delete <strong>{{ deleteInfo.name }}</strong>?
+        <span v-if="deleteInfo.linked"> {{ deleteInfo.linked }} linked overlay{{ deleteInfo.linked === 1 ? '' : 's' }} will also be deleted.</span>
+      </p>
+      <div class="row">
+        <button @click="deleteTargetId = null">Cancel</button>
+        <button class="danger" @click="confirmDelete">Delete</button>
+      </div>
     </div>
 
     <template v-if="active">
@@ -236,9 +299,9 @@ function resetColorAdjust() {
         <span v-if="active.kind === 'extend'" class="hint">— overlay grid</span>
       </h3>
       <div class="row">
-        <input v-model.number="size[0]" type="number" min="1" :max="maxVoxels" title="Width (X)" />
-        <input v-model.number="size[1]" type="number" min="1" :max="maxVoxels" title="Height (Y)" />
-        <input v-model.number="size[2]" type="number" min="1" :max="maxVoxels" title="Depth (Z)" />
+        <input v-model.number="size[0]" type="number" min="1" :max="maxVoxels" title="Width (X)" aria-label="Width in voxels" />
+        <input v-model.number="size[1]" type="number" min="1" :max="maxVoxels" title="Height (Y)" aria-label="Height in voxels" />
+        <input v-model.number="size[2]" type="number" min="1" :max="maxVoxels" title="Depth (Z)" aria-label="Depth in voxels" />
         <button title="Resize the grid — voxels outside the new bounds are cut" @click="applyResize">
           Set
         </button>
@@ -255,8 +318,9 @@ function resetColorAdjust() {
         </button>
       </h3>
       <div class="row slider">
-        <label>Sättigung</label>
+        <label for="object-saturation">Saturation</label>
         <input
+          id="object-saturation"
           v-model.number="colorAdjustPct[0]"
           type="range"
           min="-100"
@@ -266,8 +330,9 @@ function resetColorAdjust() {
         <span class="pct">{{ colorAdjustPct[0] }}%</span>
       </div>
       <div class="row slider">
-        <label>Helligkeit</label>
+        <label for="object-brightness">Brightness</label>
         <input
+          id="object-brightness"
           v-model.number="colorAdjustPct[1]"
           type="range"
           min="-100"
@@ -308,6 +373,9 @@ function resetColorAdjust() {
   background: var(--accent-soft);
   box-shadow: inset 2px 0 0 var(--accent);
 }
+.list li:focus-visible {
+  outline-offset: -2px;
+}
 .oname {
   flex: 1;
   overflow: hidden;
@@ -330,6 +398,21 @@ function resetColorAdjust() {
 }
 .actions {
   margin-top: 6px;
+}
+.delete-confirm {
+  margin-top: 8px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line));
+  border-radius: var(--radius-sm);
+}
+.delete-confirm p {
+  margin: 0 0 7px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.delete-confirm .row {
+  justify-content: flex-end;
 }
 .ic {
   display: inline-flex;

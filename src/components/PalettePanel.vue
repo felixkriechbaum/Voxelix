@@ -13,6 +13,23 @@ const currentHex = computed(() => palette.value[store.currentColor] ?? '#000000'
 function onColorInput(e: Event) {
   store.setPaletteColor(store.currentColor, (e.target as HTMLInputElement).value);
 }
+
+const columns = 10;
+function onSwatchKey(e: KeyboardEvent, index: number) {
+  let next = index;
+  if (e.key === 'ArrowLeft') next--;
+  else if (e.key === 'ArrowRight') next++;
+  else if (e.key === 'ArrowUp') next -= columns;
+  else if (e.key === 'ArrowDown') next += columns;
+  else if (e.key === 'Home') next = 0;
+  else if (e.key === 'End') next = palette.value.length - 1;
+  else return;
+  e.preventDefault();
+  next = Math.max(0, Math.min(palette.value.length - 1, next));
+  store.setColor(next);
+  const buttons = (e.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLButtonElement>('.swatch');
+  buttons?.[next]?.focus();
+}
 </script>
 
 <template>
@@ -23,15 +40,19 @@ function onColorInput(e: Event) {
       <span class="idx">#{{ store.currentColor }}</span>
     </div>
 
-    <div class="grid">
+    <div class="grid" role="group" aria-label="Colour palette">
       <button
         v-for="(hex, i) in palette"
         :key="i"
         class="swatch"
         :class="{ sel: i === store.currentColor }"
         :style="{ background: hex }"
+        :tabindex="i === store.currentColor ? 0 : -1"
+        :aria-label="`Palette slot ${i}, ${hex}`"
+        :aria-pressed="i === store.currentColor"
         :title="`Slot ${i} — ${hex}`"
         @click="store.setColor(i)"
+        @keydown="onSwatchKey($event, i)"
       />
     </div>
 
@@ -56,9 +77,12 @@ function onColorInput(e: Event) {
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(16, 1fr);
+  grid-template-columns: repeat(10, 1fr);
   gap: 2px;
   margin: 6px 0;
+  max-height: 220px;
+  padding: 2px;
+  overflow: auto;
 }
 .swatch {
   padding: 0;

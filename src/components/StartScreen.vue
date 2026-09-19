@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { nextTick, onMounted, ref, type ComponentPublicInstance } from 'vue';
 import { useEditorStore } from '@/stores/editor';
 import { deserializeProject } from '@/core/io/projectFile';
 import { openTextFile } from '@/core/io/fileSystem';
@@ -18,8 +18,21 @@ const store = useEditorStore();
 const name = ref('Placeables');
 const error = ref('');
 const recent = ref<ProjectMeta[]>([]);
+const pendingDeleteId = ref<string | null>(null);
+const deleteConfirm = ref<HTMLDivElement | null>(null);
+const iconUrl = `${import.meta.env.BASE_URL}icon.png`;
 
 onMounted(refreshRecent);
+
+function setDeleteConfirm(el: Element | ComponentPublicInstance | null) {
+  deleteConfirm.value = el instanceof HTMLDivElement ? el : null;
+}
+
+async function requestRemove(id: string) {
+  pendingDeleteId.value = id;
+  await nextTick();
+  deleteConfirm.value?.querySelector<HTMLButtonElement>('button')?.focus();
+}
 
 async function refreshRecent() {
   if (!isProjectStoreAvailable()) return;
@@ -62,6 +75,7 @@ async function openRecent(id: string) {
 }
 
 async function removeRecent(id: string) {
+  pendingDeleteId.value = null;
   recent.value = recent.value.filter((r) => r.id !== id);
   try {
     await deleteProjectRecord(id);
@@ -87,13 +101,13 @@ function ago(ts: number): string {
   <div class="start">
     <div class="card panel">
       <div class="brand">
-        <img src="/icon.png" alt="" width="40" height="40" />
+        <img :src="iconUrl" alt="" width="40" height="40" />
         <h1>Voxelix</h1>
       </div>
       <p class="sub">Fast voxel modelling with per-object <code>.glb</code> export.</p>
 
-      <label>Project name</label>
-      <input v-model="name" type="text" @keydown.enter="create" />
+      <label for="project-name">Project name</label>
+      <input id="project-name" v-model="name" type="text" autocomplete="off" @keydown.enter="create" />
 
       <div class="row" style="margin-top: 14px">
         <button class="primary" title="Start a fresh project" @click="create">New project</button>
@@ -101,7 +115,7 @@ function ago(ts: number): string {
           Open file
         </button>
       </div>
-      <p v-if="error" class="err">{{ error }}</p>
+      <p v-if="error" class="err" role="alert">{{ error }}</p>
 
       <template v-if="recent.length">
         <label class="recent-label">Recent</label>
@@ -118,7 +132,23 @@ function ago(ts: number): string {
                 </span>
               </span>
             </button>
-            <button class="del" title="Remove from list" @click="removeRecent(r.id)">×</button>
+            <div
+              v-if="pendingDeleteId === r.id"
+              :ref="setDeleteConfirm"
+              class="confirm-delete"
+              role="group"
+              :aria-label="`Delete ${r.name} locally?`"
+            >
+              <button @click="pendingDeleteId = null">Cancel</button>
+              <button class="danger" @click="removeRecent(r.id)">Delete</button>
+            </div>
+            <button
+              v-else
+              class="del"
+              title="Delete this local project"
+              :aria-label="`Delete ${r.name} locally`"
+              @click="requestRemove(r.id)"
+            >×</button>
           </li>
         </ul>
       </template>
@@ -131,9 +161,13 @@ function ago(ts: number): string {
   height: 100%;
   display: grid;
   place-items: center;
+  padding: 12px;
+  overflow: auto;
 }
 .card {
-  width: 380px;
+  width: min(380px, 100%);
+  max-height: calc(100vh - 24px);
+  overflow: auto;
   padding: 28px;
   box-shadow: var(--shadow);
 }
@@ -234,5 +268,14 @@ code {
 .del:hover {
   border-color: var(--danger);
   color: var(--danger);
+}
+.confirm-delete {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+.confirm-delete button {
+  padding: 4px 7px;
+  font-size: 11px;
 }
 </style>

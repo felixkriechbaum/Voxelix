@@ -29,7 +29,11 @@ import type { BuildPlane } from '@/viewport/Picker';
 
 const store = useEditorStore();
 const { runner } = useSession();
-const emit = defineEmits<{ (e: 'add-shape'): void; (e: 'settings'): void }>();
+const emit = defineEmits<{
+  (e: 'add-shape'): void;
+  (e: 'settings'): void;
+  (e: 'close-project'): void;
+}>();
 const { saving, saveProject } = useProjectSave();
 
 const busy = ref('');
@@ -76,6 +80,29 @@ function pickBrush(f: number) {
 }
 const currentBrushF = computed(() => Math.min(store.activeDetail, store.voxelFraction));
 
+const maxBuildOffsetCells = computed(() => {
+  void store.activeVersion;
+  void store.structureVersion;
+  const obj = store.activeObject();
+  if (!obj || !store.project) return 0;
+  const data = resolveEffectiveData(obj, store.project);
+  const size = store.buildPlane === 'xz' ? data.sizeY : store.buildPlane === 'xy' ? data.sizeZ : data.sizeX;
+  return Math.max(0, size - 1);
+});
+const buildOffsetVoxels = computed({
+  get: () => store.buildOffset / store.activeDetail,
+  set: (value: number) => {
+    const cells = Math.round((Number(value) || 0) * store.activeDetail);
+    store.buildOffset = Math.max(0, Math.min(maxBuildOffsetCells.value, cells));
+  },
+});
+const maxBuildOffsetVoxels = computed(() => maxBuildOffsetCells.value / store.activeDetail);
+
+function setBuildPlane(value: string) {
+  store.buildPlane = value as BuildPlane;
+  store.buildOffset = Math.min(store.buildOffset, maxBuildOffsetCells.value);
+}
+
 async function exportActive() {
   const obj = store.activeObject();
   if (!obj || !store.project) return;
@@ -90,6 +117,8 @@ async function exportActive() {
       return;
     }
     await saveBinaryFile(file.name, file.blob);
+  } catch (e) {
+    toast(`Export failed: ${(e as Error).message}`, 'error');
   } finally {
     busy.value = '';
     store.exportStatus = null;
@@ -100,14 +129,14 @@ async function exportAll() {
   if (!store.project) return;
 
   let dir: FileSystemDirectoryHandle | null = null;
-  if (hasDirectoryPicker) {
-    dir = await pickDirectory();
-    if (!dir) return; // picker cancelled
-  }
-
-  busy.value = 'export-all';
-  store.exportStatus = 'Preparing export…';
   try {
+    if (hasDirectoryPicker) {
+      dir = await pickDirectory();
+      if (!dir) return; // picker cancelled
+    }
+
+    busy.value = 'export-all';
+    store.exportStatus = 'Preparing export…';
     const files = await exportProjectToGlbs(store.project, ({ done, total, name }) => {
       store.exportStatus = name
         ? `Meshing ${name} (${done + 1}/${total})…`
@@ -129,6 +158,8 @@ async function exportAll() {
         await new Promise((r) => setTimeout(r, 350));
       }
     }
+  } catch (e) {
+    toast(`Export failed: ${(e as Error).message}`, 'error');
   } finally {
     busy.value = '';
     store.exportStatus = null;
@@ -142,7 +173,7 @@ async function exportAll() {
       class="ic"
       title="Projects — open or start another (this one is saved automatically)"
       aria-label="Back to projects"
-      @click="store.closeProject()"
+      @click="emit('close-project')"
     >
       <Icon :icon="faFolderOpen" />
     </button>
@@ -153,6 +184,7 @@ async function exportAll() {
       v-for="t in tools"
       :key="t.id"
       :class="{ active: store.toolId === t.id }"
+      :aria-pressed="store.toolId === t.id"
       :title="`${t.label} tool — press ${t.key}`"
       @click="store.toolId = t.id"
     >
@@ -163,6 +195,7 @@ async function exportAll() {
       <span class="divider" />
       <button
         :class="{ active: store.boxMode === 'fill' }"
+        :aria-pressed="store.boxMode === 'fill'"
         title="Fill the box with the current colour"
         @click="store.boxMode = 'fill'"
       >
@@ -170,6 +203,7 @@ async function exportAll() {
       </button>
       <button
         :class="{ active: store.boxMode === 'erase' }"
+        :aria-pressed="store.boxMode === 'erase'"
         title="Clear every voxel inside the box"
         @click="store.boxMode = 'erase'"
       >
@@ -182,6 +216,7 @@ async function exportAll() {
       <label class="lbl">Spread</label>
       <button
         :class="{ active: store.bucketMode === 'volume' }"
+        :aria-pressed="store.bucketMode === 'volume'"
         title="Whole connected region of this colour, through the object (3D flood)"
         @click="store.bucketMode = 'volume'"
       >
@@ -189,6 +224,7 @@ async function exportAll() {
       </button>
       <button
         :class="{ active: store.bucketMode === 'face' }"
+        :aria-pressed="store.bucketMode === 'face'"
         title="Only the clicked face's surface layer — the coplanar patch of this colour"
         @click="store.bucketMode = 'face'"
       >
@@ -196,6 +232,7 @@ async function exportAll() {
       </button>
       <button
         :class="{ active: store.bucketMode === 'outline' }"
+        :aria-pressed="store.bucketMode === 'outline'"
         title="Only the border ring of that face patch"
         @click="store.bucketMode = 'outline'"
       >
@@ -212,6 +249,8 @@ async function exportAll() {
         :key="b.f"
         class="brush"
         :class="{ active: currentBrushF === b.f }"
+        :aria-pressed="currentBrushF === b.f"
+        :aria-label="b.label"
         :title="`${b.label} — the object is subdivided the first time you pick a smaller size`"
         @click="pickBrush(b.f)"
       >
@@ -222,6 +261,7 @@ async function exportAll() {
     <span class="divider" />
     <button
       :class="{ active: store.rmbErase }"
+      :aria-pressed="store.rmbErase"
       title="When on, a right-click erases the voxel under the cursor instead of opening the menu"
       @click="store.rmbErase = !store.rmbErase"
     >
@@ -231,13 +271,15 @@ async function exportAll() {
     <span class="divider" />
     <label
       class="lbl"
+      for="build-plane"
       title="Where new voxels land when you click empty space — and the plane a Box drag stays in"
       >Plane</label
     >
     <select
+      id="build-plane"
       :value="store.buildPlane"
       title="Build plane: ground (XZ), front (XY) or side (YZ)"
-      @change="store.buildPlane = ($event.target as HTMLSelectElement).value as BuildPlane"
+      @change="setBuildPlane(($event.target as HTMLSelectElement).value)"
     >
       <option v-for="p in planes" :key="p" :value="p">{{ p.toUpperCase() }}</option>
     </select>
@@ -245,9 +287,11 @@ async function exportAll() {
       class="num"
       type="number"
       title="Height of the build plane, in voxels"
-      :value="store.buildOffset"
+      aria-label="Build plane offset in voxels"
+      v-model.number="buildOffsetVoxels"
       min="0"
-      @input="store.buildOffset = Math.max(0, Number(($event.target as HTMLInputElement).value) || 0)"
+      :max="maxBuildOffsetVoxels"
+      :step="1 / store.activeDetail"
     />
 
     <span class="divider" />
@@ -279,7 +323,7 @@ async function exportAll() {
     </button>
 
     <span class="spacer" />
-    <span class="statusbox">
+    <span class="statusbox" role="status" aria-live="polite">
       <span v-if="saving || store.autosaveBusy || store.exportStatus" class="spin" />
       <span v-if="store.exportStatus" class="status">{{ store.exportStatus }}</span>
       <span

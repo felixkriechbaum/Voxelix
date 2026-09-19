@@ -7,8 +7,12 @@ const KEY = 'voxelix.theme';
 const media = window.matchMedia('(prefers-color-scheme: light)');
 
 function readPref(): ThemePref {
-  const v = localStorage.getItem(KEY);
-  return v === 'light' || v === 'dark' ? v : 'system';
+  try {
+    const v = localStorage.getItem(KEY);
+    return v === 'light' || v === 'dark' ? v : 'system';
+  } catch {
+    return 'system';
+  }
 }
 
 /** The concrete theme to render right now. */
@@ -36,8 +40,12 @@ media.addEventListener('change', () => {
 export function useTheme() {
   function setTheme(next: ThemePref) {
     pref.value = next;
-    if (next === 'system') localStorage.removeItem(KEY);
-    else localStorage.setItem(KEY, next);
+    try {
+      if (next === 'system') localStorage.removeItem(KEY);
+      else localStorage.setItem(KEY, next);
+    } catch {
+      /* storage can be blocked in private browsing */
+    }
     resolved.value = resolveTheme(next);
     applyTheme(next);
   }
