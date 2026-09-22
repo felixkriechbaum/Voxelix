@@ -19,16 +19,27 @@ abstract class DrawTool implements PixelTool {
   abstract readonly id: PixelToolId;
   private drawing = false;
   private lastCell: { x: number; y: number } | null = null;
+  /**
+   * The button that started the stroke. PointerEvent.button is only
+   * meaningful on the down/up transition — during pointermove while a
+   * button is held, browsers report 0 regardless of which button is
+   * actually down (the live state lives in `buttons`, a bitmask, not
+   * `button`). Re-reading `p.button` per move would flip a right-click
+   * stroke to the primary colour after the very first move event, so the
+   * colour is decided once at pointerDown and held for the whole stroke.
+   */
+  private strokeButton = 0;
 
-  protected abstract valueFor(ctx: PixelToolContext, p: PixelPointer): number;
+  protected abstract valueFor(ctx: PixelToolContext, button: number): number;
 
   pointerDown(ctx: PixelToolContext, p: PixelPointer): void {
     const cell = ctx.cellAt(p.clientX, p.clientY);
     if (!cell) return;
     this.drawing = true;
     this.lastCell = cell;
+    this.strokeButton = p.button;
     ctx.begin(this.id === 'eraser' ? 'Erase' : 'Draw');
-    this.stroke(ctx, p, cell);
+    this.stroke(ctx, cell);
   }
 
   pointerMove(ctx: PixelToolContext, p: PixelPointer): void {
@@ -38,10 +49,10 @@ abstract class DrawTool implements PixelTool {
     // fill the gap between the last cell and this one so a fast drag doesn't leave holes
     if (this.lastCell) {
       for (const [x, y] of lineCells(this.lastCell.x, this.lastCell.y, cell.x, cell.y)) {
-        this.stroke(ctx, p, { x, y });
+        this.stroke(ctx, { x, y });
       }
     } else {
-      this.stroke(ctx, p, cell);
+      this.stroke(ctx, cell);
     }
     this.lastCell = cell;
   }
@@ -62,16 +73,16 @@ abstract class DrawTool implements PixelTool {
     }
   }
 
-  private stroke(ctx: PixelToolContext, p: PixelPointer, cell: { x: number; y: number }): void {
-    const value = this.valueFor(ctx, p);
+  private stroke(ctx: PixelToolContext, cell: { x: number; y: number }): void {
+    const value = this.valueFor(ctx, this.strokeButton);
     for (const [x, y] of brushCells(ctx, cell.x, cell.y)) ctx.write(x, y, value);
   }
 }
 
 class PencilTool extends DrawTool {
   readonly id: PixelToolId = 'pencil';
-  protected valueFor(ctx: PixelToolContext, p: PixelPointer): number {
-    return colorFor(ctx, p);
+  protected valueFor(ctx: PixelToolContext, button: number): number {
+    return button === 2 ? ctx.secondary : ctx.primary;
   }
 }
 
