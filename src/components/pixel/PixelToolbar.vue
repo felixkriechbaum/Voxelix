@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { usePixelStore } from '@/stores/pixel';
 import { usePixelSession } from '@/editor/pixel/session';
+import { exportWidgetFiles, exportProjectFiles, normalizeResPrefix } from '@/pixel/exportWidget';
+import { hasDirectoryPicker, pickDirectory, writeFileToDirectory, downloadBlob } from '@/core/io/fileSystem';
+import { toast } from '@/editor/toasts';
 import Icon from '@/components/Icon.vue';
 import {
   faPencil,
@@ -12,6 +15,8 @@ import {
   faRotateRight,
   faFolderOpen,
   faBorderAll,
+  faFileExport,
+  faBoxesStacked,
 } from '@fortawesome/pro-solid-svg-icons';
 import type { PixelToolId } from '@/tools/pixel/types';
 
@@ -19,6 +24,7 @@ const emit = defineEmits<{ 'close-project': [] }>();
 
 const store = usePixelStore();
 const { runner } = usePixelSession();
+const busy = ref('');
 
 const tools: Array<{ id: PixelToolId; icon: typeof faPencil; label: string }> = [
   { id: 'pencil', icon: faPencil, label: 'Pencil' },
@@ -43,6 +49,92 @@ const canRedo = computed(() => {
   void store.activeVersion;
   return runner.value?.canRedo ?? false;
 });
+
+/**
+ * The browser's directory picker only tells us which folder the user clicked,
+ * not where that sits under their Godot project's res:// root — so the
+ * texture paths baked into the exported .tres files need this typed in by
+ * hand. Returns null if the user cancels.
+ */
+function promptResPrefix(): string | null {
+  const input = window.prompt(
+    "Godot res:// folder these files will live in (used inside the exported .tres files' texture paths):",
+    'res://',
+  );
+  if (input === null) return null;
+  return normalizeResPrefix(input);
+}
+
+async function exportActive() {
+  const w = store.activeWidget();
+  if (!w) return;
+  const resPrefix = promptResPrefix();
+  if (resPrefix === null) return;
+  busy.value = 'export';
+  store.exportStatus = `Exporting ${w.name}…`;
+  try {
+    await new Promise((r) => setTimeout(r)); // let the overlay paint first
+    const { files } = await exportWidgetFiles(w, resPrefix);
+    if (hasDirectoryPicker) {
+      const dir = await pickDirectory();
+      if (!dir) return; // picker cancelled
+      for (const f of files) {
+        store.exportStatus = `Writing ${f.name}…`;
+        await writeFileToDirectory(dir, f.name, f.blob);
+      }
+    } else {
+      for (const f of files) {
+        store.exportStatus = `Downloading ${f.name}…`;
+        downloadBlob(f.name, f.blob);
+        await new Promise((r) => setTimeout(r, 350));
+      }
+    }
+  } catch (e) {
+    toast(`Export failed: ${(e as Error).message}`, 'error');
+  } finally {
+    busy.value = '';
+    store.exportStatus = null;
+  }
+}
+
+async function exportAll() {
+  if (!store.project) return;
+  const resPrefix = promptResPrefix();
+  if (resPrefix === null) return;
+
+  let dir: FileSystemDirectoryHandle | null = null;
+  try {
+    if (hasDirectoryPicker) {
+      dir = await pickDirectory();
+      if (!dir) return; // picker cancelled
+    }
+
+    busy.value = 'export-all';
+    store.exportStatus = 'Preparing export…';
+    const files = await exportProjectFiles(store.project, resPrefix, ({ done, total, name }) => {
+      store.exportStatus = name
+        ? `Exporting ${name} (${done + 1}/${total})…`
+        : `Finishing (${done}/${total})…`;
+    });
+    if (dir) {
+      for (const f of files) {
+        store.exportStatus = `Writing ${f.name}…`;
+        await writeFileToDirectory(dir, f.name, f.blob);
+      }
+    } else {
+      for (const f of files) {
+        store.exportStatus = `Downloading ${f.name}…`;
+        downloadBlob(f.name, f.blob);
+        await new Promise((r) => setTimeout(r, 350));
+      }
+    }
+  } catch (e) {
+    toast(`Export failed: ${(e as Error).message}`, 'error');
+  } finally {
+    busy.value = '';
+    store.exportStatus = null;
+  }
+}
 </script>
 
 <template>
@@ -108,6 +200,23 @@ const canRedo = computed(() => {
       title="Toggle pixel grid"
       @click="store.showGrid = !store.showGrid"
     >Grid</button>
+
+    <span class="sep" />
+    <button
+      :disabled="!!busy || !store.activeWidgetId"
+      title="Export the active widget as PNGs + a StyleBoxTexture .tres per state"
+      @click="exportActive"
+    >
+      <Icon :icon="faFileExport" />
+    </button>
+    <button
+      class="primary"
+      :disabled="!!busy || store.widgets.length === 0"
+      :title="hasDirectoryPicker ? 'Export every widget into a chosen folder, plus one combined theme.tres' : 'Download every widget\'s files, plus one combined theme.tres'"
+      @click="exportAll"
+    >
+      <Icon :icon="faBoxesStacked" />
+    </button>
   </div>
 </template>
 

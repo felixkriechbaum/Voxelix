@@ -23,6 +23,9 @@ export const usePixelStore = defineStore('pixel', () => {
   const autosaveAt = ref<number | null>(null);
   const autosaveError = ref(false);
 
+  /** non-null while an export is running — shown as a blocking overlay */
+  const exportStatus = ref<string | null>(null);
+
   const activeWidgetId = ref<string | null>(null);
   const activeStateId = ref<StateId>('normal');
   const toolId = ref<PixelToolId>('pencil');
@@ -146,6 +149,7 @@ export const usePixelStore = defineStore('pixel', () => {
     autosaveBusy,
     autosaveAt,
     autosaveError,
+    exportStatus,
     activeWidgetId,
     activeStateId,
     toolId,

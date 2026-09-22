@@ -51,24 +51,32 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
       gridTemplateColumns: `260px 1fr ${previewColWidth}`,
       transition: previewResizing ? 'none' : 'grid-template-columns 0.15s ease',
     }"
+    :aria-busy="!!store.exportStatus"
     @contextmenu="onContextMenu"
   >
-    <PixelToolbar class="toolbar" @close-project="closeProject" />
-    <aside class="side">
+    <PixelToolbar class="toolbar" :inert="!!store.exportStatus" @close-project="closeProject" />
+    <aside class="side" :inert="!!store.exportStatus">
       <WidgetList />
       <ColorPanel />
       <NinePatchPanel />
     </aside>
-    <main class="stage">
+    <main class="stage" :inert="!!store.exportStatus">
       <PixelCanvas />
     </main>
-    <WidgetPreview class="preview" />
+    <WidgetPreview class="preview" :inert="!!store.exportStatus" />
     <div class="status row">
       <span>{{ store.projectName }}</span>
       <span class="spacer" />
       <span v-if="store.autosaveError" class="err">autosave failed</span>
       <span v-else-if="store.autosaveBusy">saving…</span>
       <span v-else-if="store.autosaveAt">saved</span>
+    </div>
+
+    <div v-if="store.exportStatus" class="export-overlay" role="dialog" aria-modal="true" aria-label="Export in progress">
+      <div class="panel export-card" role="status" aria-live="polite">
+        <span class="spinner" />
+        <span>{{ store.exportStatus }}</span>
+      </div>
     </div>
   </div>
 </template>
@@ -116,5 +124,34 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 }
 .err {
   color: var(--warn);
+}
+.export-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: var(--scrim);
+}
+.export-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 20px;
+  font-size: 13px;
+  box-shadow: var(--shadow);
+}
+.spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
