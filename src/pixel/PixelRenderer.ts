@@ -141,8 +141,8 @@ export class PixelRenderer {
     const dzoom = zoom * this.dpr;
     if (opts.showGrid && zoom >= 4) this.paintGrid(ctx, data.width, data.height, dzoom);
     if (opts.patch) this.paintPatchGuides(ctx, data.width, data.height, dzoom, opts.patch);
-    if (opts.selection) this.paintSelection(ctx, opts.selection, dzoom, SELECTION_LINE, [3, 2]);
-    if (opts.cursor) this.paintSelection(ctx, opts.cursor, dzoom, CURSOR_LINE, []);
+    if (opts.selection) this.paintSelection(ctx, opts.selection, dzoom, SELECTION_LINE, true);
+    if (opts.cursor) this.paintSelection(ctx, opts.cursor, dzoom, CURSOR_LINE, false);
     ctx.restore();
   }
 
@@ -195,11 +195,27 @@ export class PixelRenderer {
     ctx.restore();
   }
 
+  /**
+   * Dash unit scaled to the current zoom rather than a fixed device-pixel
+   * length. At a fixed [4,3] and a wide, heavily-zoomed canvas, a single long
+   * dashed line decomposes into hundreds of tiny on/off cycles — measured
+   * this directly on a rendered screenshot: part of a patch guide line was
+   * completely un-inked (not faint, zero pixels) despite nothing else drawn
+   * over it. Same rasterizer-drops-geometry-under-load family as the earlier
+   * grid-line fix, triggered by dash tessellation load this time rather than
+   * a compound multi-segment path. Roughly one dash cycle per cell keeps the
+   * total segment count sane regardless of canvas size.
+   */
+  private static dashPattern(zoom: number): number[] {
+    const on = Math.max(3, Math.round(zoom * 0.5));
+    return [on, Math.max(2, Math.round(on * 0.7))];
+  }
+
   private paintPatchGuides(ctx: CanvasRenderingContext2D, w: number, h: number, zoom: number, patch: NinePatch): void {
     ctx.save();
     ctx.strokeStyle = PATCH_LINE;
     ctx.lineWidth = 1;
-    ctx.setLineDash([4, 3]);
+    ctx.setLineDash(PixelRenderer.dashPattern(zoom));
     // one stroke() per line — see the comment on paintGrid's loop
     if (patch.left > 0) {
       const x = PixelRenderer.crisp(patch.left * zoom);
@@ -237,17 +253,35 @@ export class PixelRenderer {
     sel: { x: number; y: number; w: number; h: number },
     zoom: number,
     color: string,
-    dash: number[],
+    dashed: boolean,
   ): void {
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
-    ctx.setLineDash(dash);
-    const x = Math.round(sel.x * zoom);
-    const y = Math.round(sel.y * zoom);
-    const w = Math.round((sel.x + sel.w) * zoom) - x;
-    const h = Math.round((sel.y + sel.h) * zoom) - y;
-    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    ctx.setLineDash(dashed ? PixelRenderer.dashPattern(zoom) : []);
+    const x = Math.round(sel.x * zoom) + 0.5;
+    const y = Math.round(sel.y * zoom) + 0.5;
+    const w = Math.round((sel.x + sel.w) * zoom) - Math.round(sel.x * zoom) - 1;
+    const h = Math.round((sel.y + sel.h) * zoom) - Math.round(sel.y * zoom) - 1;
+    // four independent strokes rather than one strokeRect() call — same
+    // reasoning as paintGrid/paintPatchGuides: no compound multi-segment path
+    // left for a rasterizer to drop part of, on a large, heavily-dashed box
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + w, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + w, y);
+    ctx.lineTo(x + w, y + h);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + w, y + h);
+    ctx.lineTo(x, y + h);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y + h);
+    ctx.lineTo(x, y);
+    ctx.stroke();
     ctx.restore();
   }
 
