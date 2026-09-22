@@ -44,7 +44,7 @@ const tools: Array<{ id: PixelToolId; icon: typeof faPencil; label: string }> = 
   { id: 'line', icon: faSlash, label: 'Line' },
   { id: 'circle', icon: faCircle, label: 'Ellipse (Shift = circle)' },
   { id: 'squircle', icon: faSquareFull, label: 'Squircle (Shift = symmetric)' },
-  { id: 'select', icon: faSquareDashed, label: 'Select (Ctrl+C/X/V to copy/cut/paste, Delete to erase, Esc to clear)' },
+  { id: 'select', icon: faSquareDashed, label: 'Select (arrows to move, Ctrl+C/X/V to copy/cut/paste, Delete to erase, Esc to clear)' },
 ];
 
 const brushSizes = [1, 2, 3, 4];

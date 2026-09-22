@@ -214,6 +214,40 @@ export class PixelRunner implements PixelToolContext {
     return changed;
   }
 
+  /**
+   * Nudges the selection (and the pixels under it) by (dx, dy), one undo
+   * step. All-or-nothing rather than clamped: if the move would push any part
+   * of the selection off the canvas, it's ignored outright — clamping would
+   * silently crop whatever slid past the edge, since write() drops
+   * out-of-bounds cells. Snapshotting before either the erase or the restamp
+   * (rather than reading live mid-move) is what makes this correct even
+   * though a 1px nudge always overlaps the source and destination.
+   */
+  moveSelection(dx: number, dy: number): boolean {
+    const sel = this.selectionBox;
+    const data = this.activeData;
+    if (!sel || !data || (dx === 0 && dy === 0)) return false;
+    const nx = sel.x + dx;
+    const ny = sel.y + dy;
+    if (nx < 0 || ny < 0 || nx + sel.w > data.width || ny + sel.h > data.height) return false;
+
+    const snapshot = new Uint32Array(sel.w * sel.h);
+    for (let y = 0; y < sel.h; y++) {
+      for (let x = 0; x < sel.w; x++) snapshot[y * sel.w + x] = data.get(sel.x + x, sel.y + y);
+    }
+
+    this.begin('Move selection');
+    for (let y = 0; y < sel.h; y++) {
+      for (let x = 0; x < sel.w; x++) this.write(sel.x + x, sel.y + y, 0);
+    }
+    for (let y = 0; y < sel.h; y++) {
+      for (let x = 0; x < sel.w; x++) this.write(nx + x, ny + y, snapshot[y * sel.w + x]);
+    }
+    this.commit();
+    this.setSelection({ x: nx, y: ny, w: sel.w, h: sel.h });
+    return true;
+  }
+
   // ---- history ------------------------------------------------------
   private historyKey(): string {
     return `${this.store.activeWidgetId ?? '_'}:${this.store.activeStateId}`;

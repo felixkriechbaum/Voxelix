@@ -14,6 +14,13 @@ import { usePixelSession } from '@/editor/pixel/session';
 import { previewExpanded, previewWidth, previewResizing } from '@/editor/pixel/previewPrefs';
 import { sideExpanded, sideWidth, sideResizing, setSideWidth } from '@/editor/pixel/sidePrefs';
 
+const NUDGE_KEYS: Record<string, [number, number]> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+};
+
 const previewColWidth = computed(() => (previewExpanded.value ? `${previewWidth.value}px` : '42px'));
 const sideColWidth = computed(() => (sideExpanded.value ? `${sideWidth.value}px` : '42px'));
 const anyResizing = computed(() => previewResizing.value || sideResizing.value);
@@ -78,6 +85,12 @@ function onKey(e: KeyboardEvent) {
     if (runner.value?.canPaste) {
       e.preventDefault();
       runner.value.pasteSelection();
+    }
+  } else if (NUDGE_KEYS[e.key]) {
+    if (runner.value?.selection) {
+      e.preventDefault();
+      const [dx, dy] = NUDGE_KEYS[e.key];
+      runner.value.moveSelection(dx, dy);
     }
   } else if (e.key === 'Delete' || e.key === 'Backspace') {
     if (runner.value?.selection) {
