@@ -2,10 +2,35 @@
 import { computed } from 'vue';
 import { usePixelStore } from '@/stores/pixel';
 import { hexToRgba, rgbaToHex, unpackRgba, packRgba } from '@/core/pixel/pack';
+import { openTextFile } from '@/core/io/fileSystem';
+import { deserializeProject } from '@/core/io/projectFile';
+import { PROJECT_FILE_EXT } from '@/core/project/types';
+import { toast } from '@/editor/toasts';
+import Icon from '@/components/Icon.vue';
+import { faFileImport } from '@fortawesome/pro-solid-svg-icons';
 
 const store = usePixelStore();
 
-const palette = computed(() => store.project?.palette ?? []);
+// project.palette is a plain property on the markRaw'd project graph, so
+// importPalette() replacing it needs structureVersion as an explicit
+// dependency here — same reactivity gotcha as NinePatchPanel.vue's `widget`.
+const palette = computed(() => {
+  void store.structureVersion;
+  return store.project?.palette ?? [];
+});
+
+/** The one deliberate bridge between the two otherwise-independent workspaces. */
+async function importPalette() {
+  const file = await openTextFile([PROJECT_FILE_EXT, '.json']);
+  if (!file) return;
+  try {
+    const voxelProject = deserializeProject(file.text);
+    store.importPalette(voxelProject.palette);
+    toast(`Imported palette from "${voxelProject.name}"`, 'success');
+  } catch (e) {
+    toast(`Could not read that project: ${(e as Error).message}`, 'error');
+  }
+}
 const primaryHex = computed(() => rgbaToHex(store.primaryColor));
 const secondaryHex = computed(() => rgbaToHex(store.secondaryColor));
 const primaryAlpha = computed(() => unpackRgba(store.primaryColor)[3]);
@@ -43,6 +68,14 @@ function swap() {
   <div class="panel color-panel">
     <div class="row">
       <h3>Colour</h3>
+      <span class="spacer" />
+      <button
+        class="icon-btn"
+        title="Import the palette from a .voxproj file — keeps pixel and voxel work colour-consistent"
+        @click="importPalette"
+      >
+        <Icon :icon="faFileImport" :size="12" />
+      </button>
     </div>
 
     <div class="current row">
@@ -131,6 +164,17 @@ function swap() {
 .swap {
   width: 26px;
   padding: 0;
+}
+/* the plain `button` rule in style.css doesn't centre its content (no
+   display:flex) — fine for a single line of text, which browsers centre by
+   default, but an <Icon> svg inside sits off-centre without it */
+.icon-btn {
+  width: 26px;
+  padding: 0;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .field {
   margin-bottom: 6px;

@@ -1,6 +1,6 @@
 import type { PixelData } from '@/core/pixel/PixelData';
 
-export type PixelToolId = 'pencil' | 'eraser' | 'bucket' | 'picker' | 'select' | 'line' | 'rect';
+export type PixelToolId = 'pencil' | 'eraser' | 'bucket' | 'picker' | 'select' | 'line' | 'rect' | 'circle';
 
 export interface PixelPointer {
   clientX: number;

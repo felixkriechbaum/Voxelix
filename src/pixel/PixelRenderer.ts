@@ -13,7 +13,13 @@ export interface RenderOptions {
   selection: { x: number; y: number; w: number; h: number } | null;
   /** brush-footprint box under the pointer, already brush-size-aligned */
   cursor: { x: number; y: number; w: number; h: number } | null;
+  /** faint reference layer underneath the active content — typically 'normal'
+   *  while editing hover/pressed/disabled/focus, so those states can be built
+   *  up from it instead of painted blind on a transparent canvas */
+  onion: PixelData | null;
 }
+
+const ONION_ALPHA = 0.3;
 
 // used with a 'difference' composite blend, so this is mixed toward |backdrop
 // - source| rather than painted flat — pick a mid alpha so it stays visible
@@ -37,6 +43,9 @@ export class PixelRenderer {
   private source: PixelData | null = null;
   /** the PixelData instance the offscreen canvas currently reflects — see render() */
   private blitted: PixelData | null = null;
+  private onionOff: HTMLCanvasElement;
+  private onionOffCtx: CanvasRenderingContext2D;
+  private onionBlitted: PixelData | null = null;
   private dpr = 1;
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -47,6 +56,10 @@ export class PixelRenderer {
     const offCtx = this.off.getContext('2d');
     if (!offCtx) throw new Error('2D canvas context unavailable');
     this.offCtx = offCtx;
+    this.onionOff = document.createElement('canvas');
+    const onionOffCtx = this.onionOff.getContext('2d');
+    if (!onionOffCtx) throw new Error('2D canvas context unavailable');
+    this.onionOffCtx = onionOffCtx;
   }
 
   setSource(data: PixelData): void {
@@ -92,11 +105,27 @@ export class PixelRenderer {
       this.blitted = data;
     }
 
+    // same size only, by construction — every state of a widget shares its
+    // canvas dimensions — but skip rather than distort if that's ever not true
+    const onion = opts.onion && opts.onion.width === data.width && opts.onion.height === data.height ? opts.onion : null;
+    if (onion && (onion.dirty || onion !== this.onionBlitted || this.onionOff.width !== onion.width)) {
+      this.onionOff.width = onion.width;
+      this.onionOff.height = onion.height;
+      blitPixelData(this.onionOffCtx, onion);
+      onion.dirty = false;
+      this.onionBlitted = onion;
+    }
+
     const ctx = this.ctx;
     ctx.save();
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
     this.paintChecker(ctx, data.width, data.height, zoom);
+    if (onion) {
+      ctx.globalAlpha = ONION_ALPHA;
+      ctx.drawImage(this.onionOff, 0, 0, data.width, data.height, 0, 0, cssW, cssH);
+      ctx.globalAlpha = 1;
+    }
     ctx.drawImage(this.off, 0, 0, data.width, data.height, 0, 0, cssW, cssH);
     ctx.restore();
 

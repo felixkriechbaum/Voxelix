@@ -37,6 +37,13 @@ function onKey(e: KeyboardEvent) {
   } else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
     e.preventDefault();
     runner.value?.redo();
+  } else if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (runner.value?.selection) {
+      e.preventDefault();
+      runner.value.eraseSelection();
+    }
+  } else if (e.key === 'Escape') {
+    if (runner.value?.selection) runner.value.setSelection(null);
   }
 }
 

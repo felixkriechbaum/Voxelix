@@ -24,12 +24,17 @@ function frame() {
   if (renderer && runner) {
     const widget = store.activeWidget();
     const cursor = runner.getCursor();
+    // onion-skin the 'normal' state faintly under whatever else you're
+    // editing — hover/pressed/disabled/focus are usually built as small
+    // variations of it, so it's a reference to paint on top of, not blind
+    const onion = widget && store.activeStateId !== 'normal' ? (widget.states.get('normal') ?? null) : null;
     renderer.render({
       zoom: store.zoom,
       showGrid: store.showGrid,
       patch: widget && hasPatch(widget.patch) ? widget.patch : null,
       selection: runner.selection,
       cursor: cursor ? brushBox(cursor.x, cursor.y, store.brushSize) : null,
+      onion,
     });
   }
   raf = requestAnimationFrame(frame);

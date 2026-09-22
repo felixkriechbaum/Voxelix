@@ -130,6 +130,37 @@ export const usePixelStore = defineStore('pixel', () => {
     editVersion.value++;
   }
 
+  /**
+   * Resizes the active widget's canvases. A structural change, not a paint
+   * edit, so — same as the voxel editor's resizeActive — it isn't undoable;
+   * the undo history is dropped rather than left pointing at indices that no
+   * longer mean the same pixel once the width has changed.
+   */
+  function resizeActiveWidget(width: number, height: number, anchor: 'topleft' | 'center' = 'topleft') {
+    const w = activeWidget();
+    if (!w) return;
+    const runner = usePixelSession().runner.value;
+    runner?.forgetHistory(w.id);
+    w.resize(width, height, anchor);
+    // widget.resize() replaces each state's PixelData instance rather than
+    // mutating it in place — the runner (and its renderer) would otherwise
+    // keep drawing into the now-orphaned old one, since nothing else about
+    // the active widget/state identity changed to trigger a re-sync
+    runner?.syncActive();
+    structureVersion.value++;
+    editVersion.value++;
+  }
+
+  /** Replaces the project's swatch shelf — e.g. importing a voxel project's palette
+   *  so pixel and voxel work stay colour-consistent. The palette is a shared
+   *  format (see core/palette.ts); this is the one deliberate bridge between
+   *  the two otherwise-independent workspaces. */
+  function importPalette(palette: string[]) {
+    if (!project.value) return;
+    project.value.palette = palette;
+    structureVersion.value++;
+  }
+
   function setPrimary(rgba: number) {
     primaryColor.value = rgba >>> 0;
   }
@@ -171,6 +202,8 @@ export const usePixelStore = defineStore('pixel', () => {
     removeWidget,
     renameWidget,
     setPatch,
+    resizeActiveWidget,
+    importPalette,
     setPrimary,
     setSecondary,
     bumpEdit,

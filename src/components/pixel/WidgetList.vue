@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, type ComponentPublicInstance } from 'vue';
+import { computed, nextTick, ref, watch, type ComponentPublicInstance } from 'vue';
 import { usePixelStore } from '@/stores/pixel';
 import { usePixelSession } from '@/editor/pixel/session';
 import { toast } from '@/editor/toasts';
 import { WIDGET_TYPES, specFor } from '@/core/pixel/widgets';
 import type { StateId, WidgetType } from '@/core/pixel/types';
 import Icon from '@/components/Icon.vue';
-import { faPlus, faTrash, faCopy } from '@fortawesome/pro-solid-svg-icons';
+import { faPlus, faTrash, faCopy, faExpand } from '@fortawesome/pro-solid-svg-icons';
 
 const store = usePixelStore();
 const { runner } = usePixelSession();
@@ -60,6 +60,28 @@ function copyFrom() {
   const ok = runner.value?.copyStateFrom(src);
   if (ok) toast(`Copied ${src} into ${store.activeStateId}`, 'success');
 }
+
+const resizeW = ref(32);
+const resizeH = ref(16);
+const resizeAnchor = ref<'topleft' | 'center'>('center');
+watch(
+  () => [store.activeWidgetId, store.structureVersion],
+  () => {
+    const w = active.value;
+    if (w) {
+      resizeW.value = w.width;
+      resizeH.value = w.height;
+    }
+  },
+  { immediate: true },
+);
+function applyResize() {
+  const w = active.value;
+  if (!w) return;
+  if (resizeW.value === w.width && resizeH.value === w.height) return;
+  store.resizeActiveWidget(resizeW.value, resizeH.value, resizeAnchor.value);
+  toast(`Resized to ${resizeW.value}×${resizeH.value} — undo history for this widget was cleared`, 'info');
+}
 </script>
 
 <template>
@@ -102,6 +124,18 @@ function copyFrom() {
         </button>
       </li>
     </ul>
+
+    <div v-if="active" class="row resize-row" title="Resize this widget's canvas — clears its undo history">
+      <label>W<input v-model.number="resizeW" type="number" min="1" /></label>
+      <label>H<input v-model.number="resizeH" type="number" min="1" /></label>
+      <select v-model="resizeAnchor">
+        <option value="topleft">Top-left</option>
+        <option value="center">Centre</option>
+      </select>
+      <button class="icon-btn" title="Apply resize" @click="applyResize">
+        <Icon :icon="faExpand" :size="12" />
+      </button>
+    </div>
 
     <div class="row add-row">
       <select v-model="addType">
@@ -189,6 +223,29 @@ function copyFrom() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+.resize-row {
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.resize-row label {
+  width: 34px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.resize-row input {
+  min-width: 0;
+  padding: 3px 4px;
+  font-size: 12px;
+}
+.resize-row select {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
 }
 .add-row {
   gap: 6px;

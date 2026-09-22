@@ -1,5 +1,6 @@
 import { PixelData } from './PixelData';
 import { specFor } from './widgets';
+import { clampPatch } from './ninepatch';
 import { defaultNinePatch } from './types';
 import type { NinePatch, PixelLayerJson, PixelWidgetJson, StateId, WidgetType } from './types';
 
@@ -41,6 +42,25 @@ export class PixelWidget {
     for (const s of initialStates) widget.states.set(s, new PixelData(w, h));
     for (const icon of spec.icons ?? []) widget.icons.set(icon.id, new PixelData(icon.size[0], icon.size[1]));
     return widget;
+  }
+
+  /**
+   * Resizes every state's canvas in place (icons keep their own fixed size —
+   * they're not tied to the widget's own canvas dimensions), clamping the
+   * nine-patch margins so they never end up overlapping the new, possibly
+   * smaller, bounds. A structural change, not a paint edit: callers should
+   * drop any undo history for this widget's states afterwards, since a
+   * PixelEdit's flat index is only meaningful for the width it was recorded
+   * against.
+   */
+  resize(width: number, height: number, anchor: 'topleft' | 'center' = 'topleft'): void {
+    const w = Math.max(1, Math.round(width));
+    const h = Math.max(1, Math.round(height));
+    if (w === this.width && h === this.height) return;
+    for (const [id, data] of this.states) this.states.set(id, data.resize(w, h, anchor));
+    this.width = w;
+    this.height = h;
+    this.patch = clampPatch(this.patch, w, h);
   }
 
   /** The canvas a given state paints into — falls back to 'normal' if the state hasn't been added. */

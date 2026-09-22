@@ -140,6 +140,19 @@ export class PixelRunner implements PixelToolContext {
     return true;
   }
 
+  /** Erases (sets transparent) every pixel inside the current selection, as one undo step. No-op if there is none. */
+  eraseSelection(): boolean {
+    const sel = this.selectionBox;
+    if (!sel || !this.activeData) return false;
+    this.begin('Erase selection');
+    for (let y = sel.y; y < sel.y + sel.h; y++) {
+      for (let x = sel.x; x < sel.x + sel.w; x++) this.write(x, y, 0);
+    }
+    const changed = this.batch.length > 0;
+    this.commit();
+    return changed;
+  }
+
   // ---- history ------------------------------------------------------
   private historyKey(): string {
     return `${this.store.activeWidgetId ?? '_'}:${this.store.activeStateId}`;

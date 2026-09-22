@@ -1,6 +1,6 @@
 import { floodRegion } from '@/core/pixel/ops/flood';
 import { brushBox } from '@/core/pixel/brush';
-import type { PixelPointer, PixelTool, PixelToolContext, PixelToolId } from './types';
+import type { PixelPointer, PixelRectSel, PixelTool, PixelToolContext, PixelToolId } from './types';
 
 /** Colour for a click: right mouse button paints the secondary colour, everything else primary. */
 function colorFor(ctx: PixelToolContext, p: PixelPointer): number {
@@ -158,16 +158,152 @@ function lineCells(x0: number, y0: number, x1: number, y1: number): Array<[numbe
   return cells;
 }
 
-/** Placeholder for a not-yet-implemented tool id (select/line/rect — see docs/pixel-editor-plan.md M5). */
-class NoopTool implements PixelTool {
-  constructor(readonly id: PixelToolId) {}
-  pointerDown(): void {}
-  pointerMove(ctx: PixelToolContext, p: PixelPointer): void {
-    ctx.setCursor(ctx.cellAt(p.clientX, p.clientY));
+/**
+ * Every cell whose centre falls inside the ellipse inscribed in the box
+ * spanning the two corners — a simple area test rather than a midpoint/
+ * Bresenham ellipse walk, which keeps it trivially correct (and symmetric)
+ * at the cost of an O(w*h) scan; fine at the pixel-art canvas sizes this
+ * editor deals with.
+ */
+function ellipseCells(x0: number, y0: number, x1: number, y1: number): Array<[number, number]> {
+  const minX = Math.min(x0, x1);
+  const maxX = Math.max(x0, x1);
+  const minY = Math.min(y0, y1);
+  const maxY = Math.max(y0, y1);
+  const rx = (maxX - minX + 1) / 2;
+  const ry = (maxY - minY + 1) / 2;
+  const cx = minX + rx;
+  const cy = minY + ry;
+  const cells: Array<[number, number]> = [];
+  for (let y = minY; y <= maxY; y++) {
+    const ny = (y + 0.5 - cy) / ry;
+    for (let x = minX; x <= maxX; x++) {
+      const nx = (x + 0.5 - cx) / rx;
+      if (nx * nx + ny * ny <= 1) cells.push([x, y]);
+    }
   }
-  pointerUp(): void {}
+  return cells;
+}
+
+/** Box spanning two corners, inclusive of both. */
+function normalizedRect(x0: number, y0: number, x1: number, y1: number): PixelRectSel {
+  const x = Math.min(x0, x1);
+  const y = Math.min(y0, y1);
+  return { x, y, w: Math.abs(x1 - x0) + 1, h: Math.abs(y1 - y0) + 1 };
+}
+
+/**
+ * Shared "rubber-band" drag pattern for rect/line: rather than a separate
+ * preview overlay, each move reverts the in-progress batch and repaints the
+ * shape from the (unchanged) start point to the new cursor cell — the same
+ * begin/write/cancel machinery a single stroke already uses, so what's shown
+ * mid-drag is the exact real pixels, not an approximation (e.g. a bounding
+ * box standing in for a diagonal line).
+ */
+abstract class DragShapeTool implements PixelTool {
+  abstract readonly id: PixelToolId;
+  protected start: { x: number; y: number } | null = null;
+  private button = 0;
+
+  protected abstract label: string;
+  protected abstract paint(ctx: PixelToolContext, start: { x: number; y: number }, end: { x: number; y: number }, value: number): void;
+
+  pointerDown(ctx: PixelToolContext, p: PixelPointer): void {
+    const cell = ctx.cellAt(p.clientX, p.clientY);
+    if (!cell) return;
+    this.start = cell;
+    this.button = p.button;
+    ctx.begin(this.label);
+    this.paint(ctx, cell, cell, this.button === 2 ? ctx.secondary : ctx.primary);
+  }
+
+  pointerMove(ctx: PixelToolContext, p: PixelPointer): void {
+    const cell = ctx.cellAt(p.clientX, p.clientY);
+    if (!this.start) {
+      ctx.setCursor(cell);
+      return;
+    }
+    if (!cell) return;
+    ctx.cancel();
+    ctx.begin(this.label);
+    this.paint(ctx, this.start, cell, this.button === 2 ? ctx.secondary : ctx.primary);
+  }
+
+  pointerUp(ctx: PixelToolContext): void {
+    if (!this.start) return;
+    this.start = null;
+    ctx.commit();
+  }
+
   clearPreview(ctx: PixelToolContext): void {
     ctx.setCursor(null);
+    if (this.start) {
+      ctx.cancel();
+      this.start = null;
+    }
+  }
+}
+
+class RectTool extends DragShapeTool {
+  readonly id: PixelToolId = 'rect';
+  protected label = 'Rectangle';
+  protected paint(ctx: PixelToolContext, start: { x: number; y: number }, end: { x: number; y: number }, value: number): void {
+    const r = normalizedRect(start.x, start.y, end.x, end.y);
+    for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) ctx.write(x, y, value);
+  }
+}
+
+class LineTool extends DragShapeTool {
+  readonly id: PixelToolId = 'line';
+  protected label = 'Line';
+  protected paint(ctx: PixelToolContext, start: { x: number; y: number }, end: { x: number; y: number }, value: number): void {
+    for (const [x, y] of lineCells(start.x, start.y, end.x, end.y)) {
+      for (const [bx, by] of brushCells(ctx, x, y)) ctx.write(bx, by, value);
+    }
+  }
+}
+
+class CircleTool extends DragShapeTool {
+  readonly id: PixelToolId = 'circle';
+  protected label = 'Circle';
+  protected paint(ctx: PixelToolContext, start: { x: number; y: number }, end: { x: number; y: number }, value: number): void {
+    for (const [x, y] of ellipseCells(start.x, start.y, end.x, end.y)) ctx.write(x, y, value);
+  }
+}
+
+/** Drag a rectangular selection; a plain click (no drag) clears it. Doesn't touch pixels itself. */
+class SelectTool implements PixelTool {
+  readonly id: PixelToolId = 'select';
+  private start: { x: number; y: number } | null = null;
+  private dragged = false;
+
+  pointerDown(ctx: PixelToolContext, p: PixelPointer): void {
+    const cell = ctx.cellAt(p.clientX, p.clientY);
+    if (!cell) return;
+    this.start = cell;
+    this.dragged = false;
+    ctx.setSelection(normalizedRect(cell.x, cell.y, cell.x, cell.y));
+  }
+
+  pointerMove(ctx: PixelToolContext, p: PixelPointer): void {
+    const cell = ctx.cellAt(p.clientX, p.clientY);
+    if (!this.start) {
+      ctx.setCursor(cell);
+      return;
+    }
+    if (!cell) return;
+    this.dragged = true;
+    ctx.setSelection(normalizedRect(this.start.x, this.start.y, cell.x, cell.y));
+  }
+
+  pointerUp(ctx: PixelToolContext): void {
+    if (this.start && !this.dragged) ctx.setSelection(null); // a plain click clears the selection
+    this.start = null;
+  }
+
+  clearPreview(ctx: PixelToolContext): void {
+    ctx.setCursor(null);
+    this.start = null;
   }
 }
 
@@ -181,9 +317,13 @@ export function createPixelTool(id: PixelToolId): PixelTool {
       return new PickerTool();
     case 'bucket':
       return new BucketTool();
-    case 'select':
-    case 'line':
     case 'rect':
-      return new NoopTool(id);
+      return new RectTool();
+    case 'line':
+      return new LineTool();
+    case 'circle':
+      return new CircleTool();
+    case 'select':
+      return new SelectTool();
   }
 }
