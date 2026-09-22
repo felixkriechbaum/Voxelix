@@ -258,7 +258,19 @@ export class PixelRenderer {
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
-    ctx.setLineDash(dashed ? PixelRenderer.dashPattern(zoom) : []);
+    if (dashed) {
+      const pattern = PixelRenderer.dashPattern(zoom);
+      ctx.setLineDash(pattern);
+      // "marching ants" — offset crawls continuously over time rather than
+      // sitting static, which is what actually makes a selection outline
+      // read as a selection at a glance instead of blending into the grid.
+      // render() is already driven by a continuous rAF loop (see
+      // PixelCanvas.vue), so this animates for free with no extra plumbing.
+      const cycle = pattern[0] + pattern[1];
+      ctx.lineDashOffset = -((performance.now() / 30) % cycle);
+    } else {
+      ctx.setLineDash([]);
+    }
     const x = Math.round(sel.x * zoom) + 0.5;
     const y = Math.round(sel.y * zoom) + 0.5;
     const w = Math.round((sel.x + sel.w) * zoom) - Math.round(sel.x * zoom) - 1;
