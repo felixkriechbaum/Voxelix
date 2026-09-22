@@ -141,18 +141,28 @@ export class PixelRenderer {
     ctx.globalCompositeOperation = 'difference';
     ctx.strokeStyle = GRID_LINE;
     ctx.lineWidth = 1;
-    ctx.beginPath();
+    // Stroked one line at a time, not as a single compound path (all lines
+    // queued via moveTo/lineTo then one stroke() call): a large multi-segment
+    // path under a non-default composite mode measurably drops the odd
+    // sub-path on some GPU rasterizers — a real, reproducible whole grid line
+    // going missing (not faint, not anti-aliased, just entirely un-inked),
+    // confirmed by sampling a rendered screenshot pixel-by-pixel. One stroke
+    // per line is slightly more draw calls but leaves no shared geometry for
+    // a rasterizer to mishandle.
     for (let x = 0; x <= w; x++) {
       const px = PixelRenderer.crisp(x * zoom);
+      ctx.beginPath();
       ctx.moveTo(px, 0);
       ctx.lineTo(px, h * zoom);
+      ctx.stroke();
     }
     for (let y = 0; y <= h; y++) {
       const py = PixelRenderer.crisp(y * zoom);
+      ctx.beginPath();
       ctx.moveTo(0, py);
       ctx.lineTo(w * zoom, py);
+      ctx.stroke();
     }
-    ctx.stroke();
     ctx.restore();
   }
 
@@ -161,28 +171,35 @@ export class PixelRenderer {
     ctx.strokeStyle = PATCH_LINE;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 3]);
-    ctx.beginPath();
+    // one stroke() per line — see the comment on paintGrid's loop
     if (patch.left > 0) {
       const x = PixelRenderer.crisp(patch.left * zoom);
+      ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, h * zoom);
+      ctx.stroke();
     }
     if (patch.right > 0) {
       const x = PixelRenderer.crisp((w - patch.right) * zoom);
+      ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, h * zoom);
+      ctx.stroke();
     }
     if (patch.top > 0) {
       const y = PixelRenderer.crisp(patch.top * zoom);
+      ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(w * zoom, y);
+      ctx.stroke();
     }
     if (patch.bottom > 0) {
       const y = PixelRenderer.crisp((h - patch.bottom) * zoom);
+      ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(w * zoom, y);
+      ctx.stroke();
     }
-    ctx.stroke();
     ctx.restore();
   }
 
