@@ -6,16 +6,43 @@ import ColorPanel from './ColorPanel.vue';
 import NinePatchPanel from './NinePatchPanel.vue';
 import WidgetPreview from './WidgetPreview.vue';
 import PixelCanvas from './PixelCanvas.vue';
+import Icon from '@/components/Icon.vue';
+import { faChevronLeft, faChevronRight } from '@fortawesome/pro-solid-svg-icons';
 import { usePixelStore } from '@/stores/pixel';
 import { usePixelAutosave } from '@/editor/pixel/autosave';
 import { usePixelSession } from '@/editor/pixel/session';
 import { previewExpanded, previewWidth, previewResizing } from '@/editor/pixel/previewPrefs';
+import { sideExpanded, sideWidth, sideResizing, setSideWidth } from '@/editor/pixel/sidePrefs';
 
 const previewColWidth = computed(() => (previewExpanded.value ? `${previewWidth.value}px` : '42px'));
+const sideColWidth = computed(() => (sideExpanded.value ? `${sideWidth.value}px` : '42px'));
+const anyResizing = computed(() => previewResizing.value || sideResizing.value);
 
 const store = usePixelStore();
 const { runner } = usePixelSession();
 const { flushAutosave } = usePixelAutosave();
+
+let sideDragStartX = 0;
+let sideDragStartWidth = 0;
+function onSideHandleDown(e: PointerEvent) {
+  sideDragStartX = e.clientX;
+  sideDragStartWidth = sideWidth.value;
+  sideResizing.value = true;
+  document.body.style.userSelect = 'none';
+  window.addEventListener('pointermove', onSideHandleMove);
+  window.addEventListener('pointerup', onSideHandleUp);
+}
+function onSideHandleMove(e: PointerEvent) {
+  // the side panel sits on the left, so dragging its right edge rightward grows it
+  setSideWidth(sideDragStartWidth + (e.clientX - sideDragStartX));
+}
+function onSideHandleUp() {
+  sideResizing.value = false;
+  document.body.style.userSelect = '';
+  window.removeEventListener('pointermove', onSideHandleMove);
+  window.removeEventListener('pointerup', onSideHandleUp);
+}
+onBeforeUnmount(onSideHandleUp);
 
 async function closeProject() {
   await flushAutosave();
@@ -55,17 +82,27 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
   <div
     class="editor"
     :style="{
-      gridTemplateColumns: `260px 1fr ${previewColWidth}`,
-      transition: previewResizing ? 'none' : 'grid-template-columns 0.15s ease',
+      gridTemplateColumns: `${sideColWidth} 1fr ${previewColWidth}`,
+      transition: anyResizing ? 'none' : 'grid-template-columns 0.15s ease',
     }"
     :aria-busy="!!store.exportStatus"
     @contextmenu="onContextMenu"
   >
     <PixelToolbar class="toolbar" :inert="!!store.exportStatus" @close-project="closeProject" />
-    <aside class="side" :inert="!!store.exportStatus">
-      <WidgetList />
-      <ColorPanel />
-      <NinePatchPanel />
+    <aside class="side" :class="{ collapsed: !sideExpanded }" :inert="!!store.exportStatus">
+      <div v-if="sideExpanded" class="side-body">
+        <WidgetList />
+        <ColorPanel />
+        <NinePatchPanel />
+      </div>
+      <button
+        class="toggle"
+        :title="sideExpanded ? 'Collapse side panel' : 'Expand side panel'"
+        @click="sideExpanded = !sideExpanded"
+      >
+        <Icon :icon="sideExpanded ? faChevronLeft : faChevronRight" :size="12" />
+      </button>
+      <div v-if="sideExpanded" class="handle" title="Drag to resize" @pointerdown="onSideHandleDown" />
     </aside>
     <main class="stage" :inert="!!store.exportStatus">
       <PixelCanvas />
@@ -103,13 +140,48 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 }
 .side {
   grid-area: side;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  background: var(--surface-0);
+  border-right: 1px solid var(--line);
+}
+.side.collapsed {
+  align-items: flex-start;
+}
+.side-body {
+  flex: 1;
+  min-width: 0;
   overflow: auto;
   padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: var(--surface-0);
-  border-right: 1px solid var(--line);
+}
+.side .toggle {
+  flex: none;
+  height: 32px;
+  width: 24px;
+  padding: 0;
+  margin: 8px 5px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.side .handle {
+  position: absolute;
+  right: -3px;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 1;
+  touch-action: none;
+}
+.side .handle:hover,
+.side .handle:active {
+  background: var(--accent-soft);
 }
 .stage {
   grid-area: stage;
