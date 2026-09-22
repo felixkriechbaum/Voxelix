@@ -93,7 +93,7 @@ function copyFrom() {
           </template>
         </button>
         <button
-          class="del"
+          class="icon-btn"
           :disabled="store.widgets.length <= 1"
           title="Delete widget"
           @click="removeWidget(w.id, w.name)"
@@ -107,7 +107,7 @@ function copyFrom() {
       <select v-model="addType">
         <option v-for="t in WIDGET_TYPES" :key="t" :value="t">{{ specFor(t).label }}</option>
       </select>
-      <button title="Add widget" @click="addWidget">
+      <button class="icon-btn" title="Add widget" @click="addWidget">
         <Icon :icon="faPlus" :size="12" />
       </button>
     </div>
@@ -128,7 +128,7 @@ function copyFrom() {
           <option value="" disabled>Copy from…</option>
           <option v-for="s in otherStates" :key="s" :value="s">{{ s }}</option>
         </select>
-        <button :disabled="otherStates.length === 0" @click="copyFrom">
+        <button class="icon-btn" :disabled="otherStates.length === 0" @click="copyFrom">
           <Icon :icon="faCopy" :size="12" />
         </button>
       </div>
@@ -179,10 +179,16 @@ function copyFrom() {
 .rename {
   width: 100%;
 }
-.del {
+/* the plain `button` rule in style.css doesn't centre its content (no
+   display:flex) — fine for a single line of text, which browsers centre by
+   default, but an <Icon> svg inside sits off-centre without it */
+.icon-btn {
   width: 26px;
   padding: 0;
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .add-row {
   gap: 6px;
@@ -219,10 +225,5 @@ function copyFrom() {
   flex: 1;
   font-size: 12px;
   text-transform: capitalize;
-}
-.copy-row button {
-  width: 26px;
-  padding: 0;
-  flex: none;
 }
 </style>

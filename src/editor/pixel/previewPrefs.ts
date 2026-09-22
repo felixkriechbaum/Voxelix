@@ -17,6 +17,7 @@ const DEFAULT_PREVIEW_WIDTH = 280;
 interface StoredPrefs {
   expanded: boolean;
   width: number;
+  showDisabled: boolean;
   variants: PreviewVariant[];
 }
 
@@ -40,13 +41,14 @@ function load(): StoredPrefs {
       return {
         expanded: parsed.expanded ?? true,
         width: clampWidth(parsed.width ?? DEFAULT_PREVIEW_WIDTH),
+        showDisabled: parsed.showDisabled ?? true,
         variants: variants && variants.length ? variants : defaultVariants(),
       };
     }
   } catch {
     /* private mode / corrupt value — fall through to defaults */
   }
-  return { expanded: true, width: DEFAULT_PREVIEW_WIDTH, variants: defaultVariants() };
+  return { expanded: true, width: DEFAULT_PREVIEW_WIDTH, showDisabled: true, variants: defaultVariants() };
 }
 
 const initial = load();
@@ -60,6 +62,9 @@ export const previewWidth = ref(initial.width);
  *  column's CSS transition switch off so live dragging tracks the cursor
  *  instead of easing a beat behind it. */
 export const previewResizing = ref(false);
+/** Whether 'disabled' is included alongside normal/hover/pressed/focus in each
+ *  preview variant — the one state that isn't core to "does this button work". */
+export const previewShowDisabled = ref(initial.showDisabled);
 /** The user's own list of preview boxes — persisted, not part of project data (it's a viewing preference, not the design). */
 export const previewVariants = ref<PreviewVariant[]>(initial.variants);
 
@@ -74,6 +79,7 @@ function persist(): void {
       JSON.stringify({
         expanded: previewExpanded.value,
         width: previewWidth.value,
+        showDisabled: previewShowDisabled.value,
         variants: previewVariants.value,
       }),
     );
@@ -81,7 +87,7 @@ function persist(): void {
     /* private mode */
   }
 }
-watch([previewExpanded, previewWidth, previewVariants], persist, { deep: true });
+watch([previewExpanded, previewWidth, previewShowDisabled, previewVariants], persist, { deep: true });
 
 export function addPreviewVariant(base?: { w: number; h: number }): void {
   previewVariants.value = [

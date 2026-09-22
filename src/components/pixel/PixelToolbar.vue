@@ -118,6 +118,15 @@ const canRedo = computed(() => {
   border-bottom: 1px solid var(--line);
   background: var(--surface-1);
 }
+/* the plain `button` rule in style.css doesn't centre its content (no
+   display:flex) — fine for a single line of text, which browsers centre by
+   default, but an <Icon> svg inside sits off-centre without it */
+.toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
 .sep {
   width: 1px;
   align-self: stretch;
