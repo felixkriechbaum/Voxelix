@@ -1,5 +1,5 @@
 import { CHUNK, MAX_SIZE, REMOVED } from './constants';
-import type { Bounds, VoxelDataJson } from './types';
+import type { Bounds, VoxelDataJson, VoxelEdit } from './types';
 import { base64ToU16, base64ToRleU16, rleU16ToBase64 } from '@/core/io/serialize';
 
 const CHUNK3 = CHUNK * CHUNK * CHUNK;
@@ -97,6 +97,11 @@ export class VoxelData {
   /** Sets a voxel to a palette colour. Returns the previous raw value. */
   set(x: number, y: number, z: number, paletteIndex: number): number {
     return this.setRaw(x, y, z, paletteIndex + 1);
+  }
+
+  /** History replay target: apply one edit's before/after value. */
+  applyEdit(e: VoxelEdit, value: number): void {
+    this.setRaw(e.x, e.y, e.z, value);
   }
 
   clear(x: number, y: number, z: number): number {

@@ -30,7 +30,7 @@ export class ToolRunner implements ToolContext {
   private tool: Tool;
   private batch: VoxelEdit[] = [];
   private batchLabel = '';
-  private histories = new HistoryStore();
+  private histories = new HistoryStore<VoxelEdit>();
   private ctx: ActiveCtx | null = null;
   private liveFlushQueued = false;
   /** grid cells per voxel edge for the active object */

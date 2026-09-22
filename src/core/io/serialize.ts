@@ -45,6 +45,41 @@ export function base64ToRleU16(b64: string, len: number): Uint16Array {
   return out;
 }
 
+/** Run-length encode a fixed-length array as base64 `[run: u16, value: u32]` pairs. */
+export function rleU32ToBase64(arr: Uint32Array): string {
+  const pairs: number[] = [];
+  for (let i = 0; i < arr.length; ) {
+    const v = arr[i];
+    let run = 1;
+    while (i + run < arr.length && arr[i + run] === v && run < 0xffff) run++;
+    pairs.push(run, v);
+    i += run;
+  }
+  const bytes = new Uint8Array((pairs.length / 2) * 6);
+  const view = new DataView(bytes.buffer);
+  let o = 0;
+  for (let j = 0; j < pairs.length; j += 2) {
+    view.setUint16(o, pairs[j], true);
+    view.setUint32(o + 2, pairs[j + 1], true);
+    o += 6;
+  }
+  return bytesToBase64(bytes);
+}
+
+/** Inverse of rleU32ToBase64. `len` is the decoded array length. */
+export function base64ToRleU32(b64: string, len: number): Uint32Array {
+  const bytes = base64ToBytes(b64);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const out = new Uint32Array(len);
+  let o = 0;
+  for (let j = 0; j + 5 < bytes.byteLength && o < len; j += 6) {
+    const run = view.getUint16(j, true);
+    const val = view.getUint32(j + 2, true);
+    for (let k = 0; k < run && o < len; k++) out[o++] = val;
+  }
+  return out;
+}
+
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
   const chunk = 0x8000;

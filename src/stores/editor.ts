@@ -101,6 +101,7 @@ export const useEditorStore = defineStore('editor', () => {
     paletteVersion.value++;
     try {
       localStorage.setItem('voxelix.lastProject', p.id);
+      localStorage.setItem('voxelix.lastWorkspace', 'voxel');
     } catch {
       /* private mode */
     }
