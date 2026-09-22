@@ -158,6 +158,17 @@ function lineCells(x0: number, y0: number, x1: number, y1: number): Array<[numbe
   return cells;
 }
 
+/** Normalised box (corners -> bounds) plus the inscribed ellipse's continuous centre/radii, shared by ellipseCells and squircleCells. */
+function boxRadii(x0: number, y0: number, x1: number, y1: number) {
+  const minX = Math.min(x0, x1);
+  const maxX = Math.max(x0, x1);
+  const minY = Math.min(y0, y1);
+  const maxY = Math.max(y0, y1);
+  const rx = (maxX - minX + 1) / 2;
+  const ry = (maxY - minY + 1) / 2;
+  return { minX, maxX, minY, maxY, rx, ry, cx: minX + rx, cy: minY + ry };
+}
+
 /**
  * Every cell whose centre falls inside the ellipse inscribed in the box
  * spanning the two corners — a simple area test rather than a midpoint/
@@ -166,20 +177,30 @@ function lineCells(x0: number, y0: number, x1: number, y1: number): Array<[numbe
  * editor deals with.
  */
 function ellipseCells(x0: number, y0: number, x1: number, y1: number): Array<[number, number]> {
-  const minX = Math.min(x0, x1);
-  const maxX = Math.max(x0, x1);
-  const minY = Math.min(y0, y1);
-  const maxY = Math.max(y0, y1);
-  const rx = (maxX - minX + 1) / 2;
-  const ry = (maxY - minY + 1) / 2;
-  const cx = minX + rx;
-  const cy = minY + ry;
+  const { minX, maxX, minY, maxY, rx, ry, cx, cy } = boxRadii(x0, y0, x1, y1);
   const cells: Array<[number, number]> = [];
   for (let y = minY; y <= maxY; y++) {
     const ny = (y + 0.5 - cy) / ry;
     for (let x = minX; x <= maxX; x++) {
       const nx = (x + 0.5 - cx) / rx;
       if (nx * nx + ny * ny <= 1) cells.push([x, y]);
+    }
+  }
+  return cells;
+}
+
+/** Superellipse exponent for the "squircle" shape — 4 is the usual textbook value for a rounded-square look, between an ellipse (2) and a true rounded rect (very large). */
+const SQUIRCLE_N = 4;
+
+/** Same area-test approach as ellipseCells, but against |nx|^n + |ny|^n <= 1 — a rounded square rather than a round ellipse. */
+function squircleCells(x0: number, y0: number, x1: number, y1: number): Array<[number, number]> {
+  const { minX, maxX, minY, maxY, rx, ry, cx, cy } = boxRadii(x0, y0, x1, y1);
+  const cells: Array<[number, number]> = [];
+  for (let y = minY; y <= maxY; y++) {
+    const ny = Math.abs((y + 0.5 - cy) / ry);
+    for (let x = minX; x <= maxX; x++) {
+      const nx = Math.abs((x + 0.5 - cx) / rx);
+      if (nx ** SQUIRCLE_N + ny ** SQUIRCLE_N <= 1) cells.push([x, y]);
     }
   }
   return cells;
@@ -192,13 +213,26 @@ function normalizedRect(x0: number, y0: number, x1: number, y1: number): PixelRe
   return { x, y, w: Math.abs(x1 - x0) + 1, h: Math.abs(y1 - y0) + 1 };
 }
 
+/** With shift held, pulls `end` out to the nearer square corner (matching the drag direction) — the usual "Shift = constrain to a square/circle" drawing-tool convention. */
+function constrainSquare(start: { x: number; y: number }, end: { x: number; y: number }, shift: boolean): { x: number; y: number } {
+  if (!shift) return end;
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const d = Math.max(Math.abs(dx), Math.abs(dy));
+  return { x: start.x + (dx < 0 ? -d : d), y: start.y + (dy < 0 ? -d : d) };
+}
+
 /**
- * Shared "rubber-band" drag pattern for rect/line: rather than a separate
- * preview overlay, each move reverts the in-progress batch and repaints the
- * shape from the (unchanged) start point to the new cursor cell — the same
- * begin/write/cancel machinery a single stroke already uses, so what's shown
- * mid-drag is the exact real pixels, not an approximation (e.g. a bounding
- * box standing in for a diagonal line).
+ * Shared "rubber-band" drag pattern for rect/line/circle/squircle: rather
+ * than a separate preview overlay, each move reverts the in-progress batch
+ * and repaints the shape from the (unchanged) start point to the new cursor
+ * cell — the same begin/write/cancel machinery a single stroke already uses,
+ * so what's shown mid-drag is the exact real pixels, not an approximation
+ * (e.g. a bounding box standing in for a diagonal line). Modifier keys are
+ * read live on every move rather than frozen at pointerDown, unlike the
+ * mouse button (see PencilTool) — `shiftKey` reflects the current key state
+ * on every event, it isn't a down/up-only transition, so toggling it mid-drag
+ * correctly flips between free and constrained live.
  */
 abstract class DragShapeTool implements PixelTool {
   abstract readonly id: PixelToolId;
@@ -206,7 +240,13 @@ abstract class DragShapeTool implements PixelTool {
   private button = 0;
 
   protected abstract label: string;
-  protected abstract paint(ctx: PixelToolContext, start: { x: number; y: number }, end: { x: number; y: number }, value: number): void;
+  protected abstract paint(
+    ctx: PixelToolContext,
+    start: { x: number; y: number },
+    end: { x: number; y: number },
+    value: number,
+    shiftKey: boolean,
+  ): void;
 
   pointerDown(ctx: PixelToolContext, p: PixelPointer): void {
     const cell = ctx.cellAt(p.clientX, p.clientY);
@@ -214,7 +254,7 @@ abstract class DragShapeTool implements PixelTool {
     this.start = cell;
     this.button = p.button;
     ctx.begin(this.label);
-    this.paint(ctx, cell, cell, this.button === 2 ? ctx.secondary : ctx.primary);
+    this.paint(ctx, cell, cell, this.button === 2 ? ctx.secondary : ctx.primary, p.shiftKey);
   }
 
   pointerMove(ctx: PixelToolContext, p: PixelPointer): void {
@@ -226,7 +266,7 @@ abstract class DragShapeTool implements PixelTool {
     if (!cell) return;
     ctx.cancel();
     ctx.begin(this.label);
-    this.paint(ctx, this.start, cell, this.button === 2 ? ctx.secondary : ctx.primary);
+    this.paint(ctx, this.start, cell, this.button === 2 ? ctx.secondary : ctx.primary, p.shiftKey);
   }
 
   pointerUp(ctx: PixelToolContext): void {
@@ -247,7 +287,8 @@ abstract class DragShapeTool implements PixelTool {
 class RectTool extends DragShapeTool {
   readonly id: PixelToolId = 'rect';
   protected label = 'Rectangle';
-  protected paint(ctx: PixelToolContext, start: { x: number; y: number }, end: { x: number; y: number }, value: number): void {
+  protected paint(ctx: PixelToolContext, start: { x: number; y: number }, end0: { x: number; y: number }, value: number, shiftKey: boolean): void {
+    const end = constrainSquare(start, end0, shiftKey);
     const r = normalizedRect(start.x, start.y, end.x, end.y);
     for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) ctx.write(x, y, value);
   }
@@ -263,11 +304,23 @@ class LineTool extends DragShapeTool {
   }
 }
 
+/** Free ellipse inscribed in the drag box; shift constrains it to a perfect circle. */
 class CircleTool extends DragShapeTool {
   readonly id: PixelToolId = 'circle';
-  protected label = 'Circle';
-  protected paint(ctx: PixelToolContext, start: { x: number; y: number }, end: { x: number; y: number }, value: number): void {
+  protected label = 'Ellipse';
+  protected paint(ctx: PixelToolContext, start: { x: number; y: number }, end0: { x: number; y: number }, value: number, shiftKey: boolean): void {
+    const end = constrainSquare(start, end0, shiftKey);
     for (const [x, y] of ellipseCells(start.x, start.y, end.x, end.y)) ctx.write(x, y, value);
+  }
+}
+
+/** Superellipse ("squircle") inscribed in the drag box; shift constrains it to a symmetric squircle. */
+class SquircleTool extends DragShapeTool {
+  readonly id: PixelToolId = 'squircle';
+  protected label = 'Squircle';
+  protected paint(ctx: PixelToolContext, start: { x: number; y: number }, end0: { x: number; y: number }, value: number, shiftKey: boolean): void {
+    const end = constrainSquare(start, end0, shiftKey);
+    for (const [x, y] of squircleCells(start.x, start.y, end.x, end.y)) ctx.write(x, y, value);
   }
 }
 
@@ -323,6 +376,8 @@ export function createPixelTool(id: PixelToolId): PixelTool {
       return new LineTool();
     case 'circle':
       return new CircleTool();
+    case 'squircle':
+      return new SquircleTool();
     case 'select':
       return new SelectTool();
   }

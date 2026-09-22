@@ -14,6 +14,7 @@ import {
   faVectorSquare,
   faSlash,
   faCircle,
+  faSquareFull,
   faSquareDashed,
   faRotateLeft,
   faRotateRight,
@@ -35,9 +36,10 @@ const tools: Array<{ id: PixelToolId; icon: typeof faPencil; label: string }> = 
   { id: 'eraser', icon: faEraser, label: 'Eraser' },
   { id: 'bucket', icon: faFill, label: 'Bucket fill' },
   { id: 'picker', icon: faEyeDropper, label: 'Colour picker' },
-  { id: 'rect', icon: faVectorSquare, label: 'Rectangle' },
+  { id: 'rect', icon: faVectorSquare, label: 'Rectangle (Shift = square)' },
   { id: 'line', icon: faSlash, label: 'Line' },
-  { id: 'circle', icon: faCircle, label: 'Circle' },
+  { id: 'circle', icon: faCircle, label: 'Ellipse (Shift = circle)' },
+  { id: 'squircle', icon: faSquareFull, label: 'Squircle (Shift = symmetric)' },
   { id: 'select', icon: faSquareDashed, label: 'Select (Delete to erase, Esc to clear)' },
 ];
 
