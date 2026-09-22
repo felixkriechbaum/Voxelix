@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue';
+import { computed, onBeforeUnmount, onMounted } from 'vue';
 import PixelToolbar from './PixelToolbar.vue';
 import WidgetList from './WidgetList.vue';
 import ColorPanel from './ColorPanel.vue';
@@ -9,6 +9,9 @@ import PixelCanvas from './PixelCanvas.vue';
 import { usePixelStore } from '@/stores/pixel';
 import { usePixelAutosave } from '@/editor/pixel/autosave';
 import { usePixelSession } from '@/editor/pixel/session';
+import { previewExpanded } from '@/editor/pixel/previewPrefs';
+
+const previewColWidth = computed(() => (previewExpanded.value ? '260px' : '42px'));
 
 const store = usePixelStore();
 const { runner } = usePixelSession();
@@ -42,17 +45,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
-  <div class="editor" @contextmenu="onContextMenu">
+  <div class="editor" :style="{ gridTemplateColumns: `260px 1fr ${previewColWidth}` }" @contextmenu="onContextMenu">
     <PixelToolbar class="toolbar" @close-project="closeProject" />
     <aside class="side">
       <WidgetList />
       <ColorPanel />
       <NinePatchPanel />
-      <WidgetPreview />
     </aside>
     <main class="stage">
       <PixelCanvas />
     </main>
+    <WidgetPreview class="preview" />
     <div class="status row">
       <span>{{ store.projectName }}</span>
       <span class="spacer" />
@@ -67,12 +70,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 .editor {
   height: 100%;
   display: grid;
-  grid-template-columns: 260px 1fr;
   grid-template-rows: auto 1fr auto;
   grid-template-areas:
-    'toolbar toolbar'
-    'side stage'
-    'status status';
+    'toolbar toolbar toolbar'
+    'side stage preview'
+    'status status status';
+  transition: grid-template-columns 0.15s ease;
 }
 .toolbar {
   grid-area: toolbar;
@@ -89,6 +92,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 }
 .stage {
   grid-area: stage;
+  min-width: 0;
+  min-height: 0;
+}
+.preview {
+  grid-area: preview;
   min-width: 0;
   min-height: 0;
 }

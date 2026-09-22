@@ -1,139 +1,194 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { nextTick, onMounted, watch, type ComponentPublicInstance } from 'vue';
 import { usePixelStore } from '@/stores/pixel';
 import { blitPixelData } from '@/pixel/blit';
 import { paintNinePatch } from '@/pixel/NinePatchPainter';
 import { minDrawSize } from '@/core/pixel/ninepatch';
+import { previewExpanded, previewVariants, addPreviewVariant, removePreviewVariant } from '@/editor/pixel/previewPrefs';
+import Icon from '@/components/Icon.vue';
+import { faChevronRight, faChevronLeft, faPlus, faXmark } from '@fortawesome/pro-solid-svg-icons';
 
 const store = usePixelStore();
-const zoom = ref(2);
-const zoomLevels = [1, 2, 3, 4];
 
-const srcCanvas = ref<HTMLCanvasElement | null>(null);
-const narrowCanvas = ref<HTMLCanvasElement | null>(null);
-const wideCanvas = ref<HTMLCanvasElement | null>(null);
-const tallCanvas = ref<HTMLCanvasElement | null>(null);
+let srcCanvas: HTMLCanvasElement | null = null;
+const canvases = new Map<string, HTMLCanvasElement>();
 
-// three representative target sizes: the smallest sane box, a long-label
-// button, and a tall one — a one-pixel margin mistake is invisible at the
-// widget's own size but jumps out the moment any of these stretch it
-const targets = computed(() => {
-  void store.structureVersion;
-  void store.activeVersion;
-  const w = store.activeWidget();
-  if (!w) return null;
-  const min = minDrawSize(w.patch);
-  return {
-    min,
-    narrow: { w: Math.max(min.w, Math.round(w.width * 0.6)), h: w.height },
-    wide: { w: w.width * 2, h: w.height },
-    tall: { w: w.width, h: w.height * 2 },
-  };
-});
+function setSrcCanvas(el: Element | ComponentPublicInstance | null) {
+  srcCanvas = el instanceof HTMLCanvasElement ? el : null;
+}
+function setVariantCanvas(id: string, el: Element | ComponentPublicInstance | null) {
+  if (el instanceof HTMLCanvasElement) canvases.set(id, el);
+  else canvases.delete(id);
+}
 
 function redraw() {
   const w = store.activeWidget();
-  const src = srcCanvas.value;
-  const t = targets.value;
-  if (!w || !src || !t) return;
+  if (!w || !srcCanvas) return;
   const data = w.stateData(store.activeStateId);
-  if (src.width !== data.width || src.height !== data.height) {
-    src.width = data.width;
-    src.height = data.height;
+  if (srcCanvas.width !== data.width || srcCanvas.height !== data.height) {
+    srcCanvas.width = data.width;
+    srcCanvas.height = data.height;
   }
-  const sctx = src.getContext('2d');
+  const sctx = srcCanvas.getContext('2d');
   if (!sctx) return;
   blitPixelData(sctx, data);
 
   const srcSize = { w: data.width, h: data.height };
-  paintInto(narrowCanvas.value, srcSize, w.patch, t.narrow);
-  paintInto(wideCanvas.value, srcSize, w.patch, t.wide);
-  paintInto(tallCanvas.value, srcSize, w.patch, t.tall);
+  for (const v of previewVariants.value) {
+    const canvas = canvases.get(v.id);
+    if (!canvas) continue;
+    const zoom = Math.max(1, Math.round(v.zoom));
+    const pxW = Math.max(1, Math.round(v.w)) * zoom;
+    const pxH = Math.max(1, Math.round(v.h)) * zoom;
+    if (canvas.width !== pxW || canvas.height !== pxH) {
+      canvas.width = pxW;
+      canvas.height = pxH;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) continue;
+    ctx.clearRect(0, 0, pxW, pxH);
+    paintNinePatch(ctx, srcCanvas, srcSize, w.patch, { x: 0, y: 0, w: v.w, h: v.h }, zoom);
+  }
 }
 
-function paintInto(
-  canvas: HTMLCanvasElement | null,
-  srcSize: { w: number; h: number },
-  patch: { left: number; top: number; right: number; bottom: number },
-  target: { w: number; h: number },
-) {
-  if (!canvas || !srcCanvas.value) return;
-  const w = target.w * zoom.value;
-  const h = target.h * zoom.value;
-  if (canvas.width !== w || canvas.height !== h) {
-    canvas.width = w;
-    canvas.height = h;
-  }
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  ctx.clearRect(0, 0, w, h);
-  paintNinePatch(ctx, srcCanvas.value, srcSize, patch, { x: 0, y: 0, w: target.w, h: target.h }, zoom.value);
+function warnFor(v: { w: number; h: number }) {
+  // called from the template, so this read makes the render effect depend on
+  // structureVersion — needed because widget.patch below is a plain mutable
+  // field on the markRaw'd project graph, not reactive on its own (same
+  // gotcha as NinePatchPanel.vue's `widget` computed)
+  void store.structureVersion;
+  const widget = store.activeWidget();
+  if (!widget) return false;
+  const min = minDrawSize(widget.patch);
+  return v.w < min.w || v.h < min.h;
+}
+
+function addVariant() {
+  const w = store.activeWidget();
+  addPreviewVariant(w ? { w: w.width, h: w.height } : undefined);
 }
 
 watch(
-  () => [store.structureVersion, store.activeVersion, store.editVersion, zoom.value],
+  () => [store.structureVersion, store.activeVersion, store.editVersion, previewVariants.value],
   () => nextTick(redraw),
-  { immediate: false },
+  { deep: true },
 );
 onMounted(() => nextTick(redraw));
 </script>
 
 <template>
-  <div class="panel preview-panel">
-    <div class="row">
+  <aside class="preview-pane panel" :class="{ collapsed: !previewExpanded }">
+    <button
+      class="toggle"
+      :title="previewExpanded ? 'Collapse preview' : 'Expand preview'"
+      @click="previewExpanded = !previewExpanded"
+    >
+      <Icon :icon="previewExpanded ? faChevronRight : faChevronLeft" :size="12" />
+    </button>
+
+    <div v-if="previewExpanded" class="body">
       <h3>Preview</h3>
-      <span class="spacer" />
-      <select v-model.number="zoom">
-        <option v-for="z in zoomLevels" :key="z" :value="z">{{ z }}×</option>
-      </select>
-    </div>
+      <canvas :ref="setSrcCanvas" class="hidden-src" />
 
-    <canvas ref="srcCanvas" class="hidden-src" />
-
-    <template v-if="targets">
-      <div class="slot">
-        <span class="label">
-          Narrow
-          <span v-if="targets.narrow.w < targets.min.w || targets.narrow.h < targets.min.h" class="warn" title="Smaller than the patch's fixed borders — Godot will scale the whole patch down instead">⚠</span>
+      <div v-for="v in previewVariants" :key="v.id" class="variant">
+        <div class="row head">
+          <input v-model="v.label" class="label-input" />
+          <button class="del" title="Remove" @click="removePreviewVariant(v.id)">
+            <Icon :icon="faXmark" :size="11" />
+          </button>
+        </div>
+        <div class="row dims">
+          <label>W<input v-model.number="v.w" type="number" min="1" /></label>
+          <label>H<input v-model.number="v.h" type="number" min="1" /></label>
+          <label>Zoom<input v-model.number="v.zoom" type="number" min="1" max="16" /></label>
+        </div>
+        <span v-if="warnFor(v)" class="warn" title="Smaller than the patch's fixed borders — Godot will scale the whole patch down instead of respecting it">
+          ⚠ smaller than the patch borders
         </span>
-        <div class="frame"><canvas ref="narrowCanvas" /></div>
+        <div class="frame">
+          <canvas :ref="(el) => setVariantCanvas(v.id, el)" />
+        </div>
       </div>
-      <div class="slot">
-        <span class="label">Wide</span>
-        <div class="frame"><canvas ref="wideCanvas" /></div>
-      </div>
-      <div class="slot">
-        <span class="label">Tall</span>
-        <div class="frame"><canvas ref="tallCanvas" /></div>
-      </div>
-    </template>
-  </div>
+
+      <button class="add" @click="addVariant">
+        <Icon :icon="faPlus" :size="11" /> Add variant
+      </button>
+    </div>
+  </aside>
 </template>
 
 <style scoped>
-.preview-panel {
-  padding: 10px;
+.preview-pane {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  border-radius: 0;
+  border-width: 0 0 0 1px;
 }
-select {
-  font-size: 12px;
+.preview-pane.collapsed {
+  align-items: flex-start;
+}
+.toggle {
+  flex: none;
+  height: 32px;
+  width: 24px;
+  padding: 0;
+  margin: 8px 5px;
+  border-radius: var(--radius-sm);
+}
+.body {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 10px 10px 10px 0;
 }
 .hidden-src {
   display: none;
 }
-.slot {
-  margin-top: 8px;
+.variant {
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
 }
-.label {
+.head {
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.label-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 3px 6px;
+}
+.del {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  flex: none;
+}
+.dims {
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.dims label {
+  flex: 1;
+  min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
   color: var(--text-dim);
-  margin-bottom: 3px;
+}
+.dims input {
+  min-width: 0;
+  padding: 3px 4px;
+  font-size: 12px;
 }
 .warn {
+  display: block;
+  font-size: 11px;
   color: var(--warn);
-  cursor: help;
+  margin-bottom: 4px;
 }
 .frame {
   display: flex;
@@ -148,5 +203,9 @@ select {
 }
 .frame canvas {
   image-rendering: pixelated;
+}
+.add {
+  width: 100%;
+  font-size: 12px;
 }
 </style>

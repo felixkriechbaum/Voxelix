@@ -153,6 +153,9 @@ function swap() {
 }
 .field input[type='range'] {
   flex: 1;
+  /* a range input's intrinsic width is a flex item's default min-width floor —
+     without resetting it, flex:1 can't actually shrink it to fit a narrow panel */
+  min-width: 0;
 }
 .grid {
   display: grid;
