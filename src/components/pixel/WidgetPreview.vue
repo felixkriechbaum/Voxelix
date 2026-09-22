@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, watch, type ComponentPublicInstance } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, reactive, watch, type ComponentPublicInstance } from 'vue';
 import { usePixelStore } from '@/stores/pixel';
 import { blitPixelData } from '@/pixel/blit';
 import { paintNinePatch } from '@/pixel/NinePatchPainter';
 import { minDrawSize } from '@/core/pixel/ninepatch';
-import { specFor } from '@/core/pixel/widgets';
 import type { StateId } from '@/core/pixel/types';
 import type { PixelWidget } from '@/core/pixel/PixelWidget';
 import {
@@ -47,7 +46,7 @@ function onHandleUp() {
 onBeforeUnmount(onHandleUp);
 
 let srcCanvas: HTMLCanvasElement | null = null;
-/** keyed by `${variantId}:${stateId}` — every variant renders every state */
+/** keyed by `${variantId}:live` (the interactive one) or `${variantId}:disabled` */
 const canvases = new Map<string, HTMLCanvasElement>();
 
 function setSrcCanvas(el: Element | ComponentPublicInstance | null) {
@@ -58,47 +57,122 @@ function setVariantCanvas(key: string, el: Element | ComponentPublicInstance | n
   else canvases.delete(key);
 }
 
+interface Interaction {
+  hover: boolean;
+  pressed: boolean;
+  focused: boolean;
+}
+/** per-variant pointer/focus state — reactive so the live state-name label
+ *  updates in the template; the canvas pixels are repainted imperatively via
+ *  redraw() regardless, since that path never goes through Vue's renderer. */
+const interactions = reactive(new Map<string, Interaction>());
+
+/** Read-only — safe to call from the template. Never seen yet -> this plain
+ *  (non-reactive, never mutated) default, so a brand-new variant just reads
+ *  as 'not interacted with' instead of the template writing to reactive
+ *  state mid-render. */
+const DEFAULT_INTERACTION: Interaction = { hover: false, pressed: false, focused: false };
+function getInteraction(variantId: string): Interaction {
+  return interactions.get(variantId) ?? DEFAULT_INTERACTION;
+}
+
+/** Creates the entry on first use — only called from event handlers / redraw(), never from the template. */
+function ensureInteraction(variantId: string): Interaction {
+  let i = interactions.get(variantId);
+  if (!i) {
+    i = { hover: false, pressed: false, focused: false };
+    interactions.set(variantId, i);
+  }
+  return i;
+}
+
 /**
- * States to preview, in canonical display order, limited to ones the widget
- * actually has — a functioning-button preview needs normal/hover/pressed/
- * focus together; disabled is the one state that isn't core to "does this
- * look right while it works", so it's opt-out via previewShowDisabled.
+ * Which state a real button would be showing right now, given how the mouse/
+ * keyboard is interacting with this one preview box — pressed beats hover
+ * beats focus beats normal, same priority a real widget resolves them in.
+ * Falls back through to 'normal' for any state the widget doesn't have.
  */
-function previewStates(w: PixelWidget): StateId[] {
-  const order = specFor(w.type).states.length ? specFor(w.type).states : (['normal'] as StateId[]);
-  return order.filter((s) => w.states.has(s) && (s !== 'disabled' || previewShowDisabled.value));
+function resolveState(w: PixelWidget, interaction: Interaction): StateId {
+  const has = (s: StateId) => w.states.has(s);
+  if (interaction.pressed && has('pressed')) return 'pressed';
+  if (interaction.hover && has('hover')) return 'hover';
+  if (interaction.focused && has('focus')) return 'focus';
+  return 'normal';
+}
+
+function onEnter(id: string) {
+  ensureInteraction(id).hover = true;
+  nextTick(redraw);
+}
+function onLeave(id: string) {
+  const i = ensureInteraction(id);
+  i.hover = false;
+  i.pressed = false;
+  nextTick(redraw);
+}
+function onDown(id: string) {
+  ensureInteraction(id).pressed = true;
+  nextTick(redraw);
+}
+function onUp(id: string) {
+  ensureInteraction(id).pressed = false;
+  nextTick(redraw);
+}
+function onFocus(id: string) {
+  ensureInteraction(id).focused = true;
+  nextTick(redraw);
+}
+function onBlur(id: string) {
+  ensureInteraction(id).focused = false;
+  nextTick(redraw);
+}
+/** catches a mouseup that happens after the pointer left the canvas (button
+ *  released outside it) — otherwise that variant would show 'pressed' forever. */
+function onWindowUp() {
+  let changed = false;
+  for (const i of interactions.values()) {
+    if (i.pressed) {
+      i.pressed = false;
+      changed = true;
+    }
+  }
+  if (changed) nextTick(redraw);
+}
+
+function paintOne(w: PixelWidget, srcSize: { w: number; h: number }, canvas: HTMLCanvasElement | undefined, stateId: StateId, v: { w: number; h: number; zoom: number }) {
+  if (!canvas || !srcCanvas) return;
+  const sctx = srcCanvas.getContext('2d');
+  if (!sctx) return;
+  const data = w.states.get(stateId) ?? w.states.get('normal');
+  if (!data) return;
+  if (srcCanvas.width !== data.width || srcCanvas.height !== data.height) {
+    srcCanvas.width = data.width;
+    srcCanvas.height = data.height;
+  }
+  blitPixelData(sctx, data);
+
+  const zoom = Math.max(1, Math.round(v.zoom));
+  const pxW = Math.max(1, Math.round(v.w)) * zoom;
+  const pxH = Math.max(1, Math.round(v.h)) * zoom;
+  if (canvas.width !== pxW || canvas.height !== pxH) {
+    canvas.width = pxW;
+    canvas.height = pxH;
+  }
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.clearRect(0, 0, pxW, pxH);
+  paintNinePatch(ctx, srcCanvas, srcSize, w.patch, { x: 0, y: 0, w: v.w, h: v.h }, zoom);
 }
 
 function redraw() {
   const w = store.activeWidget();
   if (!w || !srcCanvas) return;
-  const sctx = srcCanvas.getContext('2d');
-  if (!sctx) return;
-
   const srcSize = { w: w.width, h: w.height };
-  for (const stateId of previewStates(w)) {
-    const data = w.states.get(stateId);
-    if (!data) continue;
-    if (srcCanvas.width !== data.width || srcCanvas.height !== data.height) {
-      srcCanvas.width = data.width;
-      srcCanvas.height = data.height;
-    }
-    blitPixelData(sctx, data);
 
-    for (const v of previewVariants.value) {
-      const canvas = canvases.get(`${v.id}:${stateId}`);
-      if (!canvas) continue;
-      const zoom = Math.max(1, Math.round(v.zoom));
-      const pxW = Math.max(1, Math.round(v.w)) * zoom;
-      const pxH = Math.max(1, Math.round(v.h)) * zoom;
-      if (canvas.width !== pxW || canvas.height !== pxH) {
-        canvas.width = pxW;
-        canvas.height = pxH;
-      }
-      const ctx = canvas.getContext('2d');
-      if (!ctx) continue;
-      ctx.clearRect(0, 0, pxW, pxH);
-      paintNinePatch(ctx, srcCanvas, srcSize, w.patch, { x: 0, y: 0, w: v.w, h: v.h }, zoom);
+  for (const v of previewVariants.value) {
+    paintOne(w, srcSize, canvases.get(`${v.id}:live`), resolveState(w, getInteraction(v.id)), v);
+    if (previewShowDisabled.value && w.states.has('disabled')) {
+      paintOne(w, srcSize, canvases.get(`${v.id}:disabled`), 'disabled', v);
     }
   }
 }
@@ -131,7 +205,11 @@ watch(
   () => nextTick(redraw),
   { deep: true },
 );
-onMounted(() => nextTick(redraw));
+onMounted(() => {
+  nextTick(redraw);
+  window.addEventListener('mouseup', onWindowUp);
+});
+onBeforeUnmount(() => window.removeEventListener('mouseup', onWindowUp));
 </script>
 
 <template>
@@ -172,10 +250,26 @@ onMounted(() => nextTick(redraw));
             ⚠ smaller than the patch borders
           </span>
           <div class="states-wrap">
-            <div v-for="s in previewStates(store.activeWidget()!)" :key="s" class="state-slot">
-              <span class="state-label">{{ s }}</span>
+            <div class="state-slot">
+              <span class="state-label">{{ resolveState(store.activeWidget()!, getInteraction(v.id)) }}</span>
+              <div
+                class="frame live"
+                tabindex="0"
+                title="Hover, press or tab to this box to preview that state"
+                @mouseenter="onEnter(v.id)"
+                @mouseleave="onLeave(v.id)"
+                @mousedown="onDown(v.id)"
+                @mouseup="onUp(v.id)"
+                @focus="onFocus(v.id)"
+                @blur="onBlur(v.id)"
+              >
+                <canvas :ref="(el) => setVariantCanvas(`${v.id}:live`, el)" />
+              </div>
+            </div>
+            <div v-if="previewShowDisabled && store.activeWidget()!.states.has('disabled')" class="state-slot">
+              <span class="state-label">disabled</span>
               <div class="frame">
-                <canvas :ref="(el) => setVariantCanvas(`${v.id}:${s}`, el)" />
+                <canvas :ref="(el) => setVariantCanvas(`${v.id}:disabled`, el)" />
               </div>
             </div>
           </div>
@@ -329,6 +423,12 @@ onMounted(() => nextTick(redraw));
 }
 .frame canvas {
   image-rendering: pixelated;
+}
+.frame.live {
+  cursor: pointer;
+}
+.frame.live:hover {
+  border-color: var(--line-strong);
 }
 .add {
   width: 100%;
