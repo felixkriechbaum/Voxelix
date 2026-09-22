@@ -16,6 +16,11 @@ export class PixelRunner implements PixelToolContext {
   private activeData: PixelData | null = null;
   private cursor: { x: number; y: number } | null = null;
   private selectionBox: PixelRectSel | null = null;
+  /** in-memory only, lives for the session (this PixelRunner instance is
+   *  created once and persists across widget/state switches) — not tied to
+   *  a specific PixelData, so copying from one state and pasting into
+   *  another (or a different widget) works */
+  private clipboard: { x: number; y: number; w: number; h: number; pixels: Uint32Array } | null = null;
 
   constructor(
     private renderer: PixelRenderer,
@@ -30,9 +35,20 @@ export class PixelRunner implements PixelToolContext {
     this.tool = createPixelTool(id);
   }
 
-  /** Recompute the active canvas. Call on widget/state switch or undo/redo. */
+  /**
+   * Recompute the active canvas. Call on widget/state switch or resize (undo/
+   * redo don't need this — they act on the already-active data in place,
+   * never changing which canvas is active).
+   *
+   * Also drops the selection: it's coordinates on one specific canvas, and
+   * carrying it over to a different widget/state — or the same one after a
+   * resize moved everything around — would leave it pointing at a stale,
+   * possibly out-of-bounds region. The clipboard is untouched, so copy-on-one-
+   * state-paste-on-another still works; only the visual marquee resets.
+   */
   syncActive(): void {
     const widget = this.store.activeWidget();
+    this.setSelection(null);
     if (!widget) {
       this.activeData = null;
       return;
@@ -99,6 +115,7 @@ export class PixelRunner implements PixelToolContext {
 
   setSelection(r: PixelRectSel | null): void {
     this.selectionBox = r;
+    this.store.bumpSelection();
   }
 
   pickColor(rgba: number, slot: 'primary' | 'secondary'): void {
@@ -150,6 +167,50 @@ export class PixelRunner implements PixelToolContext {
     }
     const changed = this.batch.length > 0;
     this.commit();
+    return changed;
+  }
+
+  /** Snapshots the selected pixels into an in-memory clipboard. Doesn't touch the canvas. */
+  copySelection(): boolean {
+    const sel = this.selectionBox;
+    const data = this.activeData;
+    if (!sel || !data) return false;
+    const pixels = new Uint32Array(sel.w * sel.h);
+    for (let y = 0; y < sel.h; y++) {
+      for (let x = 0; x < sel.w; x++) pixels[y * sel.w + x] = data.get(sel.x + x, sel.y + y);
+    }
+    this.clipboard = { x: sel.x, y: sel.y, w: sel.w, h: sel.h, pixels };
+    return true;
+  }
+
+  /** Copy, then erase the selection — one extra undo step (the erase), same as any other cut. */
+  cutSelection(): boolean {
+    if (!this.copySelection()) return false;
+    this.eraseSelection();
+    return true;
+  }
+
+  get canPaste(): boolean {
+    return this.clipboard !== null;
+  }
+
+  /**
+   * Stamps the clipboard back at the position it was copied from (clamped by
+   * write()'s existing bounds check if that falls outside the current
+   * canvas — e.g. pasting into a differently-sized widget), as one undo step,
+   * and selects the pasted region so it's obvious where it landed and it's
+   * immediately ready to move/delete/re-copy.
+   */
+  pasteSelection(): boolean {
+    const clip = this.clipboard;
+    if (!clip || !this.activeData) return false;
+    this.begin('Paste');
+    for (let y = 0; y < clip.h; y++) {
+      for (let x = 0; x < clip.w; x++) this.write(clip.x + x, clip.y + y, clip.pixels[y * clip.w + x]);
+    }
+    const changed = this.batch.length > 0;
+    this.commit();
+    if (changed) this.setSelection({ x: clip.x, y: clip.y, w: clip.w, h: clip.h });
     return changed;
   }
 

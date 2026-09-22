@@ -18,6 +18,14 @@ export const usePixelStore = defineStore('pixel', () => {
   const activeVersion = ref(0);
   /** bumps after every committed pixel edit / undo / redo (for autosave) */
   const editVersion = ref(0);
+  /** bumps whenever the current selection changes — deliberately separate
+   *  from editVersion (which drives autosave dirty-tracking): a selection is
+   *  ephemeral UI state, not part of the saved project, so it shouldn't mark
+   *  the project dirty just because a drag is in progress */
+  const selectionVersion = ref(0);
+  function bumpSelection() {
+    selectionVersion.value++;
+  }
 
   const autosaveBusy = ref(false);
   const autosaveAt = ref<number | null>(null);
@@ -177,6 +185,7 @@ export const usePixelStore = defineStore('pixel', () => {
     structureVersion,
     activeVersion,
     editVersion,
+    selectionVersion,
     autosaveBusy,
     autosaveAt,
     autosaveError,
@@ -207,6 +216,7 @@ export const usePixelStore = defineStore('pixel', () => {
     setPrimary,
     setSecondary,
     bumpEdit,
+    bumpSelection,
   };
 });
 

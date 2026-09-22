@@ -64,6 +64,21 @@ function onKey(e: KeyboardEvent) {
   } else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
     e.preventDefault();
     runner.value?.redo();
+  } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'c') {
+    if (runner.value?.selection) {
+      e.preventDefault();
+      runner.value.copySelection();
+    }
+  } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'x') {
+    if (runner.value?.selection) {
+      e.preventDefault();
+      runner.value.cutSelection();
+    }
+  } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'v') {
+    if (runner.value?.canPaste) {
+      e.preventDefault();
+      runner.value.pasteSelection();
+    }
   } else if (e.key === 'Delete' || e.key === 'Backspace') {
     if (runner.value?.selection) {
       e.preventDefault();

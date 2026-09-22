@@ -23,6 +23,9 @@ import {
   faBorderAll,
   faFileExport,
   faBoxesStacked,
+  faCopy,
+  faScissors,
+  faPaste,
 } from '@fortawesome/pro-solid-svg-icons';
 import type { PixelToolId } from '@/tools/pixel/types';
 
@@ -41,7 +44,7 @@ const tools: Array<{ id: PixelToolId; icon: typeof faPencil; label: string }> = 
   { id: 'line', icon: faSlash, label: 'Line' },
   { id: 'circle', icon: faCircle, label: 'Ellipse (Shift = circle)' },
   { id: 'squircle', icon: faSquareFull, label: 'Squircle (Shift = symmetric)' },
-  { id: 'select', icon: faSquareDashed, label: 'Select (Delete to erase, Esc to clear)' },
+  { id: 'select', icon: faSquareDashed, label: 'Select (Ctrl+C/X/V to copy/cut/paste, Delete to erase, Esc to clear)' },
 ];
 
 const brushSizes = [1, 2, 3, 4];
@@ -59,6 +62,16 @@ const canRedo = computed(() => {
   void store.editVersion;
   void store.activeVersion;
   return runner.value?.canRedo ?? false;
+});
+const canCopy = computed(() => {
+  void store.selectionVersion;
+  return !!runner.value?.selection;
+});
+const canPaste = computed(() => {
+  void store.selectionVersion;
+  void store.editVersion;
+  void store.activeVersion;
+  return runner.value?.canPaste ?? false;
 });
 
 async function exportActive() {
@@ -185,6 +198,18 @@ async function exportAll() {
     </template>
 
     <span class="spacer" />
+
+    <button :disabled="!canCopy" title="Copy selection (Ctrl+C)" @click="runner?.copySelection()">
+      <Icon :icon="faCopy" />
+    </button>
+    <button :disabled="!canCopy" title="Cut selection (Ctrl+X)" @click="runner?.cutSelection()">
+      <Icon :icon="faScissors" />
+    </button>
+    <button :disabled="!canPaste" title="Paste (Ctrl+V)" @click="runner?.pasteSelection()">
+      <Icon :icon="faPaste" />
+    </button>
+
+    <span class="sep" />
 
     <button :disabled="!canUndo" title="Undo (Ctrl+Z)" @click="runner?.undo()">
       <Icon :icon="faRotateLeft" />
