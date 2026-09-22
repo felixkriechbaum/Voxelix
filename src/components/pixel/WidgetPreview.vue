@@ -1,14 +1,46 @@
 <script setup lang="ts">
-import { nextTick, onMounted, watch, type ComponentPublicInstance } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, watch, type ComponentPublicInstance } from 'vue';
 import { usePixelStore } from '@/stores/pixel';
 import { blitPixelData } from '@/pixel/blit';
 import { paintNinePatch } from '@/pixel/NinePatchPainter';
 import { minDrawSize } from '@/core/pixel/ninepatch';
-import { previewExpanded, previewVariants, addPreviewVariant, removePreviewVariant } from '@/editor/pixel/previewPrefs';
+import {
+  previewExpanded,
+  previewVariants,
+  previewWidth,
+  previewResizing,
+  addPreviewVariant,
+  removePreviewVariant,
+  setPreviewWidth,
+} from '@/editor/pixel/previewPrefs';
 import Icon from '@/components/Icon.vue';
 import { faChevronRight, faChevronLeft, faPlus, faXmark } from '@fortawesome/pro-solid-svg-icons';
 
 const store = usePixelStore();
+
+let dragStartX = 0;
+let dragStartWidth = 0;
+
+function onHandleDown(e: PointerEvent) {
+  dragStartX = e.clientX;
+  dragStartWidth = previewWidth.value;
+  previewResizing.value = true;
+  document.body.style.userSelect = 'none';
+  window.addEventListener('pointermove', onHandleMove);
+  window.addEventListener('pointerup', onHandleUp);
+}
+function onHandleMove(e: PointerEvent) {
+  // the panel sits on the right, so dragging its left edge leftward (cursor
+  // moves left of the start point) should grow it, not shrink it
+  setPreviewWidth(dragStartWidth + (dragStartX - e.clientX));
+}
+function onHandleUp() {
+  previewResizing.value = false;
+  document.body.style.userSelect = '';
+  window.removeEventListener('pointermove', onHandleMove);
+  window.removeEventListener('pointerup', onHandleUp);
+}
+onBeforeUnmount(onHandleUp);
 
 let srcCanvas: HTMLCanvasElement | null = null;
 const canvases = new Map<string, HTMLCanvasElement>();
@@ -78,6 +110,7 @@ onMounted(() => nextTick(redraw));
 
 <template>
   <aside class="preview-pane panel" :class="{ collapsed: !previewExpanded }">
+    <div v-if="previewExpanded" class="handle" title="Drag to resize" @pointerdown="onHandleDown" />
     <button
       class="toggle"
       :title="previewExpanded ? 'Collapse preview' : 'Expand preview'"
@@ -119,6 +152,7 @@ onMounted(() => nextTick(redraw));
 
 <style scoped>
 .preview-pane {
+  position: relative;
   height: 100%;
   overflow: hidden;
   display: flex;
@@ -127,6 +161,20 @@ onMounted(() => nextTick(redraw));
 }
 .preview-pane.collapsed {
   align-items: flex-start;
+}
+.handle {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 1;
+  touch-action: none;
+}
+.handle:hover,
+.handle:active {
+  background: var(--accent-soft);
 }
 .toggle {
   flex: none;

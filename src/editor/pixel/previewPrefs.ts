@@ -10,10 +10,18 @@ export interface PreviewVariant {
 }
 
 const STORAGE_KEY = 'voxelix.pixelPreview';
+export const MIN_PREVIEW_WIDTH = 220;
+export const MAX_PREVIEW_WIDTH = 640;
+const DEFAULT_PREVIEW_WIDTH = 280;
 
 interface StoredPrefs {
   expanded: boolean;
+  width: number;
   variants: PreviewVariant[];
+}
+
+function clampWidth(w: number): number {
+  return Math.min(MAX_PREVIEW_WIDTH, Math.max(MIN_PREVIEW_WIDTH, Math.round(w)));
 }
 
 function defaultVariants(): PreviewVariant[] {
@@ -31,13 +39,14 @@ function load(): StoredPrefs {
       const variants = Array.isArray(parsed.variants) ? parsed.variants : null;
       return {
         expanded: parsed.expanded ?? true,
+        width: clampWidth(parsed.width ?? DEFAULT_PREVIEW_WIDTH),
         variants: variants && variants.length ? variants : defaultVariants(),
       };
     }
   } catch {
     /* private mode / corrupt value — fall through to defaults */
   }
-  return { expanded: true, variants: defaultVariants() };
+  return { expanded: true, width: DEFAULT_PREVIEW_WIDTH, variants: defaultVariants() };
 }
 
 const initial = load();
@@ -45,20 +54,34 @@ const initial = load();
 /** Whether the preview column is expanded — shared module state, so the grid
  *  column (owned by PixelEditorView) and the panel (WidgetPreview) agree without prop plumbing. */
 export const previewExpanded = ref(initial.expanded);
+/** Preview column width in CSS px while expanded — dragged via the handle on WidgetPreview's left edge. */
+export const previewWidth = ref(initial.width);
+/** True while the handle is being dragged — not persisted, just lets the grid
+ *  column's CSS transition switch off so live dragging tracks the cursor
+ *  instead of easing a beat behind it. */
+export const previewResizing = ref(false);
 /** The user's own list of preview boxes — persisted, not part of project data (it's a viewing preference, not the design). */
 export const previewVariants = ref<PreviewVariant[]>(initial.variants);
+
+export function setPreviewWidth(w: number): void {
+  previewWidth.value = clampWidth(w);
+}
 
 function persist(): void {
   try {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ expanded: previewExpanded.value, variants: previewVariants.value }),
+      JSON.stringify({
+        expanded: previewExpanded.value,
+        width: previewWidth.value,
+        variants: previewVariants.value,
+      }),
     );
   } catch {
     /* private mode */
   }
 }
-watch([previewExpanded, previewVariants], persist, { deep: true });
+watch([previewExpanded, previewWidth, previewVariants], persist, { deep: true });
 
 export function addPreviewVariant(base?: { w: number; h: number }): void {
   previewVariants.value = [

@@ -9,9 +9,9 @@ import PixelCanvas from './PixelCanvas.vue';
 import { usePixelStore } from '@/stores/pixel';
 import { usePixelAutosave } from '@/editor/pixel/autosave';
 import { usePixelSession } from '@/editor/pixel/session';
-import { previewExpanded } from '@/editor/pixel/previewPrefs';
+import { previewExpanded, previewWidth, previewResizing } from '@/editor/pixel/previewPrefs';
 
-const previewColWidth = computed(() => (previewExpanded.value ? '260px' : '42px'));
+const previewColWidth = computed(() => (previewExpanded.value ? `${previewWidth.value}px` : '42px'));
 
 const store = usePixelStore();
 const { runner } = usePixelSession();
@@ -45,7 +45,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
-  <div class="editor" :style="{ gridTemplateColumns: `260px 1fr ${previewColWidth}` }" @contextmenu="onContextMenu">
+  <div
+    class="editor"
+    :style="{
+      gridTemplateColumns: `260px 1fr ${previewColWidth}`,
+      transition: previewResizing ? 'none' : 'grid-template-columns 0.15s ease',
+    }"
+    @contextmenu="onContextMenu"
+  >
     <PixelToolbar class="toolbar" @close-project="closeProject" />
     <aside class="side">
       <WidgetList />
@@ -75,7 +82,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
     'toolbar toolbar toolbar'
     'side stage preview'
     'status status status';
-  transition: grid-template-columns 0.15s ease;
 }
 .toolbar {
   grid-area: toolbar;
