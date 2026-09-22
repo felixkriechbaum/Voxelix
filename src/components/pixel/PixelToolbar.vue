@@ -2,8 +2,9 @@
 import { computed, ref } from 'vue';
 import { usePixelStore } from '@/stores/pixel';
 import { usePixelSession } from '@/editor/pixel/session';
-import { exportWidgetFiles, exportProjectFiles, normalizeResPrefix } from '@/pixel/exportWidget';
+import { exportWidgetFiles, exportProjectFiles } from '@/pixel/exportWidget';
 import { hasDirectoryPicker, pickDirectory, writeFileToDirectory, downloadBlob } from '@/core/io/fileSystem';
+import { resPrefix, setResPrefix } from '@/editor/pixel/exportPrefs';
 import { toast } from '@/editor/toasts';
 import Icon from '@/components/Icon.vue';
 import {
@@ -60,34 +61,25 @@ const canRedo = computed(() => {
   return runner.value?.canRedo ?? false;
 });
 
-/**
- * The browser's directory picker only tells us which folder the user clicked,
- * not where that sits under their Godot project's res:// root — so the
- * texture paths baked into the exported .tres files need this typed in by
- * hand. Returns null if the user cancels.
- */
-function promptResPrefix(): string | null {
-  const input = window.prompt(
-    "Godot res:// folder these files will live in (used inside the exported .tres files' texture paths):",
-    'res://',
-  );
-  if (input === null) return null;
-  return normalizeResPrefix(input);
-}
-
 async function exportActive() {
   const w = store.activeWidget();
   if (!w) return;
-  const resPrefix = promptResPrefix();
-  if (resPrefix === null) return;
+  // pick the folder first, before any other work — showDirectoryPicker()
+  // needs a fresh user-activation from the click; an intervening await (or,
+  // as this used to do, a blocking window.prompt()) can burn through it and
+  // make the picker throw, which pickDirectory() then treats the same as a
+  // cancel: silently. Asking first keeps the activation as fresh as possible.
+  let dir: FileSystemDirectoryHandle | null = null;
+  if (hasDirectoryPicker) {
+    dir = await pickDirectory();
+    if (!dir) return; // picker cancelled (or, previously, silently failed)
+  }
   busy.value = 'export';
   store.exportStatus = `Exporting ${w.name}…`;
   try {
     await new Promise((r) => setTimeout(r)); // let the overlay paint first
-    const { files } = await exportWidgetFiles(w, resPrefix);
-    if (hasDirectoryPicker) {
-      const dir = await pickDirectory();
-      if (!dir) return; // picker cancelled
+    const { files } = await exportWidgetFiles(w, resPrefix.value);
+    if (dir) {
       for (const f of files) {
         store.exportStatus = `Writing ${f.name}…`;
         await writeFileToDirectory(dir, f.name, f.blob);
@@ -99,6 +91,7 @@ async function exportActive() {
         await new Promise((r) => setTimeout(r, 350));
       }
     }
+    toast(`Exported ${files.length} file${files.length === 1 ? '' : 's'} for "${w.name}"`, 'success');
   } catch (e) {
     toast(`Export failed: ${(e as Error).message}`, 'error');
   } finally {
@@ -109,19 +102,19 @@ async function exportActive() {
 
 async function exportAll() {
   if (!store.project) return;
-  const resPrefix = promptResPrefix();
-  if (resPrefix === null) return;
+  const project = store.project;
 
+  // pick the folder first — see the comment in exportActive()
   let dir: FileSystemDirectoryHandle | null = null;
-  try {
-    if (hasDirectoryPicker) {
-      dir = await pickDirectory();
-      if (!dir) return; // picker cancelled
-    }
+  if (hasDirectoryPicker) {
+    dir = await pickDirectory();
+    if (!dir) return; // picker cancelled
+  }
 
+  try {
     busy.value = 'export-all';
     store.exportStatus = 'Preparing export…';
-    const files = await exportProjectFiles(store.project, resPrefix, ({ done, total, name }) => {
+    const files = await exportProjectFiles(project, resPrefix.value, ({ done, total, name }) => {
       store.exportStatus = name
         ? `Exporting ${name} (${done + 1}/${total})…`
         : `Finishing (${done}/${total})…`;
@@ -138,6 +131,7 @@ async function exportAll() {
         await new Promise((r) => setTimeout(r, 350));
       }
     }
+    toast(`Exported ${files.length} files for ${project.widgets.length} widget${project.widgets.length === 1 ? '' : 's'}`, 'success');
   } catch (e) {
     toast(`Export failed: ${(e as Error).message}`, 'error');
   } finally {
@@ -212,6 +206,14 @@ async function exportAll() {
     >Grid</button>
 
     <span class="sep" />
+    <label class="lbl">Export to</label>
+    <input
+      type="text"
+      class="res-prefix"
+      :value="resPrefix"
+      title="Godot res:// folder these files will live in — baked into the exported .tres files' texture paths"
+      @change="setResPrefix(($event.target as HTMLInputElement).value)"
+    />
     <button
       :disabled="!!busy || !store.activeWidgetId"
       title="Export the active widget as PNGs + a StyleBoxTexture .tres per state"
@@ -268,6 +270,10 @@ async function exportAll() {
 .brush {
   width: 26px;
   padding: 4px 0;
+  font-size: 12px;
+}
+.res-prefix {
+  width: 140px;
   font-size: 12px;
 }
 </style>

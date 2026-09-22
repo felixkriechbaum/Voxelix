@@ -102,6 +102,7 @@ function applyResize() {
             <input
               :ref="setRenameInput"
               v-model="renameText"
+              type="text"
               class="rename"
               @click.stop
               @blur="commitRename"

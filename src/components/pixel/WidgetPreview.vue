@@ -236,7 +236,7 @@ onBeforeUnmount(() => window.removeEventListener('mouseup', onWindowUp));
       <template v-if="store.activeWidget()">
         <div v-for="v in previewVariants" :key="v.id" class="variant">
           <div class="row head">
-            <input v-model="v.label" class="label-input" />
+            <input v-model="v.label" type="text" class="label-input" />
             <button class="del" title="Remove" @click="removePreviewVariant(v.id)">
               <Icon :icon="faXmark" :size="11" />
             </button>
