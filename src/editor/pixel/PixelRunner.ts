@@ -3,6 +3,7 @@ import { PixelData, type PixelEdit } from '@/core/pixel/PixelData';
 import { createPixelTool } from '@/tools/pixel/tools';
 import type { PixelRenderer } from '@/pixel/PixelRenderer';
 import type { PixelTool, PixelToolContext, PixelToolId, PixelPointer, PixelRectSel } from '@/tools/pixel/types';
+import type { StateId } from '@/core/pixel/types';
 import type { PixelStore } from '@/stores/pixel';
 
 /** Bridges pointer input + the active PixelTool + undo history + the renderer, for one widget/state canvas. */
@@ -116,6 +117,27 @@ export class PixelRunner implements PixelToolContext {
   /** Small PNG data URL of the active widget's active state, for autosave thumbnails. */
   captureThumbnail(): string {
     return this.renderer.captureThumbnail();
+  }
+
+  /**
+   * Replace the active state's canvas with another state's pixels, as one
+   * undoable batch — painting hover/pressed/disabled/focus from a blank
+   * canvas every time is the tedious part of "a complete button", and this
+   * gives a starting point to tweak from instead. No-op (returns false) if
+   * the source state doesn't exist or is the state you're already on.
+   */
+  copyStateFrom(sourceId: StateId): boolean {
+    const widget = this.store.activeWidget();
+    const data = this.activeData;
+    if (!widget || !data) return false;
+    const source = widget.states.get(sourceId);
+    if (!source || source === data) return false;
+    this.begin(`Copy from ${sourceId}`);
+    for (let y = 0; y < data.height; y++) {
+      for (let x = 0; x < data.width; x++) this.write(x, y, source.get(x, y));
+    }
+    this.commit();
+    return true;
   }
 
   // ---- history ------------------------------------------------------

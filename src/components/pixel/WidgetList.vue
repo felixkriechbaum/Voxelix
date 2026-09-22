@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, type ComponentPublicInstance } from 'vue';
 import { usePixelStore } from '@/stores/pixel';
+import { usePixelSession } from '@/editor/pixel/session';
+import { toast } from '@/editor/toasts';
 import { WIDGET_TYPES, specFor } from '@/core/pixel/widgets';
 import type { StateId, WidgetType } from '@/core/pixel/types';
 import Icon from '@/components/Icon.vue';
-import { faPlus, faTrash } from '@fortawesome/pro-solid-svg-icons';
+import { faPlus, faTrash, faCopy } from '@fortawesome/pro-solid-svg-icons';
 
 const store = usePixelStore();
+const { runner } = usePixelSession();
 const renamingId = ref<string | null>(null);
 const renameText = ref('');
 const renameInput = ref<HTMLInputElement | null>(null);
 const addType = ref<WidgetType>('button');
+const copySource = ref<StateId | ''>('');
 
 const active = computed(() => store.activeWidget());
 // defensive: states are fixed at widget creation today, but depend on
@@ -19,6 +23,15 @@ const active = computed(() => store.activeWidget());
 const activeStates = computed<StateId[]>(() => {
   void store.structureVersion;
   return active.value ? [...active.value.states.keys()] : [];
+});
+const otherStates = computed(() => activeStates.value.filter((s) => s !== store.activeStateId));
+/** which states have any painted (non-transparent) pixels — dims the empty ones in the tab row */
+const stateHasContent = computed(() => {
+  void store.structureVersion;
+  void store.editVersion;
+  const map: Partial<Record<StateId, boolean>> = {};
+  if (active.value) for (const [id, data] of active.value.states) map[id] = data.bounds() !== null;
+  return map;
 });
 
 function startRename(id: string, current: string) {
@@ -40,6 +53,12 @@ function removeWidget(id: string, name: string) {
   if (store.widgets.length <= 1) return;
   if (!window.confirm(`Delete "${name}"? This can't be undone.`)) return;
   store.removeWidget(id);
+}
+function copyFrom() {
+  const src = copySource.value && otherStates.value.includes(copySource.value) ? copySource.value : otherStates.value[0];
+  if (!src) return;
+  const ok = runner.value?.copyStateFrom(src);
+  if (ok) toast(`Copied ${src} into ${store.activeStateId}`, 'success');
 }
 </script>
 
@@ -99,9 +118,19 @@ function removeWidget(id: string, name: string) {
           v-for="s in activeStates"
           :key="s"
           class="state"
-          :class="{ active: store.activeStateId === s }"
+          :class="{ active: store.activeStateId === s, empty: !stateHasContent[s] }"
+          :title="stateHasContent[s] ? undefined : 'No pixels painted yet'"
           @click="store.setActiveState(s)"
         >{{ s }}</button>
+      </div>
+      <div class="row copy-row" title="Replace this state's pixels with another state's — a starting point to tweak from">
+        <select v-model="copySource">
+          <option value="" disabled>Copy from…</option>
+          <option v-for="s in otherStates" :key="s" :value="s">{{ s }}</option>
+        </select>
+        <button :disabled="otherStates.length === 0" @click="copyFrom">
+          <Icon :icon="faCopy" :size="12" />
+        </button>
       </div>
     </template>
   </div>
@@ -177,5 +206,23 @@ function removeWidget(id: string, name: string) {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
+}
+.state.empty:not(.active) {
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+.copy-row {
+  gap: 6px;
+  margin-top: 6px;
+}
+.copy-row select {
+  flex: 1;
+  font-size: 12px;
+  text-transform: capitalize;
+}
+.copy-row button {
+  width: 26px;
+  padding: 0;
+  flex: none;
 }
 </style>

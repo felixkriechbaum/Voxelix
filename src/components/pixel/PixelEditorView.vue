@@ -4,6 +4,7 @@ import PixelToolbar from './PixelToolbar.vue';
 import WidgetList from './WidgetList.vue';
 import ColorPanel from './ColorPanel.vue';
 import NinePatchPanel from './NinePatchPanel.vue';
+import WidgetPreview from './WidgetPreview.vue';
 import PixelCanvas from './PixelCanvas.vue';
 import { usePixelStore } from '@/stores/pixel';
 import { usePixelAutosave } from '@/editor/pixel/autosave';
@@ -47,6 +48,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
       <WidgetList />
       <ColorPanel />
       <NinePatchPanel />
+      <WidgetPreview />
     </aside>
     <main class="stage">
       <PixelCanvas />

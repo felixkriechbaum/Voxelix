@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { usePixelStore } from '@/stores/pixel';
+import { setPatchField } from '@/core/pixel/ninepatch';
 
 const store = usePixelStore();
 // The project graph is markRaw'd (no deep reactivity), so binding straight to
@@ -16,22 +17,8 @@ const widget = computed(() => {
 function set(field: 'left' | 'top' | 'right' | 'bottom', e: Event) {
   const w = widget.value;
   if (!w) return;
-  const raw = Math.max(0, Math.round(Number((e.target as HTMLInputElement).value) || 0));
-  const patch = { ...w.patch, [field]: raw };
-  // keep opposite margins from overlapping — a preview drawn smaller than
-  // left+right would otherwise overlap corners, and Godot handles that by
-  // scaling the whole patch down rather than by what's shown here
-  const maxH = Math.max(0, w.width - 1);
-  const maxV = Math.max(0, w.height - 1);
-  if (patch.left + patch.right > maxH) {
-    if (field === 'left') patch.right = Math.max(0, maxH - patch.left);
-    else patch.left = Math.max(0, maxH - patch.right);
-  }
-  if (patch.top + patch.bottom > maxV) {
-    if (field === 'top') patch.bottom = Math.max(0, maxV - patch.top);
-    else patch.top = Math.max(0, maxV - patch.bottom);
-  }
-  store.setPatch(patch);
+  const raw = Number((e.target as HTMLInputElement).value) || 0;
+  store.setPatch(setPatchField(w.patch, field, raw, { w: w.width, h: w.height }));
 }
 </script>
 

@@ -1,5 +1,9 @@
 import type { PixelData } from '@/core/pixel/PixelData';
 import type { NinePatch } from '@/core/pixel/types';
+import { blitPixelData } from './blit';
+
+/** Hit-test tolerance around a guide line, in CSS pixels — generous enough to grab with a mouse. */
+const GUIDE_HIT_PX = 5;
 
 export interface RenderOptions {
   /** integer pixels-per-cell */
@@ -11,7 +15,10 @@ export interface RenderOptions {
   cursor: { x: number; y: number; w: number; h: number } | null;
 }
 
-const GRID_LINE = 'rgba(128, 128, 128, 0.35)';
+// used with a 'difference' composite blend, so this is mixed toward |backdrop
+// - source| rather than painted flat — pick a mid alpha so it stays visible
+// without a full-strength invert making every line look like a bright outline
+const GRID_LINE = 'rgba(255, 255, 255, 0.5)';
 const PATCH_LINE = '#3ba7ff';
 const SELECTION_LINE = '#f2b134';
 const CURSOR_LINE = 'rgba(255, 255, 255, 0.9)';
@@ -91,11 +98,22 @@ export class PixelRenderer {
     ctx.imageSmoothingEnabled = false;
     this.paintChecker(ctx, data.width, data.height, zoom);
     ctx.drawImage(this.off, 0, 0, data.width, data.height, 0, 0, cssW, cssH);
+    ctx.restore();
 
-    if (opts.showGrid && zoom >= 4) this.paintGrid(ctx, data.width, data.height, zoom);
-    if (opts.patch) this.paintPatchGuides(ctx, data.width, data.height, zoom, opts.patch);
-    if (opts.selection) this.paintSelection(ctx, opts.selection, zoom, SELECTION_LINE, [3, 2]);
-    if (opts.cursor) this.paintSelection(ctx, opts.cursor, zoom, CURSOR_LINE, []);
+    // Overlays are drawn in device-pixel space (identity transform, coordinates
+    // pre-multiplied by dpr) rather than under the dpr scale above: the classic
+    // "+0.5 for a crisp 1px line" trick only lands on an actual device pixel
+    // when 1 canvas-space unit is 1 device pixel, which stops being true the
+    // moment dpr isn't a whole number (125%/150% Windows scaling) — under the
+    // scaled transform, some lines fell between device pixels and got
+    // anti-aliased down to near-invisible.
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const dzoom = zoom * this.dpr;
+    if (opts.showGrid && zoom >= 4) this.paintGrid(ctx, data.width, data.height, dzoom);
+    if (opts.patch) this.paintPatchGuides(ctx, data.width, data.height, dzoom, opts.patch);
+    if (opts.selection) this.paintSelection(ctx, opts.selection, dzoom, SELECTION_LINE, [3, 2]);
+    if (opts.cursor) this.paintSelection(ctx, opts.cursor, dzoom, CURSOR_LINE, []);
     ctx.restore();
   }
 
@@ -111,46 +129,61 @@ export class PixelRenderer {
     }
   }
 
+  /** Rounds to the nearest device pixel and centres a 1px stroke on it. */
+  private static crisp(v: number): number {
+    return Math.round(v) + 0.5;
+  }
+
   private paintGrid(ctx: CanvasRenderingContext2D, w: number, h: number, zoom: number): void {
+    ctx.save();
+    // a flat low-alpha line disappears over similarly-toned or light pixels —
+    // difference blend always contrasts with whatever's underneath, dark or light
+    ctx.globalCompositeOperation = 'difference';
     ctx.strokeStyle = GRID_LINE;
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let x = 0; x <= w; x++) {
-      ctx.moveTo(x * zoom + 0.5, 0);
-      ctx.lineTo(x * zoom + 0.5, h * zoom);
+      const px = PixelRenderer.crisp(x * zoom);
+      ctx.moveTo(px, 0);
+      ctx.lineTo(px, h * zoom);
     }
     for (let y = 0; y <= h; y++) {
-      ctx.moveTo(0, y * zoom + 0.5);
-      ctx.lineTo(w * zoom, y * zoom + 0.5);
+      const py = PixelRenderer.crisp(y * zoom);
+      ctx.moveTo(0, py);
+      ctx.lineTo(w * zoom, py);
     }
     ctx.stroke();
+    ctx.restore();
   }
 
   private paintPatchGuides(ctx: CanvasRenderingContext2D, w: number, h: number, zoom: number, patch: NinePatch): void {
+    ctx.save();
     ctx.strokeStyle = PATCH_LINE;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 3]);
     ctx.beginPath();
     if (patch.left > 0) {
-      ctx.moveTo(patch.left * zoom + 0.5, 0);
-      ctx.lineTo(patch.left * zoom + 0.5, h * zoom);
+      const x = PixelRenderer.crisp(patch.left * zoom);
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h * zoom);
     }
     if (patch.right > 0) {
-      const x = (w - patch.right) * zoom + 0.5;
+      const x = PixelRenderer.crisp((w - patch.right) * zoom);
       ctx.moveTo(x, 0);
       ctx.lineTo(x, h * zoom);
     }
     if (patch.top > 0) {
-      ctx.moveTo(0, patch.top * zoom + 0.5);
-      ctx.lineTo(w * zoom, patch.top * zoom + 0.5);
+      const y = PixelRenderer.crisp(patch.top * zoom);
+      ctx.moveTo(0, y);
+      ctx.lineTo(w * zoom, y);
     }
     if (patch.bottom > 0) {
-      const y = (h - patch.bottom) * zoom + 0.5;
+      const y = PixelRenderer.crisp((h - patch.bottom) * zoom);
       ctx.moveTo(0, y);
       ctx.lineTo(w * zoom, y);
     }
     ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.restore();
   }
 
   private paintSelection(
@@ -160,11 +193,16 @@ export class PixelRenderer {
     color: string,
     dash: number[],
   ): void {
+    ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
     ctx.setLineDash(dash);
-    ctx.strokeRect(sel.x * zoom + 0.5, sel.y * zoom + 0.5, sel.w * zoom - 1, sel.h * zoom - 1);
-    ctx.setLineDash([]);
+    const x = Math.round(sel.x * zoom);
+    const y = Math.round(sel.y * zoom);
+    const w = Math.round((sel.x + sel.w) * zoom) - x;
+    const h = Math.round((sel.y + sel.h) * zoom) - y;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    ctx.restore();
   }
 
   /** Client coordinate -> pixel cell, or null when outside the canvas. */
@@ -194,17 +232,49 @@ export class PixelRenderer {
     return out.toDataURL('image/png');
   }
 
-  /**
-   * Copy a PixelData's pixels into the offscreen canvas. Goes through
-   * createImageData().data.set() rather than `new ImageData(buffer, ...)` —
-   * the latter wants a plain ArrayBuffer-backed view, and this project's
-   * WebWorker + DOM lib combination types typed-array buffers as the wider
-   * ArrayBufferLike (see CLAUDE.md's note on strict typed-array generics).
-   */
   private blit(data: PixelData): void {
-    const imgData = this.offCtx.createImageData(data.width, data.height);
-    imgData.data.set(data.asImageBuffer());
-    this.offCtx.putImageData(imgData, 0, 0);
+    blitPixelData(this.offCtx, data);
+  }
+
+  /**
+   * Which patch edge (if any) is under a client coordinate, within a small
+   * hit-test tolerance — drives the draggable on-canvas margin guides.
+   * Returns null when no patch is set, the point isn't near a line, or the
+   * canvas has no source yet.
+   */
+  hitGuide(clientX: number, clientY: number, zoom: number, patch: NinePatch): keyof NinePatch | null {
+    const data = this.source;
+    if (!data) return null;
+    const z = Math.max(1, Math.round(zoom));
+    const rect = this.canvas.getBoundingClientRect();
+    const cx = clientX - rect.left;
+    const cy = clientY - rect.top;
+    if (cx < -GUIDE_HIT_PX || cy < -GUIDE_HIT_PX || cx > rect.width + GUIDE_HIT_PX || cy > rect.height + GUIDE_HIT_PX) {
+      return null;
+    }
+    const near = (a: number, b: number) => Math.abs(a - b) <= GUIDE_HIT_PX;
+    if (patch.left > 0 && cy >= 0 && cy <= rect.height && near(cx, patch.left * z)) return 'left';
+    if (patch.right > 0 && cy >= 0 && cy <= rect.height && near(cx, (data.width - patch.right) * z)) return 'right';
+    if (patch.top > 0 && cx >= 0 && cx <= rect.width && near(cy, patch.top * z)) return 'top';
+    if (patch.bottom > 0 && cx >= 0 && cx <= rect.width && near(cy, (data.height - patch.bottom) * z)) return 'bottom';
+    return null;
+  }
+
+  /**
+   * Client coordinate -> pixel cell, clamped to the canvas bounds instead of
+   * returning null outside them — used while dragging a guide, where the
+   * pointer commonly overshoots the edge a little.
+   */
+  toCellClamped(clientX: number, clientY: number, zoom: number): { x: number; y: number } | null {
+    const data = this.source;
+    if (!data) return null;
+    const z = Math.max(1, Math.round(zoom));
+    const rect = this.canvas.getBoundingClientRect();
+    const cx = clientX - rect.left;
+    const cy = clientY - rect.top;
+    const x = Math.max(0, Math.min(data.width, Math.round(cx / z)));
+    const y = Math.max(0, Math.min(data.height, Math.round(cy / z)));
+    return { x, y };
   }
 
   dispose(): void {
