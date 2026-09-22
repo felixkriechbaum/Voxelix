@@ -169,5 +169,23 @@ onBeforeUnmount(() => {
   touch-action: none;
   box-shadow: var(--shadow);
   border: 1px solid var(--line);
+  /**
+   * The bitmap must map 1:1 onto physical pixels, or `image-rendering:
+   * pixelated` resamples it with nearest-neighbour and drops whole rows and
+   * columns — a 1px grid line landing on a dropped row vanishes completely
+   * (measured: zero trace, not faint). Two layout rules can silently break
+   * that 1:1 mapping, so both are pinned here:
+   *
+   * - content-box: the global `* { box-sizing: border-box }` plus this 1px
+   *   border meant style.width/height (set to the intended *drawing* size)
+   *   described the outer edge, leaving a content box 2px smaller in each
+   *   axis. A 960x480 bitmap was being squeezed into 957.5x477.5 physical
+   *   px, losing ~2-3 lines per axis.
+   * - flex: none: .stage is a flex container, and a flex item shrinks below
+   *   its specified width by default rather than overflowing — which would
+   *   reintroduce exactly the same resampling. The stage scrolls instead.
+   */
+  box-sizing: content-box;
+  flex: none;
 }
 </style>
