@@ -1,8 +1,15 @@
 import { PixelData } from './PixelData';
 import { specFor } from './widgets';
-import { clampPatch } from './ninepatch';
+import { clampContentMargins, clampPatch } from './ninepatch';
 import { defaultNinePatch } from './types';
-import type { NinePatch, PixelLayerJson, PixelWidgetJson, StateId, WidgetType } from './types';
+import type {
+  ContentMargins,
+  NinePatch,
+  PixelLayerJson,
+  PixelWidgetJson,
+  StateId,
+  WidgetType,
+} from './types';
 
 export class PixelWidget {
   id: string;
@@ -11,6 +18,7 @@ export class PixelWidget {
   width: number;
   height: number;
   patch: NinePatch;
+  contentMargins: ContentMargins;
   states: Map<StateId, PixelData>;
   icons: Map<string, PixelData>;
 
@@ -21,6 +29,7 @@ export class PixelWidget {
     width: number;
     height: number;
     patch?: NinePatch;
+    contentMargins?: ContentMargins;
     states?: Map<StateId, PixelData>;
     icons?: Map<string, PixelData>;
   }) {
@@ -30,6 +39,7 @@ export class PixelWidget {
     this.width = Math.max(1, Math.round(opts.width));
     this.height = Math.max(1, Math.round(opts.height));
     this.patch = opts.patch ?? defaultNinePatch();
+    this.contentMargins = clampContentMargins(opts.contentMargins);
     this.states = opts.states ?? new Map();
     this.icons = opts.icons ?? new Map();
   }
@@ -90,6 +100,7 @@ export class PixelWidget {
       width: this.width,
       height: this.height,
       patch: this.patch,
+      contentMargins: this.contentMargins,
       states,
       icons,
     };
@@ -103,6 +114,7 @@ export class PixelWidget {
       width: json.width,
       height: json.height,
       patch: json.patch,
+      contentMargins: json.contentMargins,
     });
     for (const [id, layer] of Object.entries(json.states)) {
       widget.states.set(id as StateId, PixelData.fromJSON(layer as PixelLayerJson, json.width, json.height));

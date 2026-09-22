@@ -22,6 +22,17 @@ export function defaultNinePatch(): NinePatch {
   return { left: 0, top: 0, right: 0, bottom: 0 };
 }
 
+export interface ContentMargins {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export function defaultContentMargins(): ContentMargins {
+  return { left: -1, top: -1, right: -1, bottom: -1 };
+}
+
 /** Serialized form of one PixelData canvas. */
 export interface PixelLayerJson {
   /** RLE-base64 of the Uint32 pixel array, row-major */
@@ -35,6 +46,8 @@ export interface PixelWidgetJson {
   width: number;
   height: number;
   patch: NinePatch;
+  /** Absent in legacy files; -1 uses the corresponding nine-patch margin. */
+  contentMargins?: ContentMargins;
   /** one image per state; a missing state visually inherits 'normal' */
   states: Partial<Record<StateId, PixelLayerJson>>;
   /** extra parts, e.g. the OptionButton arrow */

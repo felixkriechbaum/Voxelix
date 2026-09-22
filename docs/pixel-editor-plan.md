@@ -47,6 +47,7 @@ export type WidgetType =
 export type StateId = 'normal' | 'hover' | 'pressed' | 'disabled' | 'focus';
 
 export interface NinePatch { left: number; top: number; right: number; bottom: number }
+export interface ContentMargins { left: number; top: number; right: number; bottom: number }
 
 export interface PixelLayerJson {
   pixels: string; // RLE-base64 of the Uint32 pixel array, row-major
@@ -59,6 +60,7 @@ export interface PixelWidgetJson {
   width: number;
   height: number;
   patch: NinePatch;
+  contentMargins?: ContentMargins; // absent/-1 = use the corresponding nine-patch margin
   states: Partial<Record<StateId, PixelLayerJson>>; // missing states visually inherit 'normal'
   icons?: Record<string, PixelLayerJson>;            // e.g. the OptionButton arrow
 }
@@ -331,9 +333,9 @@ immediately instead of in-engine.
 
 ```ts
 // core/pixel/export/tres.ts — string generation, DOM-free
-export function styleBoxTres(texturePath: string, patch: NinePatch): string;
+export function styleBoxTres(texturePath: string, patch: NinePatch, contentMargins: ContentMargins): string;
 export function themeTres(
-  widgets: Array<{ type: WidgetType; texturePaths: Partial<Record<StateId, string>>; patch: NinePatch }>,
+  widgets: Array<{ type: WidgetType; texturePaths: Partial<Record<StateId, string>>; patch: NinePatch; contentMargins: ContentMargins }>,
   iconPaths: Record<string, string>,
 ): string;
 ```

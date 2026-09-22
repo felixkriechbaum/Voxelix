@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { usePixelStore } from '@/stores/pixel';
-import { setPatchField } from '@/core/pixel/ninepatch';
+import {
+  CONTENT_MARGIN_MAX,
+  CONTENT_MARGIN_MIN,
+  setContentMarginField,
+  setPatchField,
+} from '@/core/pixel/ninepatch';
+import type { ContentMargins } from '@/core/pixel/types';
 
 const store = usePixelStore();
 // The project graph is markRaw'd (no deep reactivity), so binding straight to
@@ -11,7 +17,15 @@ const store = usePixelStore();
 const widget = computed(() => {
   void store.structureVersion;
   const w = store.activeWidget();
-  return w ? { id: w.id, width: w.width, height: w.height, patch: { ...w.patch } } : null;
+  return w
+    ? {
+        id: w.id,
+        width: w.width,
+        height: w.height,
+        patch: { ...w.patch },
+        contentMargins: { ...w.contentMargins },
+      }
+    : null;
 });
 
 function set(field: 'left' | 'top' | 'right' | 'bottom', e: Event) {
@@ -19,6 +33,13 @@ function set(field: 'left' | 'top' | 'right' | 'bottom', e: Event) {
   if (!w) return;
   const raw = Number((e.target as HTMLInputElement).value) || 0;
   store.setPatch(setPatchField(w.patch, field, raw, { w: w.width, h: w.height }));
+}
+
+function setContent(field: keyof ContentMargins, e: Event) {
+  const w = widget.value;
+  if (!w) return;
+  const raw = Number((e.target as HTMLInputElement).value);
+  store.setContentMargins(setContentMarginField(w.contentMargins, field, raw));
 }
 </script>
 
@@ -34,6 +55,30 @@ function set(field: 'left' | 'top' | 'right' | 'bottom', e: Event) {
       <label>Right<input type="number" min="0" :value="widget.patch.right" @change="set('right', $event)" /></label>
       <label>Bottom<input type="number" min="0" :value="widget.patch.bottom" @change="set('bottom', $event)" /></label>
     </div>
+    <div class="content-section">
+      <h3>Content margins</h3>
+      <p class="hint">
+        Godot content padding in pixels. -1 automatically uses the corresponding nine-patch margin.
+      </p>
+      <div class="grid">
+        <label>
+          Left
+          <input type="number" :min="CONTENT_MARGIN_MIN" :max="CONTENT_MARGIN_MAX" step="1" :value="widget.contentMargins.left" @change="setContent('left', $event)" />
+        </label>
+        <label>
+          Top
+          <input type="number" :min="CONTENT_MARGIN_MIN" :max="CONTENT_MARGIN_MAX" step="1" :value="widget.contentMargins.top" @change="setContent('top', $event)" />
+        </label>
+        <label>
+          Right
+          <input type="number" :min="CONTENT_MARGIN_MIN" :max="CONTENT_MARGIN_MAX" step="1" :value="widget.contentMargins.right" @change="setContent('right', $event)" />
+        </label>
+        <label>
+          Bottom
+          <input type="number" :min="CONTENT_MARGIN_MIN" :max="CONTENT_MARGIN_MAX" step="1" :value="widget.contentMargins.bottom" @change="setContent('bottom', $event)" />
+        </label>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -45,6 +90,14 @@ function set(field: 'left' | 'top' | 'right' | 'bottom', e: Event) {
   margin: 0 0 8px;
   color: var(--text-dim);
   font-size: 12px;
+}
+.content-section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.content-section h3 {
+  margin-bottom: 4px;
 }
 .grid {
   display: grid;

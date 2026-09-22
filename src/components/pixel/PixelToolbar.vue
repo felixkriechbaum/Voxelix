@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { usePixelStore } from '@/stores/pixel';
 import { usePixelSession } from '@/editor/pixel/session';
-import { exportWidgetFiles, exportProjectFiles } from '@/pixel/exportWidget';
+import { exportWidgetFiles, exportProjectFiles, exportPixelProjectFile } from '@/pixel/exportWidget';
 import { hasDirectoryPicker, pickDirectory, writeFileToDirectory, downloadBlob } from '@/core/io/fileSystem';
 import { resPrefix, setResPrefix } from '@/editor/pixel/exportPrefs';
 import { toast } from '@/editor/toasts';
@@ -76,7 +76,8 @@ const canPaste = computed(() => {
 
 async function exportActive() {
   const w = store.activeWidget();
-  if (!w) return;
+  const project = store.project;
+  if (!w || !project) return;
   // pick the folder first, before any other work — showDirectoryPicker()
   // needs a fresh user-activation from the click; an intervening await (or,
   // as this used to do, a blocking window.prompt()) can burn through it and
@@ -91,7 +92,8 @@ async function exportActive() {
   store.exportStatus = `Exporting ${w.name}…`;
   try {
     await new Promise((r) => setTimeout(r)); // let the overlay paint first
-    const { files } = await exportWidgetFiles(w, resPrefix.value);
+    const { files: widgetFiles } = await exportWidgetFiles(w, resPrefix.value);
+    const files = [exportPixelProjectFile(project), ...widgetFiles];
     if (dir) {
       for (const f of files) {
         store.exportStatus = `Writing ${f.name}…`;
@@ -241,7 +243,7 @@ async function exportAll() {
     />
     <button
       :disabled="!!busy || !store.activeWidgetId"
-      title="Export the active widget as PNGs + a StyleBoxTexture .tres per state"
+      title="Export the active widget as PNGs + StyleBoxTexture files, including the editable .voxui project"
       @click="exportActive"
     >
       <Icon :icon="faFileExport" />
@@ -249,7 +251,7 @@ async function exportAll() {
     <button
       class="primary"
       :disabled="!!busy || store.widgets.length === 0"
-      :title="hasDirectoryPicker ? 'Export every widget into a chosen folder, plus one combined theme.tres' : 'Download every widget\'s files, plus one combined theme.tres'"
+      :title="hasDirectoryPicker ? 'Export every widget into a chosen folder, including the editable .voxui project and a combined theme.tres' : 'Download every widget\'s files, including the editable .voxui project and a combined theme.tres'"
       @click="exportAll"
     >
       <Icon :icon="faBoxesStacked" />

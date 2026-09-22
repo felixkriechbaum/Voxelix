@@ -1,4 +1,7 @@
-import type { NinePatch } from './types';
+import { defaultContentMargins, type ContentMargins, type NinePatch } from './types';
+
+export const CONTENT_MARGIN_MIN = -1;
+export const CONTENT_MARGIN_MAX = 2048;
 
 export interface PatchQuad {
   sx: number;
@@ -92,6 +95,30 @@ export function setPatchField(
     else next.top = Math.max(0, maxV - next.bottom);
   }
   return next;
+}
+
+function clampContentMargin(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return CONTENT_MARGIN_MIN;
+  return Math.min(CONTENT_MARGIN_MAX, Math.max(CONTENT_MARGIN_MIN, Math.round(value)));
+}
+
+/** Content margins are independent Godot layout padding, not texture slices. */
+export function clampContentMargins(margins?: Partial<ContentMargins> | null): ContentMargins {
+  if (!margins) return defaultContentMargins();
+  return {
+    left: clampContentMargin(margins.left),
+    top: clampContentMargin(margins.top),
+    right: clampContentMargin(margins.right),
+    bottom: clampContentMargin(margins.bottom),
+  };
+}
+
+export function setContentMarginField(
+  margins: ContentMargins,
+  field: keyof ContentMargins,
+  value: number,
+): ContentMargins {
+  return clampContentMargins({ ...margins, [field]: value });
 }
 
 /**

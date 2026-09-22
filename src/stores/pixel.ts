@@ -2,7 +2,8 @@ import { defineStore } from 'pinia';
 import { computed, markRaw, ref, shallowRef } from 'vue';
 import { PixelProject } from '@/core/pixel/PixelProject';
 import { packRgba } from '@/core/pixel/pack';
-import type { NinePatch, StateId, WidgetType } from '@/core/pixel/types';
+import { clampContentMargins } from '@/core/pixel/ninepatch';
+import type { ContentMargins, NinePatch, StateId, WidgetType } from '@/core/pixel/types';
 import { usePixelSession } from '@/editor/pixel/session';
 import type { PixelToolId } from '@/tools/pixel/types';
 
@@ -138,6 +139,14 @@ export const usePixelStore = defineStore('pixel', () => {
     editVersion.value++;
   }
 
+  function setContentMargins(contentMargins: ContentMargins) {
+    const w = activeWidget();
+    if (!w) return;
+    w.contentMargins = clampContentMargins(contentMargins);
+    structureVersion.value++;
+    editVersion.value++;
+  }
+
   /**
    * Resizes the active widget's canvases. A structural change, not a paint
    * edit, so — same as the voxel editor's resizeActive — it isn't undoable;
@@ -211,6 +220,7 @@ export const usePixelStore = defineStore('pixel', () => {
     removeWidget,
     renameWidget,
     setPatch,
+    setContentMargins,
     resizeActiveWidget,
     importPalette,
     setPrimary,

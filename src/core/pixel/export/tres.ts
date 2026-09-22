@@ -1,17 +1,27 @@
 import { specFor } from '@/core/pixel/widgets';
-import type { NinePatch, StateId, WidgetType } from '@/core/pixel/types';
+import type { ContentMargins, NinePatch, StateId, WidgetType } from '@/core/pixel/types';
 
-/** A single Godot 4 StyleBoxTexture resource — texture + nine-patch margins, ready to drag onto a theme override. */
-export function styleBoxTres(texturePath: string, patch: NinePatch): string {
+function styleBoxMarginLines(patch: NinePatch, contentMargins: ContentMargins): string {
+  return (
+    `texture_margin_left = ${patch.left}.0\n` +
+    `texture_margin_top = ${patch.top}.0\n` +
+    `texture_margin_right = ${patch.right}.0\n` +
+    `texture_margin_bottom = ${patch.bottom}.0\n` +
+    `content_margin_left = ${contentMargins.left}.0\n` +
+    `content_margin_top = ${contentMargins.top}.0\n` +
+    `content_margin_right = ${contentMargins.right}.0\n` +
+    `content_margin_bottom = ${contentMargins.bottom}.0`
+  );
+}
+
+/** A Godot 4 StyleBoxTexture with texture slicing and content padding. */
+export function styleBoxTres(texturePath: string, patch: NinePatch, contentMargins: ContentMargins): string {
   return (
     `[gd_resource type="StyleBoxTexture" load_steps=2 format=3]\n\n` +
     `[ext_resource type="Texture2D" path="${texturePath}" id="1_tex"]\n\n` +
     `[resource]\n` +
     `texture = ExtResource("1_tex")\n` +
-    `texture_margin_left = ${patch.left}.0\n` +
-    `texture_margin_top = ${patch.top}.0\n` +
-    `texture_margin_right = ${patch.right}.0\n` +
-    `texture_margin_bottom = ${patch.bottom}.0\n`
+    `${styleBoxMarginLines(patch, contentMargins)}\n`
   );
 }
 
@@ -20,6 +30,7 @@ export interface ThemeWidgetInput {
   /** res:// path per state that has an exported texture */
   texturePaths: Partial<Record<StateId, string>>;
   patch: NinePatch;
+  contentMargins: ContentMargins;
   /** icon id -> res:// path (e.g. { arrow: 'res://ui/optionbutton_arrow.png' }) */
   iconPaths?: Record<string, string>;
 }
@@ -57,10 +68,7 @@ export function themeTres(widgets: ThemeWidgetInput[]): string {
       subLines.push(
         `[sub_resource type="StyleBoxTexture" id="${subId}"]\n` +
           `texture = ExtResource("${extId}")\n` +
-          `texture_margin_left = ${w.patch.left}.0\n` +
-          `texture_margin_top = ${w.patch.top}.0\n` +
-          `texture_margin_right = ${w.patch.right}.0\n` +
-          `texture_margin_bottom = ${w.patch.bottom}.0`,
+          styleBoxMarginLines(w.patch, w.contentMargins),
       );
       resourceLines.push(`${spec.themeType}/styles/${state} = SubResource("${subId}")`);
     }

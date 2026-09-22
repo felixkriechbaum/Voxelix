@@ -1,17 +1,25 @@
 import { encodePng } from './encodePng';
 import { styleBoxTres, themeTres, type ThemeWidgetInput } from '@/core/pixel/export/tres';
+import { serializePixelProject } from '@/core/pixel/pixelProjectFile';
 import { specFor } from '@/core/pixel/widgets';
 import type { PixelWidget } from '@/core/pixel/PixelWidget';
 import type { PixelProject } from '@/core/pixel/PixelProject';
-import type { StateId } from '@/core/pixel/types';
+import { PIXEL_FILE_EXT, type StateId } from '@/core/pixel/types';
 
 export interface ExportFile {
   name: string;
   blob: Blob;
 }
 
-export function sanitizeFilename(name: string): string {
-  return name.trim().replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'widget';
+export function sanitizeFilename(name: string, fallback = 'widget'): string {
+  return name.trim().replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || fallback;
+}
+
+export function exportPixelProjectFile(project: PixelProject): ExportFile {
+  return {
+    name: `${sanitizeFilename(project.name, 'project')}${PIXEL_FILE_EXT}`,
+    blob: new Blob([serializePixelProject(project)], { type: 'application/json' }),
+  };
 }
 
 /**
@@ -53,7 +61,7 @@ export async function exportWidgetFiles(widget: PixelWidget, resPrefix = 'res://
     texturePaths[state] = resPath;
     files.push({
       name: `${base}_${state}.tres`,
-      blob: new Blob([styleBoxTres(resPath, widget.patch)], { type: 'text/plain' }),
+      blob: new Blob([styleBoxTres(resPath, widget.patch, widget.contentMargins)], { type: 'text/plain' }),
     });
   }
 
@@ -74,16 +82,19 @@ export interface BatchProgress {
 }
 
 /**
- * Every widget's PNGs + per-state styleboxes, plus one combined `theme.tres`
- * covering every widget that has a Godot theme type (freeform PNGs still
- * export, just aren't wired into the theme — there's nothing to wire them to).
+ * The editable `.voxui` project, every widget's PNGs + per-state styleboxes,
+ * and one combined `theme.tres` covering every widget that has a Godot theme
+ * type (freeform PNGs still export, just aren't wired into the theme — there's
+ * nothing to wire them to).
  */
 export async function exportProjectFiles(
   project: PixelProject,
   resPrefix = 'res://',
   onProgress?: (p: BatchProgress) => void,
 ): Promise<ExportFile[]> {
-  const files: ExportFile[] = [];
+  // Keep the editable source first so it is the least likely file to be lost
+  // if a browser limits the fallback path's sequence of separate downloads.
+  const files: ExportFile[] = [exportPixelProjectFile(project)];
   const themeInputs: ThemeWidgetInput[] = [];
   const total = project.widgets.length;
   let done = 0;
@@ -93,7 +104,13 @@ export async function exportProjectFiles(
     const { files: widgetFiles, texturePaths, iconPaths } = await exportWidgetFiles(w, resPrefix);
     files.push(...widgetFiles);
     if (specFor(w.type).themeType) {
-      themeInputs.push({ type: w.type, texturePaths, patch: w.patch, iconPaths });
+      themeInputs.push({
+        type: w.type,
+        texturePaths,
+        patch: w.patch,
+        contentMargins: w.contentMargins,
+        iconPaths,
+      });
     }
     done++;
   }
