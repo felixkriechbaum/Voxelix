@@ -19,10 +19,23 @@ interface StoredPrefs {
   width: number;
   showDisabled: boolean;
   variants: PreviewVariant[];
+  text: string;
+  textSize: number;
+  textColor: string;
+  showContent: boolean;
 }
 
 function clampWidth(w: number): number {
   return Math.min(MAX_PREVIEW_WIDTH, Math.max(MIN_PREVIEW_WIDTH, Math.round(w)));
+}
+
+export const MIN_TEXT_SIZE = 4;
+export const MAX_TEXT_SIZE = 64;
+const DEFAULT_TEXT = { text: 'Button', textSize: 8, textColor: '#ffffff', showContent: true };
+
+function clampTextSize(size: number): number {
+  if (!Number.isFinite(size)) return DEFAULT_TEXT.textSize;
+  return Math.min(MAX_TEXT_SIZE, Math.max(MIN_TEXT_SIZE, Math.round(size)));
 }
 
 function defaultVariants(): PreviewVariant[] {
@@ -43,12 +56,22 @@ function load(): StoredPrefs {
         width: clampWidth(parsed.width ?? DEFAULT_PREVIEW_WIDTH),
         showDisabled: parsed.showDisabled ?? true,
         variants: variants && variants.length ? variants : defaultVariants(),
+        text: typeof parsed.text === 'string' ? parsed.text : DEFAULT_TEXT.text,
+        textSize: clampTextSize(parsed.textSize ?? DEFAULT_TEXT.textSize),
+        textColor: typeof parsed.textColor === 'string' ? parsed.textColor : DEFAULT_TEXT.textColor,
+        showContent: parsed.showContent ?? DEFAULT_TEXT.showContent,
       };
     }
   } catch {
     /* private mode / corrupt value — fall through to defaults */
   }
-  return { expanded: true, width: DEFAULT_PREVIEW_WIDTH, showDisabled: true, variants: defaultVariants() };
+  return {
+    expanded: true,
+    width: DEFAULT_PREVIEW_WIDTH,
+    showDisabled: true,
+    variants: defaultVariants(),
+    ...DEFAULT_TEXT,
+  };
 }
 
 const initial = load();
@@ -68,6 +91,19 @@ export const previewShowDisabled = ref(initial.showDisabled);
 /** The user's own list of preview boxes — persisted, not part of project data (it's a viewing preference, not the design). */
 export const previewVariants = ref<PreviewVariant[]>(initial.variants);
 
+/** Sample label drawn into every variant's content area, so the content
+ *  margins (the padding Godot lays text out with) can be judged by eye. Empty = no text. */
+export const previewText = ref(initial.text);
+/** Sample text height in widget pixels (scaled by each variant's zoom like the art). */
+export const previewTextSize = ref(initial.textSize);
+export const previewTextColor = ref(initial.textColor);
+/** Outline the resolved content rect in every variant. */
+export const previewShowContent = ref(initial.showContent);
+
+export function setPreviewTextSize(size: number): void {
+  previewTextSize.value = clampTextSize(size);
+}
+
 export function setPreviewWidth(w: number): void {
   previewWidth.value = clampWidth(w);
 }
@@ -81,13 +117,30 @@ function persist(): void {
         width: previewWidth.value,
         showDisabled: previewShowDisabled.value,
         variants: previewVariants.value,
+        text: previewText.value,
+        textSize: previewTextSize.value,
+        textColor: previewTextColor.value,
+        showContent: previewShowContent.value,
       }),
     );
   } catch {
     /* private mode */
   }
 }
-watch([previewExpanded, previewWidth, previewShowDisabled, previewVariants], persist, { deep: true });
+watch(
+  [
+    previewExpanded,
+    previewWidth,
+    previewShowDisabled,
+    previewVariants,
+    previewText,
+    previewTextSize,
+    previewTextColor,
+    previewShowContent,
+  ],
+  persist,
+  { deep: true },
+);
 
 export function addPreviewVariant(base?: { w: number; h: number }): void {
   previewVariants.value = [

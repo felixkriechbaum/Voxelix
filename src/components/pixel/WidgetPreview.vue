@@ -3,7 +3,7 @@ import { nextTick, onBeforeUnmount, onMounted, reactive, watch, type ComponentPu
 import { usePixelStore } from '@/stores/pixel';
 import { blitPixelData } from '@/pixel/blit';
 import { paintNinePatch } from '@/pixel/NinePatchPainter';
-import { minDrawSize } from '@/core/pixel/ninepatch';
+import { minDrawSize, resolveContentMargins } from '@/core/pixel/ninepatch';
 import type { StateId } from '@/core/pixel/types';
 import type { PixelWidget } from '@/core/pixel/PixelWidget';
 import {
@@ -12,6 +12,13 @@ import {
   previewWidth,
   previewResizing,
   previewShowDisabled,
+  previewText,
+  previewTextSize,
+  previewTextColor,
+  previewShowContent,
+  MIN_TEXT_SIZE,
+  MAX_TEXT_SIZE,
+  setPreviewTextSize,
   addPreviewVariant,
   removePreviewVariant,
   setPreviewWidth,
@@ -162,6 +169,73 @@ function paintOne(w: PixelWidget, srcSize: { w: number; h: number }, canvas: HTM
   if (!ctx) return;
   ctx.clearRect(0, 0, pxW, pxH);
   paintNinePatch(ctx, srcCanvas, srcSize, w.patch, { x: 0, y: 0, w: v.w, h: v.h }, zoom);
+  paintContent(ctx, w, v, zoom);
+}
+
+const CONTENT_OUTLINE = 'rgba(0, 190, 255, 0.9)';
+const CONTENT_OUTLINE_OVERFLOW = 'rgba(255, 70, 70, 0.95)';
+
+function textFont(sizePx: number): string {
+  return `${sizePx}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
+}
+
+let measureCtx: CanvasRenderingContext2D | null = null;
+/** Sample text width in widget pixels (unzoomed), for the fit check. */
+function measureText(text: string, size: number): number {
+  measureCtx ??= document.createElement('canvas').getContext('2d');
+  if (!measureCtx || !text) return 0;
+  measureCtx.font = textFont(size);
+  return measureCtx.measureText(text).width;
+}
+
+/** Content rect (widget pixels) a Godot control lays its label out in: the
+ *  box minus the resolved content margins. May be zero/negative-sized. */
+function contentRect(w: PixelWidget, v: { w: number; h: number }) {
+  const m = resolveContentMargins(w.patch, w.contentMargins);
+  return { x: m.left, y: m.top, w: v.w - m.left - m.right, h: v.h - m.top - m.bottom, margins: m };
+}
+
+/**
+ * Smallest box that holds the sample text inside the content margins — what
+ * Godot's Button would grow its minimum size to. null when the text fits.
+ */
+function textOverflow(v: { w: number; h: number }): { w: number; h: number } | null {
+  void store.structureVersion; // see warnFor — patch/margins aren't reactive
+  const w = store.activeWidget();
+  const text = previewText.value;
+  if (!w || !text) return null;
+  const { margins: m } = contentRect(w, v);
+  const needW = Math.ceil(measureText(text, previewTextSize.value)) + m.left + m.right;
+  const needH = previewTextSize.value + m.top + m.bottom;
+  return v.w < needW || v.h < needH ? { w: needW, h: needH } : null;
+}
+
+function paintContent(ctx: CanvasRenderingContext2D, w: PixelWidget, v: { w: number; h: number }, zoom: number) {
+  const r = contentRect(w, v);
+  const text = previewText.value;
+  const overflow = textOverflow(v) !== null;
+
+  if (text) {
+    // centred on the content rect, like Button's default alignment; drawn
+    // unclipped so an overflow is visible rather than silently cut off
+    ctx.save();
+    ctx.font = textFont(previewTextSize.value * zoom);
+    ctx.fillStyle = previewTextColor.value;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, (r.x + r.w / 2) * zoom, (r.y + r.h / 2) * zoom);
+    ctx.restore();
+  }
+
+  if (previewShowContent.value && r.w > 0 && r.h > 0) {
+    ctx.save();
+    ctx.strokeStyle = overflow ? CONTENT_OUTLINE_OVERFLOW : CONTENT_OUTLINE;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 2]);
+    // +0.5 puts the 1px line on pixel centres (crisp), inset so it sits inside the rect
+    ctx.strokeRect(r.x * zoom + 0.5, r.y * zoom + 0.5, r.w * zoom - 1, r.h * zoom - 1);
+    ctx.restore();
+  }
 }
 
 function redraw() {
@@ -201,6 +275,10 @@ watch(
     store.editVersion,
     previewVariants.value,
     previewShowDisabled.value,
+    previewText.value,
+    previewTextSize.value,
+    previewTextColor.value,
+    previewShowContent.value,
   ],
   () => nextTick(redraw),
   { deep: true },
@@ -231,6 +309,28 @@ onBeforeUnmount(() => window.removeEventListener('mouseup', onWindowUp));
           <input v-model="previewShowDisabled" type="checkbox" /> disabled
         </label>
       </div>
+      <div class="row text-row">
+        <input
+          v-model="previewText"
+          type="text"
+          class="text-input"
+          placeholder="Sample text"
+          title="Drawn into every variant's content area, to check the content margins"
+        />
+        <input
+          type="number"
+          class="size-input"
+          :min="MIN_TEXT_SIZE"
+          :max="MAX_TEXT_SIZE"
+          :value="previewTextSize"
+          title="Text size in pixels"
+          @change="setPreviewTextSize(Number(($event.target as HTMLInputElement).value))"
+        />
+        <input v-model="previewTextColor" type="color" class="color-input" title="Text colour" />
+      </div>
+      <label class="show-content" title="Outline the content area (box minus content margins)">
+        <input v-model="previewShowContent" type="checkbox" /> show content area
+      </label>
       <canvas :ref="setSrcCanvas" class="hidden-src" />
 
       <template v-if="store.activeWidget()">
@@ -248,6 +348,13 @@ onBeforeUnmount(() => window.removeEventListener('mouseup', onWindowUp));
           </div>
           <span v-if="warnFor(v)" class="warn" title="Smaller than the patch's fixed borders — Godot will scale the whole patch down instead of respecting it">
             ⚠ smaller than the patch borders
+          </span>
+          <span
+            v-if="textOverflow(v)"
+            class="warn"
+            title="Godot's Button would grow its minimum size to fit the text plus content margins"
+          >
+            ⚠ text needs {{ textOverflow(v)!.w }}×{{ textOverflow(v)!.h }}
           </span>
           <div class="states-wrap">
             <div class="state-slot">
@@ -334,6 +441,44 @@ onBeforeUnmount(() => window.removeEventListener('mouseup', onWindowUp));
 }
 .head-row {
   margin-bottom: 8px;
+}
+.text-row {
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.text-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 3px 6px;
+}
+.size-input {
+  width: 44px;
+  flex: none;
+  font-size: 12px;
+  padding: 3px 4px;
+}
+.color-input {
+  width: 26px;
+  height: 24px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+}
+.show-content {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+.show-content input {
+  margin: 0;
 }
 .show-disabled {
   display: flex;

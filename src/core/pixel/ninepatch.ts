@@ -129,3 +129,16 @@ export function setContentMarginField(
 export function minDrawSize(patch: NinePatch): { w: number; h: number } {
   return { w: patch.left + patch.right, h: patch.top + patch.bottom };
 }
+
+/**
+ * The padding Godot actually lays content out with: a StyleBoxTexture content
+ * margin of -1 falls back to the matching texture (nine-patch) margin.
+ */
+export function resolveContentMargins(patch: NinePatch, margins: ContentMargins): ContentMargins {
+  return {
+    left: margins.left < 0 ? patch.left : margins.left,
+    top: margins.top < 0 ? patch.top : margins.top,
+    right: margins.right < 0 ? patch.right : margins.right,
+    bottom: margins.bottom < 0 ? patch.bottom : margins.bottom,
+  };
+}
