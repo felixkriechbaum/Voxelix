@@ -1,67 +1,67 @@
 import { PixelData } from './PixelData';
-import { specFor } from './widgets';
+import { specFor, type ElementSpec } from './widgets';
 import { clampContentMargins, clampPatch } from './ninepatch';
 import { defaultNinePatch } from './types';
 import type {
   ContentMargins,
   NinePatch,
+  PixelElementJson,
   PixelLayerJson,
   PixelWidgetJson,
   StateId,
   WidgetType,
 } from './types';
 
-export class PixelWidget {
-  id: string;
-  name: string;
-  type: WidgetType;
+/**
+ * One part of a widget — a ProgressBar's fill, a slider's grabber, a
+ * button's box. Its states share one canvas size and one nine-patch, the
+ * same way Godot expects e.g. every Button stylebox to line up.
+ */
+export class PixelElement {
+  readonly id: string;
   width: number;
   height: number;
   patch: NinePatch;
   contentMargins: ContentMargins;
   states: Map<StateId, PixelData>;
-  icons: Map<string, PixelData>;
 
   constructor(opts: {
-    id?: string;
-    name: string;
-    type: WidgetType;
+    id: string;
     width: number;
     height: number;
     patch?: NinePatch;
     contentMargins?: ContentMargins;
     states?: Map<StateId, PixelData>;
-    icons?: Map<string, PixelData>;
   }) {
-    this.id = opts.id ?? crypto.randomUUID();
-    this.name = opts.name;
-    this.type = opts.type;
+    this.id = opts.id;
     this.width = Math.max(1, Math.round(opts.width));
     this.height = Math.max(1, Math.round(opts.height));
-    this.patch = opts.patch ?? defaultNinePatch();
+    this.patch = clampPatch(opts.patch ?? defaultNinePatch(), this.width, this.height);
     this.contentMargins = clampContentMargins(opts.contentMargins);
     this.states = opts.states ?? new Map();
-    this.icons = opts.icons ?? new Map();
   }
 
-  static createNew(name: string, type: WidgetType): PixelWidget {
-    const spec = specFor(type);
+  static fromSpec(spec: ElementSpec): PixelElement {
     const [w, h] = spec.defaultSize;
-    const widget = new PixelWidget({ name, type, width: w, height: h });
-    const initialStates: StateId[] = spec.states.length ? spec.states : ['normal'];
-    for (const s of initialStates) widget.states.set(s, new PixelData(w, h));
-    for (const icon of spec.icons ?? []) widget.icons.set(icon.id, new PixelData(icon.size[0], icon.size[1]));
-    return widget;
+    const el = new PixelElement({ id: spec.id, width: w, height: h });
+    el.ensureStates(spec);
+    return el;
+  }
+
+  /** Adds a blank canvas for any spec state this element doesn't have yet, in spec order. */
+  ensureStates(spec: ElementSpec): void {
+    const ordered = new Map<StateId, PixelData>();
+    for (const s of spec.states) ordered.set(s.id, this.states.get(s.id) ?? new PixelData(this.width, this.height));
+    // keep anything the spec doesn't know (a newer file) rather than dropping pixels
+    for (const [id, data] of this.states) if (!ordered.has(id)) ordered.set(id, data);
+    this.states = ordered;
   }
 
   /**
-   * Resizes every state's canvas in place (icons keep their own fixed size —
-   * they're not tied to the widget's own canvas dimensions), clamping the
-   * nine-patch margins so they never end up overlapping the new, possibly
-   * smaller, bounds. A structural change, not a paint edit: callers should
-   * drop any undo history for this widget's states afterwards, since a
-   * PixelEdit's flat index is only meaningful for the width it was recorded
-   * against.
+   * Resizes every state's canvas, clamping the nine-patch so it never
+   * overlaps the new, possibly smaller, bounds. A structural change: callers
+   * drop this element's undo history, since a PixelEdit's flat index only
+   * means something for the width it was recorded against.
    */
   resize(width: number, height: number, anchor: 'topleft' | 'center' = 'topleft'): void {
     const w = Math.max(1, Math.round(width));
@@ -73,60 +73,150 @@ export class PixelWidget {
     this.patch = clampPatch(this.patch, w, h);
   }
 
-  /** The canvas a given state paints into — falls back to 'normal' if the state hasn't been added. */
+  /** The canvas a state paints into, created on demand. */
   stateData(id: StateId): PixelData {
-    const existing = this.states.get(id);
-    if (existing) return existing;
-    let normal = this.states.get('normal');
-    if (!normal) {
-      normal = new PixelData(this.width, this.height);
-      this.states.set('normal', normal);
+    let data = this.states.get(id);
+    if (!data) {
+      data = new PixelData(this.width, this.height);
+      this.states.set(id, data);
     }
-    return normal;
+    return data;
   }
 
-  toJSON(): PixelWidgetJson {
-    const states: Partial<Record<StateId, PixelLayerJson>> = {};
+  isPainted(id: StateId): boolean {
+    return this.states.get(id)?.bounds() != null;
+  }
+
+  toJSON(): PixelElementJson {
+    const states: Record<StateId, PixelLayerJson> = {};
     for (const [id, data] of this.states) states[id] = data.toJSON();
-    let icons: Record<string, PixelLayerJson> | undefined;
-    if (this.icons.size) {
-      icons = {};
-      for (const [id, data] of this.icons) icons[id] = data.toJSON();
-    }
     return {
-      id: this.id,
-      name: this.name,
-      type: this.type,
       width: this.width,
       height: this.height,
       patch: this.patch,
       contentMargins: this.contentMargins,
       states,
-      icons,
     };
   }
 
-  static fromJSON(json: PixelWidgetJson): PixelWidget {
-    const widget = new PixelWidget({
-      id: json.id,
-      name: json.name,
-      type: json.type,
+  static fromJSON(id: string, json: PixelElementJson): PixelElement {
+    const el = new PixelElement({
+      id,
       width: json.width,
       height: json.height,
       patch: json.patch,
       contentMargins: json.contentMargins,
     });
-    for (const [id, layer] of Object.entries(json.states)) {
-      widget.states.set(id as StateId, PixelData.fromJSON(layer as PixelLayerJson, json.width, json.height));
+    for (const [sid, layer] of Object.entries(json.states ?? {})) {
+      el.states.set(sid, PixelData.fromJSON(layer, el.width, el.height));
     }
-    if (json.icons) {
-      const spec = specFor(json.type);
-      for (const [id, layer] of Object.entries(json.icons)) {
-        const iconSpec = spec.icons?.find((i) => i.id === id);
-        const [iw, ih] = iconSpec?.size ?? [json.width, json.height];
-        widget.icons.set(id, PixelData.fromJSON(layer, iw, ih));
-      }
-    }
+    return el;
+  }
+}
+
+export class PixelWidget {
+  id: string;
+  name: string;
+  type: WidgetType;
+  /** in spec order */
+  elements: Map<string, PixelElement>;
+
+  constructor(opts: { id?: string; name: string; type: WidgetType; elements?: Map<string, PixelElement> }) {
+    this.id = opts.id ?? crypto.randomUUID();
+    this.name = opts.name;
+    this.type = opts.type;
+    this.elements = opts.elements ?? new Map();
+  }
+
+  static createNew(name: string, type: WidgetType): PixelWidget {
+    const widget = new PixelWidget({ name, type });
+    widget.ensureElements();
     return widget;
+  }
+
+  /** Fills in any element/state the spec defines but this widget lacks, and puts them in spec order. */
+  ensureElements(): void {
+    const ordered = new Map<string, PixelElement>();
+    for (const es of specFor(this.type).elements) {
+      const el = this.elements.get(es.id) ?? PixelElement.fromSpec(es);
+      el.ensureStates(es);
+      ordered.set(es.id, el);
+    }
+    for (const [id, el] of this.elements) if (!ordered.has(id)) ordered.set(id, el);
+    this.elements = ordered;
+  }
+
+  element(id: string): PixelElement | null {
+    return this.elements.get(id) ?? null;
+  }
+
+  /** First element in spec order — what a freshly selected widget opens on. */
+  firstElementId(): string {
+    return this.elements.keys().next().value ?? 'box';
+  }
+
+  /**
+   * The canvas that actually shows for a state: the state itself if it has
+   * pixels, else the first painted state along its spec `from` chain (hover
+   * → normal). null when nothing on that chain is painted.
+   */
+  resolveState(elementId: string, stateId: StateId): { id: StateId; data: PixelData } | null {
+    const el = this.elements.get(elementId);
+    if (!el) return null;
+    const es = specFor(this.type).elements.find((e) => e.id === elementId);
+    const seen = new Set<StateId>();
+    let cur: StateId | undefined = stateId;
+    while (cur && !seen.has(cur)) {
+      seen.add(cur);
+      const data = el.states.get(cur);
+      if (data && data.bounds() !== null) return { id: cur, data };
+      cur = es?.states.find((s) => s.id === cur)?.from;
+    }
+    return null;
+  }
+
+  toJSON(): PixelWidgetJson {
+    const elements: Record<string, PixelElementJson> = {};
+    for (const [id, el] of this.elements) elements[id] = el.toJSON();
+    return { id: this.id, name: this.name, type: this.type, elements };
+  }
+
+  static fromJSON(json: PixelWidgetJson): PixelWidget {
+    const widget = new PixelWidget({ id: json.id, name: json.name, type: json.type });
+    if (json.elements) {
+      for (const [id, ej] of Object.entries(json.elements)) widget.elements.set(id, PixelElement.fromJSON(id, ej));
+    } else {
+      migrateV1(widget, json);
+    }
+    widget.ensureElements();
+    return widget;
+  }
+}
+
+/**
+ * Version-1 widgets were one canvas with a flat state list (+ loose icons).
+ * The spec's `legacy` entry says which element that canvas becomes and which
+ * states were misnamed back then (a Panel's 'normal' is Godot's 'panel', a
+ * ProgressBar's 'normal' its 'background', a LineEdit has 'read_only', not
+ * 'disabled'). Icons map onto the element of the same id.
+ */
+function migrateV1(widget: PixelWidget, json: PixelWidgetJson): void {
+  const spec = specFor(widget.type);
+  const target = spec.legacy?.element ?? spec.elements[0]?.id ?? 'box';
+  const rename = spec.legacy?.rename ?? {};
+  const w = json.width ?? 1;
+  const h = json.height ?? 1;
+  const el = new PixelElement({ id: target, width: w, height: h, patch: json.patch, contentMargins: json.contentMargins });
+  for (const [sid, layer] of Object.entries(json.states ?? {})) {
+    el.states.set(rename[sid] ?? sid, PixelData.fromJSON(layer, w, h));
+  }
+  widget.elements.set(target, el);
+
+  for (const [iconId, layer] of Object.entries(json.icons ?? {})) {
+    const es = spec.elements.find((e) => e.id === iconId);
+    const [iw, ih] = es?.defaultSize ?? [w, h];
+    const iconEl = new PixelElement({ id: iconId, width: iw, height: ih });
+    iconEl.states.set(es?.states[0]?.id ?? iconId, PixelData.fromJSON(layer, iw, ih));
+    widget.elements.set(iconId, iconEl);
   }
 }

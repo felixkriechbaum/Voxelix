@@ -9,7 +9,7 @@ import { Project } from '@/core/project/Project';
 import { PixelProject } from '@/core/pixel/PixelProject';
 import { PROJECT_FILE_EXT } from '@/core/project/types';
 import { PIXEL_FILE_EXT } from '@/core/pixel/types';
-import { WIDGET_TYPES, specFor } from '@/core/pixel/widgets';
+import { specFor, widgetTypesByCategory } from '@/core/pixel/widgets';
 import type { WidgetType } from '@/core/pixel/types';
 import {
   deleteProjectRecord,
@@ -269,7 +269,9 @@ function ago(ts: number): string {
 
         <label for="pixel-type" style="margin-top: 8px">Widget</label>
         <select id="pixel-type" v-model="pixelWidgetType">
-          <option v-for="t in WIDGET_TYPES" :key="t" :value="t">{{ specFor(t).label }}</option>
+          <optgroup v-for="g in widgetTypesByCategory()" :key="g.category" :label="g.category">
+            <option v-for="t in g.types" :key="t" :value="t">{{ specFor(t).label }}</option>
+          </optgroup>
         </select>
 
         <div class="row" style="margin-top: 14px">

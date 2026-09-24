@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, markRaw, ref, shallowRef } from 'vue';
 import { PixelProject } from '@/core/pixel/PixelProject';
+import type { PixelWidget } from '@/core/pixel/PixelWidget';
 import { packRgba } from '@/core/pixel/pack';
 import { clampContentMargins } from '@/core/pixel/ninepatch';
 import type { ContentMargins, NinePatch, StateId, WidgetType } from '@/core/pixel/types';
@@ -36,6 +37,8 @@ export const usePixelStore = defineStore('pixel', () => {
   const exportStatus = ref<string | null>(null);
 
   const activeWidgetId = ref<string | null>(null);
+  /** which part of the active widget is on the canvas (box, fill, grabber, …) */
+  const activeElementId = ref<string>('box');
   const activeStateId = ref<StateId>('normal');
   const toolId = ref<PixelToolId>('pencil');
   const brushSize = ref(1);
@@ -61,10 +64,21 @@ export const usePixelStore = defineStore('pixel', () => {
     return project.value?.widgets.find((w) => w.id === activeWidgetId.value) ?? null;
   }
 
+  function activeElement() {
+    return activeWidget()?.element(activeElementId.value) ?? null;
+  }
+
+  /** Point the canvas at a widget's first element and that element's base state. */
+  function resetElementFor(widget: PixelWidget | null) {
+    const elementId = widget?.firstElementId() ?? 'box';
+    activeElementId.value = elementId;
+    activeStateId.value = widget?.element(elementId)?.states.keys().next().value ?? 'normal';
+  }
+
   function setProject(p: PixelProject) {
     project.value = markRaw(p);
     activeWidgetId.value = p.activeWidgetId ?? p.widgets[0]?.id ?? null;
-    activeStateId.value = 'normal';
+    resetElementFor(activeWidget());
     autosaveAt.value = null;
     autosaveError.value = false;
     structureVersion.value++;
@@ -97,7 +111,15 @@ export const usePixelStore = defineStore('pixel', () => {
     if (!project.value || activeWidgetId.value === id || !project.value.getById(id)) return;
     activeWidgetId.value = id;
     project.value.activeWidgetId = id;
-    activeStateId.value = 'normal';
+    resetElementFor(activeWidget());
+    activeVersion.value++;
+  }
+
+  function setActiveElement(id: string) {
+    const el = activeWidget()?.element(id);
+    if (!el || activeElementId.value === id) return;
+    activeElementId.value = id;
+    activeStateId.value = el.states.keys().next().value ?? 'normal';
     activeVersion.value++;
   }
 
@@ -122,6 +144,7 @@ export const usePixelStore = defineStore('pixel', () => {
     project.value.remove(id);
     structureVersion.value++;
     activeWidgetId.value = project.value.activeWidgetId;
+    resetElementFor(activeWidget());
     activeVersion.value++;
   }
 
@@ -132,7 +155,7 @@ export const usePixelStore = defineStore('pixel', () => {
   }
 
   function setPatch(patch: NinePatch) {
-    const w = activeWidget();
+    const w = activeElement();
     if (!w) return;
     w.patch = patch;
     structureVersion.value++;
@@ -140,7 +163,7 @@ export const usePixelStore = defineStore('pixel', () => {
   }
 
   function setContentMargins(contentMargins: ContentMargins) {
-    const w = activeWidget();
+    const w = activeElement();
     if (!w) return;
     w.contentMargins = clampContentMargins(contentMargins);
     structureVersion.value++;
@@ -148,18 +171,20 @@ export const usePixelStore = defineStore('pixel', () => {
   }
 
   /**
-   * Resizes the active widget's canvases. A structural change, not a paint
+   * Resizes the active element's canvases (every state of it — they share a
+   * size; the widget's other elements keep theirs). A structural change, not a paint
    * edit, so — same as the voxel editor's resizeActive — it isn't undoable;
    * the undo history is dropped rather than left pointing at indices that no
    * longer mean the same pixel once the width has changed.
    */
-  function resizeActiveWidget(width: number, height: number, anchor: 'topleft' | 'center' = 'topleft') {
+  function resizeActiveElement(width: number, height: number, anchor: 'topleft' | 'center' = 'topleft') {
     const w = activeWidget();
-    if (!w) return;
+    const el = activeElement();
+    if (!w || !el) return;
     const runner = usePixelSession().runner.value;
-    runner?.forgetHistory(w.id);
-    w.resize(width, height, anchor);
-    // widget.resize() replaces each state's PixelData instance rather than
+    runner?.forgetHistory(w.id, el.id);
+    el.resize(width, height, anchor);
+    // element.resize() replaces each state's PixelData instance rather than
     // mutating it in place — the runner (and its renderer) would otherwise
     // keep drawing into the now-orphaned old one, since nothing else about
     // the active widget/state identity changed to trigger a re-sync
@@ -200,6 +225,7 @@ export const usePixelStore = defineStore('pixel', () => {
     autosaveError,
     exportStatus,
     activeWidgetId,
+    activeElementId,
     activeStateId,
     toolId,
     brushSize,
@@ -211,17 +237,19 @@ export const usePixelStore = defineStore('pixel', () => {
     widgets,
     projectName,
     activeWidget,
+    activeElement,
     setProject,
     newProject,
     closeProject,
     setActiveWidget,
+    setActiveElement,
     setActiveState,
     addWidget,
     removeWidget,
     renameWidget,
     setPatch,
     setContentMargins,
-    resizeActiveWidget,
+    resizeActiveElement,
     importPalette,
     setPrimary,
     setSecondary,

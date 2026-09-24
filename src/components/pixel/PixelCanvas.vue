@@ -6,6 +6,7 @@ import { setPixelSession } from '@/editor/pixel/session';
 import { usePixelStore } from '@/stores/pixel';
 import { brushBox } from '@/core/pixel/brush';
 import { setPatchField } from '@/core/pixel/ninepatch';
+import { elementSpec } from '@/core/pixel/widgets';
 import type { NinePatch } from '@/core/pixel/types';
 
 const store = usePixelStore();
@@ -22,22 +23,41 @@ let paintActive = false;
 
 function frame() {
   if (renderer && runner) {
-    const widget = store.activeWidget();
+    const widget = store.activeElement();
     const cursor = runner.getCursor();
-    // onion-skin the 'normal' state faintly under whatever else you're
-    // editing — hover/pressed/disabled/focus are usually built as small
-    // variations of it, so it's a reference to paint on top of, not blind
-    const onion = widget && store.activeStateId !== 'normal' ? (widget.states.get('normal') ?? null) : null;
     renderer.render({
       zoom: store.zoom,
       showGrid: store.showGrid,
-      patch: widget && hasPatch(widget.patch) ? widget.patch : null,
+      patch: widget && hasPatch(widget.patch) && activeKind() !== 'icon' ? widget.patch : null,
       selection: runner.selection,
       cursor: cursor ? brushBox(cursor.x, cursor.y, store.brushSize) : null,
-      onion,
+      onion: onionSource(),
     });
   }
   raf = requestAnimationFrame(frame);
+}
+
+function activeKind() {
+  const w = store.activeWidget();
+  return w ? (elementSpec(w.type, store.activeElementId)?.kind ?? 'texture') : 'texture';
+}
+
+/**
+ * Onion-skin what this state falls back to (hover -> normal, checked_disabled
+ * -> checked) faintly underneath — variations are usually painted on top of
+ * their base, so it's a reference rather than a blank canvas. Overlay states
+ * (focus rings) show over the element's base state instead; the base state
+ * itself gets none.
+ */
+function onionSource() {
+  const w = store.activeWidget();
+  const el = store.activeElement();
+  if (!w || !el) return null;
+  const es = elementSpec(w.type, el.id);
+  const ss = es?.states.find((s) => s.id === store.activeStateId);
+  const baseId = ss?.from ?? (ss?.overlay ? es?.states[0]?.id : undefined);
+  if (!baseId || baseId === store.activeStateId) return null;
+  return w.resolveState(el.id, baseId)?.data ?? el.states.get(baseId) ?? null;
 }
 
 function hasPatch(p: NinePatch): boolean {
@@ -49,7 +69,7 @@ watch(
   (id) => runner?.setTool(id),
 );
 watch(
-  () => [store.activeWidgetId, store.activeStateId],
+  () => [store.activeWidgetId, store.activeElementId, store.activeStateId],
   () => runner?.syncActive(),
 );
 
@@ -60,8 +80,8 @@ function guideCursor(edge: keyof NinePatch | null): string {
 }
 
 function onDown(e: PointerEvent) {
-  const widget = store.activeWidget();
-  const edge = widget && renderer ? renderer.hitGuide(e.clientX, e.clientY, store.zoom, widget.patch) : null;
+  const widget = store.activeElement();
+  const edge = widget && renderer && activeKind() !== 'icon' ? renderer.hitGuide(e.clientX, e.clientY, store.zoom, widget.patch) : null;
   canvas.value?.setPointerCapture(e.pointerId);
   if (edge) {
     draggingGuide = edge;
@@ -74,7 +94,7 @@ function onDown(e: PointerEvent) {
 }
 
 function dragGuideTo(e: PointerEvent) {
-  const widget = store.activeWidget();
+  const widget = store.activeElement();
   const cell = renderer?.toCellClamped(e.clientX, e.clientY, store.zoom);
   if (!widget || !cell || !draggingGuide) return;
   // left/top are measured from the near edge; right/bottom from the far edge
@@ -101,8 +121,8 @@ function onMove(e: PointerEvent) {
     runner?.pointerMove(e);
     return;
   }
-  const widget = store.activeWidget();
-  const hover = widget && renderer ? renderer.hitGuide(e.clientX, e.clientY, store.zoom, widget.patch) : null;
+  const widget = store.activeElement();
+  const hover = widget && renderer && activeKind() !== 'icon' ? renderer.hitGuide(e.clientX, e.clientY, store.zoom, widget.patch) : null;
   if (canvas.value) canvas.value.style.cursor = guideCursor(hover);
   if (hover) {
     runner?.pointerLeave(); // don't leave a brush-footprint cursor box under the guide

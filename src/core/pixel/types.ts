@@ -2,14 +2,42 @@ import type { Palette } from '@/core/palette';
 
 export type WidgetType =
   | 'button'
+  | 'menubutton'
   | 'optionbutton'
   | 'checkbox'
-  | 'panel'
+  | 'checkbutton'
+  | 'label'
+  | 'richtextlabel'
   | 'lineedit'
+  | 'textedit'
+  | 'spinbox'
   | 'progressbar'
+  | 'textureprogressbar'
+  | 'hslider'
+  | 'vslider'
+  | 'hscrollbar'
+  | 'vscrollbar'
+  | 'panel'
+  | 'panelcontainer'
+  | 'scrollcontainer'
+  | 'popuppanel'
+  | 'tooltip'
+  | 'window'
+  | 'tabcontainer'
+  | 'tabbar'
+  | 'itemlist'
+  | 'tree'
+  | 'popupmenu'
+  | 'hseparator'
+  | 'vseparator'
   | 'freeform';
 
-export type StateId = 'normal' | 'hover' | 'pressed' | 'disabled' | 'focus';
+/**
+ * One image inside an element — the Godot theme item name it exports as
+ * ('normal', 'fill', 'grabber_highlight', 'checked', …). Which ids exist is
+ * decided by the widget's spec (core/pixel/widgets.ts).
+ */
+export type StateId = string;
 
 export interface NinePatch {
   left: number;
@@ -39,24 +67,37 @@ export interface PixelLayerJson {
   pixels: string;
 }
 
+/** One part of a widget (e.g. a ProgressBar's fill, a slider's grabber):
+ *  a set of same-sized state images sharing one nine-patch. */
+export interface PixelElementJson {
+  width: number;
+  height: number;
+  patch: NinePatch;
+  /** -1 uses the corresponding nine-patch margin. */
+  contentMargins: ContentMargins;
+  states: Record<StateId, PixelLayerJson>;
+}
+
 export interface PixelWidgetJson {
   id: string;
   name: string;
   type: WidgetType;
-  width: number;
-  height: number;
-  patch: NinePatch;
-  /** Absent in legacy files; -1 uses the corresponding nine-patch margin. */
+  /** keyed by the spec's element id; absent in version-1 files */
+  elements?: Record<string, PixelElementJson>;
+
+  // ---- version 1 (single canvas per widget) — read-only, migrated on load
+  width?: number;
+  height?: number;
+  patch?: NinePatch;
   contentMargins?: ContentMargins;
-  /** one image per state; a missing state visually inherits 'normal' */
-  states: Partial<Record<StateId, PixelLayerJson>>;
-  /** extra parts, e.g. the OptionButton arrow */
+  states?: Record<string, PixelLayerJson>;
   icons?: Record<string, PixelLayerJson>;
 }
 
 export interface PixelProjectJson {
   format: 'voxelix-pixel';
-  version: 1;
+  /** 1 = one canvas per widget; 2 = per-element canvases */
+  version: 1 | 2;
   id: string;
   name: string;
   /** swatch shelf, reused from core/palette.ts — not a storage index */

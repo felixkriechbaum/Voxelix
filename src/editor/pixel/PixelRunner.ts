@@ -11,7 +11,7 @@ export class PixelRunner implements PixelToolContext {
   private tool: PixelTool;
   private batch: PixelEdit[] = [];
   private batchLabel = '';
-  /** keyed by `${widgetId}:${stateId}` — switching state is a different undo stack */
+  /** keyed by `${widgetId}:${elementId}:${stateId}` — every canvas has its own undo stack */
   private histories = new HistoryStore<PixelEdit>();
   private activeData: PixelData | null = null;
   private cursor: { x: number; y: number } | null = null;
@@ -47,13 +47,13 @@ export class PixelRunner implements PixelToolContext {
    * state-paste-on-another still works; only the visual marquee resets.
    */
   syncActive(): void {
-    const widget = this.store.activeWidget();
+    const element = this.store.activeElement();
     this.setSelection(null);
-    if (!widget) {
+    if (!element) {
       this.activeData = null;
       return;
     }
-    this.activeData = widget.stateData(this.store.activeStateId);
+    this.activeData = element.stateData(this.store.activeStateId);
     this.renderer.setSource(this.activeData);
   }
 
@@ -131,7 +131,7 @@ export class PixelRunner implements PixelToolContext {
     return this.cursor;
   }
 
-  /** Small PNG data URL of the active widget's active state, for autosave thumbnails. */
+  /** Small PNG data URL of the canvas being edited, for autosave thumbnails. */
   captureThumbnail(): string {
     return this.renderer.captureThumbnail();
   }
@@ -144,10 +144,10 @@ export class PixelRunner implements PixelToolContext {
    * the source state doesn't exist or is the state you're already on.
    */
   copyStateFrom(sourceId: StateId): boolean {
-    const widget = this.store.activeWidget();
+    const element = this.store.activeElement();
     const data = this.activeData;
-    if (!widget || !data) return false;
-    const source = widget.states.get(sourceId);
+    if (!element || !data) return false;
+    const source = element.states.get(sourceId);
     if (!source || source === data) return false;
     this.begin(`Copy from ${sourceId}`);
     for (let y = 0; y < data.height; y++) {
@@ -250,17 +250,20 @@ export class PixelRunner implements PixelToolContext {
 
   // ---- history ------------------------------------------------------
   private historyKey(): string {
-    return `${this.store.activeWidgetId ?? '_'}:${this.store.activeStateId}`;
+    return `${this.store.activeWidgetId ?? '_'}:${this.store.activeElementId}:${this.store.activeStateId}`;
   }
   private currentHistory() {
     return this.histories.for(this.historyKey());
   }
 
-  /** Drop every undo stack belonging to a widget (all its states) — its canvases no longer exist. */
-  forgetHistory(widgetId: string): void {
+  /** Drop the undo stacks of a widget's canvases (all elements, or just one) — they no longer exist / mean the same pixels. */
+  forgetHistory(widgetId: string, elementId?: string): void {
     const widget = this.store.project?.getById(widgetId);
-    const states = widget ? [...widget.states.keys()] : ['normal'];
-    for (const s of states) this.histories.drop(`${widgetId}:${s}`);
+    if (!widget) return;
+    for (const [eid, el] of widget.elements) {
+      if (elementId !== undefined && eid !== elementId) continue;
+      for (const s of el.states.keys()) this.histories.drop(`${widgetId}:${eid}:${s}`);
+    }
   }
 
   undo(): void {

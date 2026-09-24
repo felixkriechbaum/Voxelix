@@ -1,5 +1,4 @@
-import { specFor } from '@/core/pixel/widgets';
-import type { ContentMargins, NinePatch, StateId, WidgetType } from '@/core/pixel/types';
+import type { ContentMargins, NinePatch } from '@/core/pixel/types';
 
 function styleBoxMarginLines(patch: NinePatch, contentMargins: ContentMargins): string {
   return (
@@ -25,59 +24,64 @@ export function styleBoxTres(texturePath: string, patch: NinePatch, contentMargi
   );
 }
 
-export interface ThemeWidgetInput {
-  type: WidgetType;
-  /** res:// path per state that has an exported texture */
-  texturePaths: Partial<Record<StateId, string>>;
-  patch: NinePatch;
-  contentMargins: ContentMargins;
-  /** icon id -> res:// path (e.g. { arrow: 'res://ui/optionbutton_arrow.png' }) */
-  iconPaths?: Record<string, string>;
+/** One entry in a Theme's `[resource]` block. */
+export type ThemeItem =
+  | {
+      kind: 'style';
+      /** theme item name, e.g. 'hover', 'fill' */
+      name: string;
+      /** null = a StyleBoxEmpty — deliberately nothing, rather than Godot's default grey */
+      texturePath: string | null;
+      patch: NinePatch;
+      contentMargins: ContentMargins;
+    }
+  | { kind: 'icon'; name: string; texturePath: string };
+
+export interface ThemeTypeInput {
+  /** Godot theme type, e.g. 'HSlider' */
+  themeType: string;
+  items: ThemeItem[];
 }
 
 /**
- * One combined Godot Theme resource covering every widget that has a theme
- * type — a StyleBoxTexture subresource per state, wired to
- * `<ThemeType>/styles/<state>`, plus icons at `<ThemeType>/icons/<id>`.
- * Widgets with no themeType (freeform) are silently skipped — their PNGs are
- * still exported, just not wired into this Theme.
+ * One combined Godot Theme resource: a StyleBoxTexture subresource per style
+ * item wired to `<ThemeType>/styles/<name>`, icons at `<ThemeType>/icons/<name>`.
+ * Textures used by several items (a hover state falling back to normal's
+ * image) are referenced once.
  */
-export function themeTres(widgets: ThemeWidgetInput[]): string {
+export function themeTres(inputs: ThemeTypeInput[]): string {
   const extLines: string[] = [];
+  const extIds = new Map<string, string>();
   const subLines: string[] = [];
   const resourceLines: string[] = [];
-  let extCounter = 0;
   let subCounter = 0;
 
-  function addExt(path: string): string {
-    extCounter++;
-    const id = `tex_${extCounter}`;
-    extLines.push(`[ext_resource type="Texture2D" path="${path}" id="${id}"]`);
+  function ext(path: string): string {
+    let id = extIds.get(path);
+    if (!id) {
+      id = `tex_${extIds.size + 1}`;
+      extIds.set(path, id);
+      extLines.push(`[ext_resource type="Texture2D" path="${path}" id="${id}"]`);
+    }
     return id;
   }
 
-  for (const w of widgets) {
-    const spec = specFor(w.type);
-    if (!spec.themeType) continue;
-
-    for (const [state, path] of Object.entries(w.texturePaths)) {
-      if (!path) continue;
-      const extId = addExt(path);
+  for (const input of inputs) {
+    for (const item of input.items) {
+      if (item.kind === 'icon') {
+        resourceLines.push(`${input.themeType}/icons/${item.name} = ExtResource("${ext(item.texturePath)}")`);
+        continue;
+      }
       subCounter++;
       const subId = `style_${subCounter}`;
       subLines.push(
-        `[sub_resource type="StyleBoxTexture" id="${subId}"]\n` +
-          `texture = ExtResource("${extId}")\n` +
-          styleBoxMarginLines(w.patch, w.contentMargins),
+        item.texturePath === null
+          ? `[sub_resource type="StyleBoxEmpty" id="${subId}"]`
+          : `[sub_resource type="StyleBoxTexture" id="${subId}"]\n` +
+              `texture = ExtResource("${ext(item.texturePath)}")\n` +
+              styleBoxMarginLines(item.patch, item.contentMargins),
       );
-      resourceLines.push(`${spec.themeType}/styles/${state} = SubResource("${subId}")`);
-    }
-
-    for (const [iconId, path] of Object.entries(w.iconPaths ?? {})) {
-      const extId = addExt(path);
-      const iconSpec = spec.icons?.find((i) => i.id === iconId);
-      const key = iconSpec?.themeKey ?? `${spec.themeType}/icons/${iconId}`;
-      resourceLines.push(`${key} = ExtResource("${extId}")`);
+      resourceLines.push(`${input.themeType}/styles/${item.name} = SubResource("${subId}")`);
     }
   }
 

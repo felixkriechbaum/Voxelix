@@ -7,21 +7,29 @@ import {
   setContentMarginField,
   setPatchField,
 } from '@/core/pixel/ninepatch';
+import { elementSpec } from '@/core/pixel/widgets';
 import type { ContentMargins } from '@/core/pixel/types';
 
 const store = usePixelStore();
 // The project graph is markRaw'd (no deep reactivity), so binding straight to
-// `store.activeWidget().patch` would never re-render after store.setPatch
+// `store.activeElement().patch` would never re-render after store.setPatch
 // mutates it in place — same object reference in, same object reference out.
 // Depend on structureVersion explicitly and hand the template a fresh copy.
+// Icons have no nine-patch in Godot (drawn at their own size), so the panel
+// hides for them; textures (TextureProgressBar) get stretch margins but no
+// content margins.
 const widget = computed(() => {
   void store.structureVersion;
-  const w = store.activeWidget();
-  return w
+  void store.activeVersion;
+  const owner = store.activeWidget();
+  const w = store.activeElement();
+  const kind = owner ? elementSpec(owner.type, store.activeElementId)?.kind ?? 'texture' : 'texture';
+  return w && kind !== 'icon'
     ? {
         id: w.id,
         width: w.width,
         height: w.height,
+        kind,
         patch: { ...w.patch },
         contentMargins: { ...w.contentMargins },
       }
@@ -55,7 +63,7 @@ function setContent(field: keyof ContentMargins, e: Event) {
       <label>Right<input type="number" min="0" :value="widget.patch.right" @change="set('right', $event)" /></label>
       <label>Bottom<input type="number" min="0" :value="widget.patch.bottom" @change="set('bottom', $event)" /></label>
     </div>
-    <div class="content-section">
+    <div v-if="widget.kind === 'style'" class="content-section">
       <h3>Content margins</h3>
       <p class="hint">
         Godot content padding in pixels. -1 automatically uses the corresponding nine-patch margin.

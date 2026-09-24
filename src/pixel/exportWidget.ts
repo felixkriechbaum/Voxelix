@@ -1,10 +1,10 @@
 import { encodePng } from './encodePng';
-import { styleBoxTres, themeTres, type ThemeWidgetInput } from '@/core/pixel/export/tres';
+import { styleBoxTres, themeTres, type ThemeItem, type ThemeTypeInput } from '@/core/pixel/export/tres';
 import { serializePixelProject } from '@/core/pixel/pixelProjectFile';
 import { specFor } from '@/core/pixel/widgets';
 import type { PixelWidget } from '@/core/pixel/PixelWidget';
 import type { PixelProject } from '@/core/pixel/PixelProject';
-import { PIXEL_FILE_EXT, type StateId } from '@/core/pixel/types';
+import { PIXEL_FILE_EXT } from '@/core/pixel/types';
 
 export interface ExportFile {
   name: string;
@@ -37,41 +37,65 @@ export function normalizeResPrefix(input: string): string {
 
 export interface WidgetExportResult {
   files: ExportFile[];
-  texturePaths: Partial<Record<StateId, string>>;
-  iconPaths: Record<string, string>;
+  /** null for widgets without a Godot theme type (freeform, TextureProgressBar) */
+  theme: ThemeTypeInput | null;
 }
 
 /**
- * PNG + a standalone StyleBoxTexture `.tres` per painted state, plus a PNG per
- * icon (no StyleBox wrapper for icons — Godot icons are plain textures). The
- * standalone styleboxes are useful on their own (drag one onto a single theme
- * override); `texturePaths`/`iconPaths` are handed back so the caller can also
- * fold this widget into a combined Theme resource.
+ * A PNG per *painted* state, plus a standalone StyleBoxTexture `.tres` for
+ * each painted style state (drag one onto a single theme override). Also
+ * hands back this widget's Theme items so the caller can fold it into a
+ * combined Theme:
+ * - an unpainted state reuses the image its spec `from` chain resolves to
+ *   (hover -> normal), so Godot never drops back to its own grey default;
+ * - an unpainted style with nothing to fall back on (a focus ring you left
+ *   blank) becomes a StyleBoxEmpty — blank on purpose, not "use the default";
+ * - an unpainted icon is left out, so Godot's own icon (often empty) stays.
  */
 export async function exportWidgetFiles(widget: PixelWidget, resPrefix = 'res://'): Promise<WidgetExportResult> {
   const base = sanitizeFilename(widget.name);
+  const spec = specFor(widget.type);
   const files: ExportFile[] = [];
-  const texturePaths: Partial<Record<StateId, string>> = {};
-  const iconPaths: Record<string, string> = {};
+  /** `${elementId}:${stateId}` -> res:// path of its PNG */
+  const texturePaths = new Map<string, string>();
+  const usedNames = new Set<string>();
 
-  for (const [state, data] of widget.states) {
-    const pngName = `${base}_${state}.png`;
-    files.push({ name: pngName, blob: await encodePng(data) });
-    const resPath = `${resPrefix}${pngName}`;
-    texturePaths[state] = resPath;
-    files.push({
-      name: `${base}_${state}.tres`,
-      blob: new Blob([styleBoxTres(resPath, widget.patch, widget.contentMargins)], { type: 'text/plain' }),
-    });
+  for (const [elementId, el] of widget.elements) {
+    const kind = spec.elements.find((e) => e.id === elementId)?.kind ?? 'texture';
+    for (const [state, data] of el.states) {
+      if (data.bounds() === null) continue;
+      let stem = `${base}_${sanitizeFilename(state, 'state')}`;
+      if (usedNames.has(stem)) stem = `${base}_${sanitizeFilename(elementId, 'part')}_${sanitizeFilename(state, 'state')}`;
+      usedNames.add(stem);
+      files.push({ name: `${stem}.png`, blob: await encodePng(data) });
+      const resPath = `${resPrefix}${stem}.png`;
+      texturePaths.set(`${elementId}:${state}`, resPath);
+      if (kind === 'style') {
+        files.push({
+          name: `${stem}.tres`,
+          blob: new Blob([styleBoxTres(resPath, el.patch, el.contentMargins)], { type: 'text/plain' }),
+        });
+      }
+    }
   }
 
-  for (const [iconId, data] of widget.icons) {
-    const pngName = `${base}_icon_${iconId}.png`;
-    files.push({ name: pngName, blob: await encodePng(data) });
-    iconPaths[iconId] = `${resPrefix}${pngName}`;
-  }
+  if (!spec.themeType) return { files, theme: null };
 
-  return { files, texturePaths, iconPaths };
+  const items: ThemeItem[] = [];
+  for (const es of spec.elements) {
+    const el = widget.element(es.id);
+    if (!el || es.kind === 'texture') continue;
+    for (const ss of es.states) {
+      const resolved = widget.resolveState(es.id, ss.id);
+      const path = resolved ? (texturePaths.get(`${es.id}:${resolved.id}`) ?? null) : null;
+      if (es.kind === 'icon') {
+        if (path) items.push({ kind: 'icon', name: ss.id, texturePath: path });
+      } else {
+        items.push({ kind: 'style', name: ss.id, texturePath: path, patch: el.patch, contentMargins: el.contentMargins });
+      }
+    }
+  }
+  return { files, theme: { themeType: spec.themeType, items } };
 }
 
 export interface BatchProgress {
@@ -84,8 +108,9 @@ export interface BatchProgress {
 /**
  * The editable `.voxui` project, every widget's PNGs + per-state styleboxes,
  * and one combined `theme.tres` covering every widget that has a Godot theme
- * type (freeform PNGs still export, just aren't wired into the theme — there's
- * nothing to wire them to).
+ * type (freeform / TextureProgressBar PNGs still export, just aren't wired
+ * into the theme — there's nothing to wire them to). Two widgets of the same
+ * theme type both write their items; the later one in the list wins.
  */
 export async function exportProjectFiles(
   project: PixelProject,
@@ -95,23 +120,15 @@ export async function exportProjectFiles(
   // Keep the editable source first so it is the least likely file to be lost
   // if a browser limits the fallback path's sequence of separate downloads.
   const files: ExportFile[] = [exportPixelProjectFile(project)];
-  const themeInputs: ThemeWidgetInput[] = [];
+  const themeInputs: ThemeTypeInput[] = [];
   const total = project.widgets.length;
   let done = 0;
 
   for (const w of project.widgets) {
     onProgress?.({ done, total, name: w.name });
-    const { files: widgetFiles, texturePaths, iconPaths } = await exportWidgetFiles(w, resPrefix);
+    const { files: widgetFiles, theme } = await exportWidgetFiles(w, resPrefix);
     files.push(...widgetFiles);
-    if (specFor(w.type).themeType) {
-      themeInputs.push({
-        type: w.type,
-        texturePaths,
-        patch: w.patch,
-        contentMargins: w.contentMargins,
-        iconPaths,
-      });
-    }
+    if (theme) themeInputs.push(theme);
     done++;
   }
   onProgress?.({ done, total, name: '' });

@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, reactive, watch, type ComponentPublicInstance } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, watch, type ComponentPublicInstance } from 'vue';
 import { usePixelStore } from '@/stores/pixel';
-import { blitPixelData } from '@/pixel/blit';
-import { paintNinePatch } from '@/pixel/NinePatchPainter';
-import { minDrawSize, resolveContentMargins } from '@/core/pixel/ninepatch';
-import type { StateId } from '@/core/pixel/types';
-import type { PixelWidget } from '@/core/pixel/PixelWidget';
+import { specFor } from '@/core/pixel/widgets';
+import {
+  beginPreviewPass,
+  disabledSlotLabel,
+  listRowRects,
+  paintWidgetPreview,
+  scrollValueAt,
+  sliderValueAt,
+  tabRects,
+  type PreviewInput,
+} from '@/pixel/widgetPreview';
 import {
   previewExpanded,
   previewVariants,
@@ -22,6 +28,7 @@ import {
   addPreviewVariant,
   removePreviewVariant,
   setPreviewWidth,
+  type PreviewVariant,
 } from '@/editor/pixel/previewPrefs';
 import Icon from '@/components/Icon.vue';
 import { faChevronRight, faChevronLeft, faPlus, faXmark } from '@fortawesome/pro-solid-svg-icons';
@@ -52,220 +59,225 @@ function onHandleUp() {
 }
 onBeforeUnmount(onHandleUp);
 
-let srcCanvas: HTMLCanvasElement | null = null;
-/** keyed by `${variantId}:live` (the interactive one) or `${variantId}:disabled` */
-const canvases = new Map<string, HTMLCanvasElement>();
-
-function setSrcCanvas(el: Element | ComponentPublicInstance | null) {
-  srcCanvas = el instanceof HTMLCanvasElement ? el : null;
+/**
+ * Each variant shows a live, interactive copy ('live'), for a CheckBox with
+ * painted radio icons a second interactive one ('radio'), and optionally a
+ * static disabled / read-only copy.
+ */
+type SlotId = 'live' | 'radio' | 'disabled';
+interface Slot {
+  id: SlotId;
+  interactive: boolean;
 }
+
+/** keyed by `${variantId}:${slot}` */
+const canvases = new Map<string, HTMLCanvasElement>();
 function setVariantCanvas(key: string, el: Element | ComponentPublicInstance | null) {
   if (el instanceof HTMLCanvasElement) canvases.set(key, el);
   else canvases.delete(key);
 }
 
-interface Interaction {
-  hover: boolean;
-  pressed: boolean;
-  focused: boolean;
+type Interaction = Omit<PreviewInput, 'disabled' | 'radio'>;
+function freshInteraction(): Interaction {
+  return { hover: false, pressed: false, focused: false, checked: false, value: 0.6, selected: 0, pointer: null };
 }
-/** per-variant pointer/focus state — reactive so the live state-name label
- *  updates in the template; the canvas pixels are repainted imperatively via
- *  redraw() regardless, since that path never goes through Vue's renderer. */
-const interactions = reactive(new Map<string, Interaction>());
-
-/** Read-only — safe to call from the template. Never seen yet -> this plain
- *  (non-reactive, never mutated) default, so a brand-new variant just reads
- *  as 'not interacted with' instead of the template writing to reactive
- *  state mid-render. */
-const DEFAULT_INTERACTION: Interaction = { hover: false, pressed: false, focused: false };
-function getInteraction(variantId: string): Interaction {
-  return interactions.get(variantId) ?? DEFAULT_INTERACTION;
-}
-
-/** Creates the entry on first use — only called from event handlers / redraw(), never from the template. */
-function ensureInteraction(variantId: string): Interaction {
-  let i = interactions.get(variantId);
+/** per-slot pointer/focus/value state. Not reactive: the canvases are
+ *  repainted imperatively and the labels/warnings they produce land in
+ *  `results` below, which is. */
+const interactions = new Map<string, Interaction>();
+function interaction(key: string): Interaction {
+  let i = interactions.get(key);
   if (!i) {
-    i = { hover: false, pressed: false, focused: false };
-    interactions.set(variantId, i);
+    i = freshInteraction();
+    interactions.set(key, i);
   }
   return i;
 }
 
-/**
- * Which state a real button would be showing right now, given how the mouse/
- * keyboard is interacting with this one preview box — pressed beats hover
- * beats focus beats normal, same priority a real widget resolves them in.
- * Falls back through to 'normal' for any state the widget doesn't have.
- */
-function resolveState(w: PixelWidget, interaction: Interaction): StateId {
-  const has = (s: StateId) => w.states.has(s);
-  if (interaction.pressed && has('pressed')) return 'pressed';
-  if (interaction.hover && has('hover')) return 'hover';
-  if (interaction.focused && has('focus')) return 'focus';
-  return 'normal';
+/** what each slot's last paint showed — its state label, and (live slot) warnings */
+const results = reactive(new Map<string, { label: string; warnings: string[] }>());
+
+const activeType = computed(() => {
+  void store.activeVersion;
+  void store.structureVersion;
+  return store.activeWidget()?.type ?? null;
+});
+
+const slots = computed<Slot[]>(() => {
+  void store.editVersion;
+  const w = activeType.value ? store.activeWidget() : null;
+  if (!w) return [];
+  const list: Slot[] = [{ id: 'live', interactive: true }];
+  if (w.type === 'checkbox' && w.element('radio')?.states.get('radio_unchecked')?.bounds() != null) {
+    list.push({ id: 'radio', interactive: true });
+  }
+  if (previewShowDisabled.value && disabledSlotLabel(w)) list.push({ id: 'disabled', interactive: false });
+  return list;
+});
+
+const disabledLabel = computed(() => {
+  void store.editVersion;
+  const w = activeType.value ? store.activeWidget() : null;
+  return w ? disabledSlotLabel(w) : null;
+});
+
+/** One-line how-to for the live box, per preview layout. */
+const interactionHint = computed(() => {
+  if (!activeType.value) return '';
+  switch (specFor(activeType.value).preview) {
+    case 'toggle':
+      return 'Click to toggle, hover / tab for the other states';
+    case 'hslider':
+    case 'vslider':
+    case 'hscroll':
+    case 'vscroll':
+    case 'progress':
+    case 'textureprogress':
+      return 'Drag to change the value';
+    case 'tabs':
+    case 'list':
+      return 'Hover and click entries; tab in for focus';
+    default:
+      return 'Hover, press or tab to this box to preview that state';
+  }
+});
+
+function pointerIn(e: PointerEvent | MouseEvent, key: string, v: PreviewVariant) {
+  const canvas = canvases.get(key);
+  if (!canvas) return null;
+  const r = canvas.getBoundingClientRect();
+  const zoom = Math.max(1, Math.round(v.zoom));
+  return { x: (e.clientX - r.left) / zoom, y: (e.clientY - r.top) / zoom };
 }
 
-function onEnter(id: string) {
-  ensureInteraction(id).hover = true;
+/** Range widgets: the pointer position sets the value (a drag, like the real control). */
+function applyValue(key: string, v: PreviewVariant) {
+  const w = store.activeWidget();
+  const i = interaction(key);
+  if (!w || !i.pointer) return;
+  const size = { w: Math.round(v.w), h: Math.round(v.h) };
+  switch (specFor(w.type).preview) {
+    case 'hslider':
+    case 'vslider':
+      i.value = sliderValueAt(w, size, i.pointer);
+      break;
+    case 'hscroll':
+    case 'vscroll':
+      i.value = scrollValueAt(w, size, i.pointer);
+      break;
+    case 'progress':
+    case 'textureprogress':
+      i.value = Math.min(1, Math.max(0, i.pointer.x / Math.max(1, size.w)));
+      break;
+  }
+}
+
+function onPointerMove(e: PointerEvent, key: string, v: PreviewVariant) {
+  const i = interaction(key);
+  i.hover = true;
+  i.pointer = pointerIn(e, key, v);
+  if (i.pressed) applyValue(key, v);
   nextTick(redraw);
 }
-function onLeave(id: string) {
-  const i = ensureInteraction(id);
+function onPointerLeave(key: string) {
+  const i = interaction(key);
   i.hover = false;
+  i.pointer = null;
+  nextTick(redraw);
+}
+function onPointerDown(e: PointerEvent, key: string, v: PreviewVariant) {
+  const i = interaction(key);
+  i.pressed = true;
+  i.pointer = pointerIn(e, key, v);
+  (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  applyValue(key, v);
+  nextTick(redraw);
+}
+function onPointerUp(e: PointerEvent, key: string, v: PreviewVariant) {
+  const i = interaction(key);
+  const w = store.activeWidget();
+  if (i.pressed && w) {
+    const p = pointerIn(e, key, v);
+    const layout = specFor(w.type).preview;
+    if (layout === 'toggle') i.checked = !i.checked;
+    else if (layout === 'tabs' && p) {
+      const names = [previewText.value || 'Tab 1', 'Tab 2', 'Tab 3'];
+      const hit = tabRects(w, previewTextSize.value, names).findIndex((r) => p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h);
+      if (hit >= 0) i.selected = hit;
+    } else if (layout === 'list' && p) {
+      const rows = listRowRects(w, { w: v.w, h: v.h }, previewTextSize.value, previewText.value);
+      const hit = rows.findIndex((r) => p.y >= r.y && p.y < r.y + r.h);
+      if (hit >= 0) i.selected = hit;
+    }
+  }
   i.pressed = false;
   nextTick(redraw);
 }
-function onDown(id: string) {
-  ensureInteraction(id).pressed = true;
+function onFocus(key: string) {
+  interaction(key).focused = true;
   nextTick(redraw);
 }
-function onUp(id: string) {
-  ensureInteraction(id).pressed = false;
+function onBlur(key: string) {
+  const i = interaction(key);
+  i.focused = false;
+  i.pressed = false;
   nextTick(redraw);
-}
-function onFocus(id: string) {
-  ensureInteraction(id).focused = true;
-  nextTick(redraw);
-}
-function onBlur(id: string) {
-  ensureInteraction(id).focused = false;
-  nextTick(redraw);
-}
-/** catches a mouseup that happens after the pointer left the canvas (button
- *  released outside it) — otherwise that variant would show 'pressed' forever. */
-function onWindowUp() {
-  let changed = false;
-  for (const i of interactions.values()) {
-    if (i.pressed) {
-      i.pressed = false;
-      changed = true;
-    }
-  }
-  if (changed) nextTick(redraw);
 }
 
-function paintOne(w: PixelWidget, srcSize: { w: number; h: number }, canvas: HTMLCanvasElement | undefined, stateId: StateId, v: { w: number; h: number; zoom: number }) {
-  if (!canvas || !srcCanvas) return;
-  const sctx = srcCanvas.getContext('2d');
-  if (!sctx) return;
-  const data = w.states.get(stateId) ?? w.states.get('normal');
-  if (!data) return;
-  if (srcCanvas.width !== data.width || srcCanvas.height !== data.height) {
-    srcCanvas.width = data.width;
-    srcCanvas.height = data.height;
-  }
-  blitPixelData(sctx, data);
-
+function paintSlot(v: PreviewVariant, slot: SlotId) {
+  const w = store.activeWidget();
+  const key = `${v.id}:${slot}`;
+  const canvas = canvases.get(key);
+  if (!w || !canvas) return;
   const zoom = Math.max(1, Math.round(v.zoom));
-  const pxW = Math.max(1, Math.round(v.w)) * zoom;
-  const pxH = Math.max(1, Math.round(v.h)) * zoom;
-  if (canvas.width !== pxW || canvas.height !== pxH) {
-    canvas.width = pxW;
-    canvas.height = pxH;
+  const bw = Math.max(1, Math.round(v.w));
+  const bh = Math.max(1, Math.round(v.h));
+  if (canvas.width !== bw * zoom || canvas.height !== bh * zoom) {
+    canvas.width = bw * zoom;
+    canvas.height = bh * zoom;
   }
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  ctx.clearRect(0, 0, pxW, pxH);
-  paintNinePatch(ctx, srcCanvas, srcSize, w.patch, { x: 0, y: 0, w: v.w, h: v.h }, zoom);
-  paintContent(ctx, w, v, zoom);
-}
-
-const CONTENT_OUTLINE = 'rgba(0, 190, 255, 0.9)';
-const CONTENT_OUTLINE_OVERFLOW = 'rgba(255, 70, 70, 0.95)';
-
-function textFont(sizePx: number): string {
-  return `${sizePx}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
-}
-
-let measureCtx: CanvasRenderingContext2D | null = null;
-/** Sample text width in widget pixels (unzoomed), for the fit check. */
-function measureText(text: string, size: number): number {
-  measureCtx ??= document.createElement('canvas').getContext('2d');
-  if (!measureCtx || !text) return 0;
-  measureCtx.font = textFont(size);
-  return measureCtx.measureText(text).width;
-}
-
-/** Content rect (widget pixels) a Godot control lays its label out in: the
- *  box minus the resolved content margins. May be zero/negative-sized. */
-function contentRect(w: PixelWidget, v: { w: number; h: number }) {
-  const m = resolveContentMargins(w.patch, w.contentMargins);
-  return { x: m.left, y: m.top, w: v.w - m.left - m.right, h: v.h - m.top - m.bottom, margins: m };
-}
-
-/**
- * Smallest box that holds the sample text inside the content margins — what
- * Godot's Button would grow its minimum size to. null when the text fits.
- */
-function textOverflow(v: { w: number; h: number }): { w: number; h: number } | null {
-  void store.structureVersion; // see warnFor — patch/margins aren't reactive
-  const w = store.activeWidget();
-  const text = previewText.value;
-  if (!w || !text) return null;
-  const { margins: m } = contentRect(w, v);
-  const needW = Math.ceil(measureText(text, previewTextSize.value)) + m.left + m.right;
-  const needH = previewTextSize.value + m.top + m.bottom;
-  return v.w < needW || v.h < needH ? { w: needW, h: needH } : null;
-}
-
-function paintContent(ctx: CanvasRenderingContext2D, w: PixelWidget, v: { w: number; h: number }, zoom: number) {
-  const r = contentRect(w, v);
-  const text = previewText.value;
-  const overflow = textOverflow(v) !== null;
-
-  if (text) {
-    // centred on the content rect, like Button's default alignment; drawn
-    // unclipped so an overflow is visible rather than silently cut off
-    ctx.save();
-    ctx.font = textFont(previewTextSize.value * zoom);
-    ctx.fillStyle = previewTextColor.value;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, (r.x + r.w / 2) * zoom, (r.y + r.h / 2) * zoom);
-    ctx.restore();
-  }
-
-  if (previewShowContent.value && r.w > 0 && r.h > 0) {
-    ctx.save();
-    ctx.strokeStyle = overflow ? CONTENT_OUTLINE_OVERFLOW : CONTENT_OUTLINE;
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 2]);
-    // +0.5 puts the 1px line on pixel centres (crisp), inset so it sits inside the rect
-    ctx.strokeRect(r.x * zoom + 0.5, r.y * zoom + 0.5, r.w * zoom - 1, r.h * zoom - 1);
-    ctx.restore();
-  }
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // the disabled copy mirrors the live one's checked/value so the two compare like-for-like
+  const source = slot === 'disabled' ? interaction(`${v.id}:live`) : interaction(key);
+  const input: PreviewInput = {
+    ...source,
+    hover: slot === 'disabled' ? false : source.hover,
+    pressed: slot === 'disabled' ? false : source.pressed,
+    focused: slot === 'disabled' ? false : source.focused,
+    pointer: slot === 'disabled' ? null : source.pointer,
+    disabled: slot === 'disabled',
+    radio: slot === 'radio',
+  };
+  const res = paintWidgetPreview(ctx, w, { w: bw, h: bh }, zoom, input, {
+    text: previewText.value,
+    size: previewTextSize.value,
+    color: previewTextColor.value,
+    showContent: previewShowContent.value,
+  });
+  const prev = results.get(key);
+  if (!prev || prev.label !== res.label || prev.warnings.join('\n') !== res.warnings.join('\n')) results.set(key, res);
 }
 
 function redraw() {
-  const w = store.activeWidget();
-  if (!w || !srcCanvas) return;
-  const srcSize = { w: w.width, h: w.height };
-
-  for (const v of previewVariants.value) {
-    paintOne(w, srcSize, canvases.get(`${v.id}:live`), resolveState(w, getInteraction(v.id)), v);
-    if (previewShowDisabled.value && w.states.has('disabled')) {
-      paintOne(w, srcSize, canvases.get(`${v.id}:disabled`), 'disabled', v);
-    }
-  }
+  if (!store.activeWidget()) return;
+  beginPreviewPass();
+  for (const v of previewVariants.value) for (const s of slots.value) paintSlot(v, s.id);
 }
 
-function warnFor(v: { w: number; h: number }) {
-  // called from the template, so this read makes the render effect depend on
-  // structureVersion — needed because widget.patch below is a plain mutable
-  // field on the markRaw'd project graph, not reactive on its own (same
-  // gotcha as NinePatchPanel.vue's `widget` computed)
-  void store.structureVersion;
-  const widget = store.activeWidget();
-  if (!widget) return false;
-  const min = minDrawSize(widget.patch);
-  return v.w < min.w || v.h < min.h;
+function slotLabel(v: PreviewVariant, slot: Slot): string {
+  if (slot.id === 'disabled') return disabledLabel.value ?? 'disabled';
+  return results.get(`${v.id}:${slot.id}`)?.label ?? '';
+}
+
+function warningsFor(v: PreviewVariant): string[] {
+  return results.get(`${v.id}:live`)?.warnings ?? [];
 }
 
 function addVariant() {
-  const w = store.activeWidget();
-  addPreviewVariant(w ? { w: w.width, h: w.height } : undefined);
+  const el = store.activeWidget()?.elements.values().next().value;
+  addPreviewVariant(el ? { w: el.width, h: el.height } : undefined);
 }
 
 watch(
@@ -274,7 +286,7 @@ watch(
     store.activeVersion,
     store.editVersion,
     previewVariants.value,
-    previewShowDisabled.value,
+    slots.value,
     previewText.value,
     previewTextSize.value,
     previewTextColor.value,
@@ -283,11 +295,9 @@ watch(
   () => nextTick(redraw),
   { deep: true },
 );
-onMounted(() => {
-  nextTick(redraw);
-  window.addEventListener('mouseup', onWindowUp);
-});
-onBeforeUnmount(() => window.removeEventListener('mouseup', onWindowUp));
+// a different widget starts from a clean slate (unchecked, default value)
+watch(activeType, () => interactions.clear());
+onMounted(() => nextTick(redraw));
 </script>
 
 <template>
@@ -305,7 +315,7 @@ onBeforeUnmount(() => window.removeEventListener('mouseup', onWindowUp));
       <div class="row head-row">
         <h3>Preview</h3>
         <span class="spacer" />
-        <label class="show-disabled" title="Include the 'disabled' state in every variant">
+        <label class="show-disabled" title="Also show a disabled / read-only copy of every variant">
           <input v-model="previewShowDisabled" type="checkbox" /> disabled
         </label>
       </div>
@@ -331,7 +341,6 @@ onBeforeUnmount(() => window.removeEventListener('mouseup', onWindowUp));
       <label class="show-content" title="Outline the content area (box minus content margins)">
         <input v-model="previewShowContent" type="checkbox" /> show content area
       </label>
-      <canvas :ref="setSrcCanvas" class="hidden-src" />
 
       <template v-if="store.activeWidget()">
         <div v-for="v in previewVariants" :key="v.id" class="variant">
@@ -346,37 +355,26 @@ onBeforeUnmount(() => window.removeEventListener('mouseup', onWindowUp));
             <label>H<input v-model.number="v.h" type="number" min="1" /></label>
             <label>Zoom<input v-model.number="v.zoom" type="number" min="1" max="16" /></label>
           </div>
-          <span v-if="warnFor(v)" class="warn" title="Smaller than the patch's fixed borders — Godot will scale the whole patch down instead of respecting it">
-            ⚠ smaller than the patch borders
-          </span>
-          <span
-            v-if="textOverflow(v)"
-            class="warn"
-            title="Godot's Button would grow its minimum size to fit the text plus content margins"
-          >
-            ⚠ text needs {{ textOverflow(v)!.w }}×{{ textOverflow(v)!.h }}
-          </span>
+          <span v-for="(msg, i) in warningsFor(v)" :key="i" class="warn">⚠ {{ msg }}</span>
           <div class="states-wrap">
-            <div class="state-slot">
-              <span class="state-label">{{ resolveState(store.activeWidget()!, getInteraction(v.id)) }}</span>
+            <div v-for="s in slots" :key="s.id" class="state-slot">
+              <span class="state-label">{{ slotLabel(v, s) }}</span>
               <div
+                v-if="s.interactive"
                 class="frame live"
                 tabindex="0"
-                title="Hover, press or tab to this box to preview that state"
-                @mouseenter="onEnter(v.id)"
-                @mouseleave="onLeave(v.id)"
-                @mousedown="onDown(v.id)"
-                @mouseup="onUp(v.id)"
-                @focus="onFocus(v.id)"
-                @blur="onBlur(v.id)"
+                :title="interactionHint"
+                @pointermove="onPointerMove($event, `${v.id}:${s.id}`, v)"
+                @pointerleave="onPointerLeave(`${v.id}:${s.id}`)"
+                @pointerdown="onPointerDown($event, `${v.id}:${s.id}`, v)"
+                @pointerup="onPointerUp($event, `${v.id}:${s.id}`, v)"
+                @focus="onFocus(`${v.id}:${s.id}`)"
+                @blur="onBlur(`${v.id}:${s.id}`)"
               >
-                <canvas :ref="(el) => setVariantCanvas(`${v.id}:live`, el)" />
+                <canvas :ref="(el) => setVariantCanvas(`${v.id}:${s.id}`, el)" />
               </div>
-            </div>
-            <div v-if="previewShowDisabled && store.activeWidget()!.states.has('disabled')" class="state-slot">
-              <span class="state-label">disabled</span>
-              <div class="frame">
-                <canvas :ref="(el) => setVariantCanvas(`${v.id}:disabled`, el)" />
+              <div v-else class="frame">
+                <canvas :ref="(el) => setVariantCanvas(`${v.id}:${s.id}`, el)" />
               </div>
             </div>
           </div>
@@ -435,9 +433,6 @@ onBeforeUnmount(() => window.removeEventListener('mouseup', onWindowUp));
   min-width: 0;
   overflow: auto;
   padding: 10px 10px 10px 0;
-}
-.hidden-src {
-  display: none;
 }
 .head-row {
   margin-bottom: 8px;
