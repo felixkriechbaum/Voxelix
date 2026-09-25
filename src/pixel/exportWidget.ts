@@ -97,7 +97,10 @@ export async function exportWidgetFiles(widget: PixelWidget, resPrefix = 'res://
       }
     }
   }
-  return { files, theme: { themeType: spec.themeType, items } };
+  const colors = (spec.colors ?? [])
+    .filter((c) => widget.colors.has(c.id))
+    .map((c) => ({ name: c.id, rgba: widget.colors.get(c.id)!, themeType: c.themeType }));
+  return { files, theme: { themeType: spec.themeType, items, colors } };
 }
 
 export interface BatchProgress {

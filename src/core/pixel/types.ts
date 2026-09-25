@@ -111,6 +111,8 @@ export interface PixelWidgetJson {
   type: WidgetType;
   /** keyed by the spec's element id; absent in version-1 files */
   elements?: Record<string, PixelElementJson>;
+  /** theme colour items that were set, e.g. { font_hover_color: '#ffcc00ff' } */
+  colors?: Record<string, string>;
 
   // ---- version 1 (single canvas per widget) — read-only, migrated on load
   width?: number;

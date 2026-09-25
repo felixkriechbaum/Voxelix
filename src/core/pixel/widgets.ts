@@ -58,6 +58,24 @@ export type PreviewLayout =
   | 'vseparator'
   | 'image';
 
+/**
+ * A Godot theme colour item the widget exposes — mostly font colours per
+ * state. Exported as `<ThemeType>/colors/<id>`; only colours you actually set
+ * are written, the rest stay Godot's defaults.
+ */
+export interface ColorSpec {
+  /** Godot theme item name, e.g. 'font_hover_color' */
+  id: string;
+  label: string;
+  /** the state this colour belongs to — highlighted while that state is on the canvas */
+  state?: StateId;
+  /** what the preview shows while this one is unset (Godot falls back to its own default instead) */
+  from?: string;
+  /** written under another theme type (Tooltips' text lives on TooltipLabel, not TooltipPanel) */
+  themeType?: string;
+  hint?: string;
+}
+
 export type WidgetCategory = 'Buttons' | 'Text' | 'Range' | 'Containers' | 'Lists & tabs' | 'Other';
 
 export interface WidgetSpec {
@@ -69,6 +87,8 @@ export interface WidgetSpec {
   /** first element is the one a new widget opens on */
   elements: ElementSpec[];
   preview: PreviewLayout;
+  /** theme colour items (font colours per state, …) */
+  colors?: ColorSpec[];
   /** where a version-1 (single canvas) widget's images land when loaded */
   legacy?: { element: string; rename?: Record<string, StateId> };
 }
@@ -114,6 +134,29 @@ const TAB_STATES: StateSpec[] = [
   { id: 'tab_disabled', from: 'tab_unselected' },
   { id: 'tab_focus', overlay: true },
 ];
+// ---- colour sets (Godot 4 default theme names) ------------------------------
+
+const BUTTON_COLORS: ColorSpec[] = [
+  { id: 'font_color', label: 'Normal', state: 'normal' },
+  { id: 'font_hover_color', label: 'Hover', state: 'hover', from: 'font_color' },
+  { id: 'font_pressed_color', label: 'Pressed', state: 'pressed', from: 'font_color' },
+  { id: 'font_hover_pressed_color', label: 'Hover pressed', state: 'hover_pressed', from: 'font_pressed_color' },
+  { id: 'font_disabled_color', label: 'Disabled', state: 'disabled', from: 'font_color' },
+  { id: 'font_focus_color', label: 'Focus', state: 'focus', from: 'font_color', hint: 'Normal state while focused' },
+];
+const TAB_COLORS: ColorSpec[] = [
+  { id: 'font_unselected_color', label: 'Unselected', state: 'tab_unselected' },
+  { id: 'font_selected_color', label: 'Selected', state: 'tab_selected', from: 'font_unselected_color' },
+  { id: 'font_hovered_color', label: 'Hovered', state: 'tab_hovered', from: 'font_unselected_color' },
+  { id: 'font_disabled_color', label: 'Disabled', state: 'tab_disabled', from: 'font_unselected_color' },
+];
+const FIELD_EXTRA_COLORS: ColorSpec[] = [
+  { id: 'font_placeholder_color', label: 'Placeholder', from: 'font_color' },
+  { id: 'font_selected_color', label: 'Selected text', from: 'font_color' },
+  { id: 'selection_color', label: 'Selection', hint: 'Background behind selected text' },
+  { id: 'caret_color', label: 'Caret', from: 'font_color' },
+];
+
 const LIST_PANEL_STATES: StateSpec[] = [{ id: 'panel' }, { id: 'focus', overlay: true }];
 
 function single(id: string, label: string, kind: ElementKind, size: [number, number], hint?: string): ElementSpec {
@@ -202,6 +245,7 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Button',
     category: 'Buttons',
     themeType: 'Button',
+    colors: BUTTON_COLORS,
     elements: [{ id: 'box', label: 'Box', kind: 'style', defaultSize: [32, 16], states: TOGGLE_BUTTON_STATES }],
     preview: 'button',
     legacy: { element: 'box' },
@@ -211,6 +255,7 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Menu Button',
     category: 'Buttons',
     themeType: 'MenuButton',
+    colors: BUTTON_COLORS,
     elements: [{ id: 'box', label: 'Box', kind: 'style', defaultSize: [32, 16], states: BUTTON_STATES }],
     preview: 'button',
   },
@@ -219,6 +264,7 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Option Button',
     category: 'Buttons',
     themeType: 'OptionButton',
+    colors: BUTTON_COLORS,
     elements: [
       { id: 'box', label: 'Box', kind: 'style', defaultSize: [48, 16], states: BUTTON_STATES },
       single('arrow', 'Arrow', 'icon', [8, 8], 'Drawn at the right edge, vertically centred'),
@@ -231,6 +277,7 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Check Box / Radio',
     category: 'Buttons',
     themeType: 'CheckBox',
+    colors: BUTTON_COLORS,
     elements: [
       { id: 'check', label: 'Check', kind: 'icon', defaultSize: [12, 12], states: CHECK_ICONS },
       {
@@ -258,6 +305,7 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Check Button (switch)',
     category: 'Buttons',
     themeType: 'CheckButton',
+    colors: BUTTON_COLORS,
     elements: [
       { id: 'switch', label: 'Switch', kind: 'icon', defaultSize: [24, 12], states: CHECK_ICONS },
       {
@@ -278,6 +326,10 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Label',
     category: 'Text',
     themeType: 'Label',
+    colors: [
+      { id: 'font_color', label: 'Text', state: 'normal' },
+      { id: 'font_shadow_color', label: 'Shadow', hint: 'Drawn 1px down-right when not transparent' },
+    ],
     elements: [single('normal', 'Background', 'style', [32, 16])],
     preview: 'field',
   },
@@ -286,6 +338,11 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Rich Text Label',
     category: 'Text',
     themeType: 'RichTextLabel',
+    colors: [
+      { id: 'default_color', label: 'Text', state: 'normal' },
+      { id: 'font_selected_color', label: 'Selected text', from: 'default_color' },
+      { id: 'selection_color', label: 'Selection' },
+    ],
     elements: [
       {
         id: 'box',
@@ -302,6 +359,11 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Line Edit',
     category: 'Text',
     themeType: 'LineEdit',
+    colors: [
+      { id: 'font_color', label: 'Text', state: 'normal' },
+      { id: 'font_uneditable_color', label: 'Read only', state: 'read_only', from: 'font_color' },
+      ...FIELD_EXTRA_COLORS,
+    ],
     elements: [
       { id: 'box', label: 'Box', kind: 'style', defaultSize: [64, 16], states: FIELD_STATES },
       single('clear', 'Clear icon', 'icon', [8, 8], 'Shown at the right when clear_button_enabled'),
@@ -314,6 +376,11 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Text Edit',
     category: 'Text',
     themeType: 'TextEdit',
+    colors: [
+      { id: 'font_color', label: 'Text', state: 'normal' },
+      { id: 'font_readonly_color', label: 'Read only', state: 'read_only', from: 'font_color' },
+      ...FIELD_EXTRA_COLORS,
+    ],
     elements: [{ id: 'box', label: 'Box', kind: 'style', defaultSize: [64, 48], states: FIELD_STATES }],
     preview: 'field',
   },
@@ -334,6 +401,7 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Progress Bar',
     category: 'Range',
     themeType: 'ProgressBar',
+    colors: [{ id: 'font_color', label: 'Percentage' }],
     elements: [
       single('background', 'Background', 'style', [64, 12]),
       single(
@@ -431,6 +499,7 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Tooltip',
     category: 'Containers',
     themeType: 'TooltipPanel',
+    colors: [{ id: 'font_color', label: 'Text', themeType: 'TooltipLabel' }],
     elements: [PANEL([48, 16])],
     preview: 'panel',
   },
@@ -439,6 +508,7 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Window',
     category: 'Containers',
     themeType: 'Window',
+    colors: [{ id: 'title_color', label: 'Title' }],
     elements: [
       {
         id: 'border',
@@ -465,6 +535,7 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Tab Container',
     category: 'Lists & tabs',
     themeType: 'TabContainer',
+    colors: TAB_COLORS,
     elements: [
       { id: 'tab', label: 'Tab', kind: 'style', defaultSize: [32, 14], states: TAB_STATES },
       PANEL([64, 48]),
@@ -477,6 +548,7 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Tab Bar',
     category: 'Lists & tabs',
     themeType: 'TabBar',
+    colors: TAB_COLORS,
     elements: [
       { id: 'tab', label: 'Tab', kind: 'style', defaultSize: [32, 14], states: TAB_STATES },
       single('close', 'Close icon', 'icon', [8, 8], 'Shown on tabs when tab_close_display_policy allows it'),
@@ -488,6 +560,11 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Item List',
     category: 'Lists & tabs',
     themeType: 'ItemList',
+    colors: [
+      { id: 'font_color', label: 'Text' },
+      { id: 'font_hovered_color', label: 'Hovered', state: 'hovered', from: 'font_color' },
+      { id: 'font_selected_color', label: 'Selected', state: 'selected', from: 'font_color' },
+    ],
     elements: [
       { id: 'panel', label: 'Panel', kind: 'style', defaultSize: [64, 48], states: LIST_PANEL_STATES },
       {
@@ -511,6 +588,10 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Tree',
     category: 'Lists & tabs',
     themeType: 'Tree',
+    colors: [
+      { id: 'font_color', label: 'Text' },
+      { id: 'font_selected_color', label: 'Selected', state: 'selected', from: 'font_color' },
+    ],
     elements: [
       { id: 'panel', label: 'Panel', kind: 'style', defaultSize: [64, 48], states: LIST_PANEL_STATES },
       {
@@ -547,6 +628,13 @@ export const WIDGET_SPECS: Record<WidgetType, WidgetSpec> = {
     label: 'Popup Menu',
     category: 'Lists & tabs',
     themeType: 'PopupMenu',
+    colors: [
+      { id: 'font_color', label: 'Text' },
+      { id: 'font_hover_color', label: 'Hover', state: 'hover', from: 'font_color' },
+      { id: 'font_disabled_color', label: 'Disabled', from: 'font_color' },
+      { id: 'font_accelerator_color', label: 'Shortcut', from: 'font_color' },
+      { id: 'font_separator_color', label: 'Separator label', from: 'font_color' },
+    ],
     elements: [
       PANEL([48, 48]),
       single('hover', 'Hovered item', 'style', [32, 12]),

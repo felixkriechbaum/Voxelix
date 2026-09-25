@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import PixelToolbar from './PixelToolbar.vue';
 import WidgetList from './WidgetList.vue';
 import LayersPanel from './LayersPanel.vue';
+import FontColorsPanel from './FontColorsPanel.vue';
 import AdjustDialog, { type AdjustKind } from './AdjustDialog.vue';
 import ColorPanel from './ColorPanel.vue';
 import NinePatchPanel from './NinePatchPanel.vue';
@@ -208,6 +209,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
     <aside class="side" :class="{ collapsed: !sideExpanded }" :inert="!!store.exportStatus">
       <div v-if="sideExpanded" class="side-body">
         <WidgetList />
+        <FontColorsPanel />
         <LayersPanel />
         <ColorPanel />
         <NinePatchPanel />

@@ -37,15 +37,35 @@ export type ThemeItem =
     }
   | { kind: 'icon'; name: string; texturePath: string };
 
+export interface ThemeColor {
+  /** theme item name, e.g. 'font_hover_color' */
+  name: string;
+  /** packed RGBA8 (r in the low byte) */
+  rgba: number;
+  /** written under this type instead of the widget's own (TooltipLabel for a tooltip's text) */
+  themeType?: string;
+}
+
 export interface ThemeTypeInput {
   /** Godot theme type, e.g. 'HSlider' */
   themeType: string;
   items: ThemeItem[];
+  colors?: ThemeColor[];
+}
+
+/** Godot `Color(r, g, b, a)` literal from packed RGBA8 — sRGB floats, trimmed to 4 decimals. */
+export function godotColor(rgba: number): string {
+  const f = (shift: number) => {
+    const v = Math.round((((rgba >>> shift) & 0xff) / 255) * 10000) / 10000;
+    return String(v);
+  };
+  return `Color(${f(0)}, ${f(8)}, ${f(16)}, ${f(24)})`;
 }
 
 /**
  * One combined Godot Theme resource: a StyleBoxTexture subresource per style
- * item wired to `<ThemeType>/styles/<name>`, icons at `<ThemeType>/icons/<name>`.
+ * item wired to `<ThemeType>/styles/<name>`, icons at `<ThemeType>/icons/<name>`,
+ * colours (font colours per state, …) at `<ThemeType>/colors/<name>`.
  * Textures used by several items (a hover state falling back to normal's
  * image) are referenced once.
  */
@@ -67,6 +87,9 @@ export function themeTres(inputs: ThemeTypeInput[]): string {
   }
 
   for (const input of inputs) {
+    for (const c of input.colors ?? []) {
+      resourceLines.push(`${c.themeType ?? input.themeType}/colors/${c.name} = ${godotColor(c.rgba)}`);
+    }
     for (const item of input.items) {
       if (item.kind === 'icon') {
         resourceLines.push(`${input.themeType}/icons/${item.name} = ExtResource("${ext(item.texturePath)}")`);

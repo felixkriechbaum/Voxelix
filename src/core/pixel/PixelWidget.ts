@@ -1,4 +1,5 @@
 import { PixelData } from './PixelData';
+import { unpackRgba, packRgba } from './pack';
 import { LayerStack } from './layers';
 import { specFor, type ElementSpec } from './widgets';
 import { clampContentMargins, clampPatch } from './ninepatch';
@@ -121,6 +122,8 @@ export class PixelWidget {
   type: WidgetType;
   /** in spec order */
   elements: Map<string, PixelElement>;
+  /** theme colour items that were set (packed RGBA), keyed by Godot item name — unset ones keep Godot's default */
+  colors: Map<string, number> = new Map();
 
   constructor(opts: { id?: string; name: string; type: WidgetType; elements?: Map<string, PixelElement> }) {
     this.id = opts.id ?? crypto.randomUUID();
@@ -179,10 +182,30 @@ export class PixelWidget {
     return null;
   }
 
+  /**
+   * The colour the preview should use for a theme colour item: the item
+   * itself if set, else the first set colour along its spec `from` chain
+   * (hover -> normal), else null.
+   */
+  resolveColor(itemId: string): number | null {
+    const specs = specFor(this.type).colors ?? [];
+    const seen = new Set<string>();
+    let cur: string | undefined = itemId;
+    while (cur && !seen.has(cur)) {
+      seen.add(cur);
+      const v = this.colors.get(cur);
+      if (v !== undefined) return v;
+      cur = specs.find((c) => c.id === cur)?.from;
+    }
+    return null;
+  }
+
   toJSON(): PixelWidgetJson {
     const elements: Record<string, PixelElementJson> = {};
     for (const [id, el] of this.elements) elements[id] = el.toJSON();
-    return { id: this.id, name: this.name, type: this.type, elements };
+    const json: PixelWidgetJson = { id: this.id, name: this.name, type: this.type, elements };
+    if (this.colors.size) json.colors = Object.fromEntries([...this.colors].map(([k, v]) => [k, rgbaToHex8(v)]));
+    return json;
   }
 
   static fromJSON(json: PixelWidgetJson): PixelWidget {
@@ -193,8 +216,24 @@ export class PixelWidget {
       migrateV1(widget, json);
     }
     widget.ensureElements();
+    for (const [k, hex] of Object.entries(json.colors ?? {})) {
+      const v = hex8ToRgba(hex);
+      if (v !== null) widget.colors.set(k, v);
+    }
     return widget;
   }
+}
+
+/** '#rrggbbaa' — keeps alpha, unlike the swatch helpers in pack.ts. */
+export function rgbaToHex8(v: number): string {
+  return '#' + unpackRgba(v).map((n) => n.toString(16).padStart(2, '0')).join('');
+}
+
+export function hex8ToRgba(hex: string): number | null {
+  const h = hex.replace('#', '');
+  if (!/^[0-9a-f]{6}([0-9a-f]{2})?$/i.test(h)) return null;
+  const n = (i: number) => parseInt(h.slice(i, i + 2), 16);
+  return packRgba(n(0), n(2), n(4), h.length === 8 ? n(6) : 255);
 }
 
 /**

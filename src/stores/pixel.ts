@@ -185,6 +185,16 @@ export const usePixelStore = defineStore('pixel', () => {
     editVersion.value++;
   }
 
+  /** Sets (or, with null, clears) one of the active widget's theme colour items. */
+  function setWidgetColor(itemId: string, rgba: number | null) {
+    const w = activeWidget();
+    if (!w) return;
+    if (rgba === null) w.colors.delete(itemId);
+    else w.colors.set(itemId, rgba >>> 0);
+    structureVersion.value++;
+    editVersion.value++;
+  }
+
   function setContentMargins(contentMargins: ContentMargins) {
     const w = activeElement();
     if (!w) return;
@@ -282,6 +292,7 @@ export const usePixelStore = defineStore('pixel', () => {
     renameWidget,
     setPatch,
     setContentMargins,
+    setWidgetColor,
     resizeActiveElement,
     importPalette,
     setPrimary,

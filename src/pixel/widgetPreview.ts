@@ -5,6 +5,7 @@ import { specFor, stateLabel } from '@/core/pixel/widgets';
 import type { PixelData } from '@/core/pixel/PixelData';
 import type { PixelElement, PixelWidget } from '@/core/pixel/PixelWidget';
 import type { ContentMargins, StateId } from '@/core/pixel/types';
+import { unpackRgba } from '@/core/pixel/pack';
 
 /**
  * Draws a whole widget the way its Godot control lays out its theme items —
@@ -176,17 +177,37 @@ class Painter {
     return true;
   }
 
-  write(str: string, r: Rect, align: 'left' | 'center' | 'right' = 'center', valign: 'middle' | 'top' = 'middle') {
+  /** CSS colour for a theme colour item (resolved along its fallback chain), or the preview panel's text colour when it isn't set. */
+  textColor(item?: string | null): string {
+    const v = item ? this.widget.resolveColor(item) : null;
+    if (v === null) return this.text.color;
+    const [r, g, b, a] = unpackRgba(v);
+    return `rgba(${r}, ${g}, ${b}, ${a / 255})`;
+  }
+
+  /** `item` = the Godot font colour item this text uses in the drawn state (font_hover_color, …). */
+  write(
+    str: string,
+    r: Rect,
+    align: 'left' | 'center' | 'right' = 'center',
+    valign: 'middle' | 'top' = 'middle',
+    item: string | null = null,
+  ) {
     if (!str) return;
     const ctx = this.ctx;
     const z = this.zoom;
     ctx.save();
     ctx.font = textFont(this.text.size * z);
-    ctx.fillStyle = this.text.color;
     ctx.textAlign = align;
     ctx.textBaseline = valign;
     const x = align === 'left' ? r.x : align === 'right' ? r.x + r.w : r.x + r.w / 2;
     const y = valign === 'top' ? r.y : r.y + r.h / 2;
+    // Label's shadow: Godot's default shadow offset is (1, 1) and only shows once the colour isn't transparent
+    if (this.widget.type === 'label' && this.widget.colors.has('font_shadow_color')) {
+      ctx.fillStyle = this.textColor('font_shadow_color');
+      ctx.fillText(str, (x + 1) * z, (y + 1) * z);
+    }
+    ctx.fillStyle = this.textColor(item);
     ctx.fillText(str, x * z, y * z);
     ctx.restore();
   }
@@ -253,6 +274,22 @@ function buttonState(p: Painter, element: string, input: PreviewInput, toggled =
   return 'normal';
 }
 
+/** Which font colour Godot's Button uses for a draw state (focus only colours the normal state). */
+function buttonFontItem(state: StateId, focused: boolean): string {
+  switch (state) {
+    case 'disabled':
+      return 'font_disabled_color';
+    case 'hover_pressed':
+      return 'font_hover_pressed_color';
+    case 'pressed':
+      return 'font_pressed_color';
+    case 'hover':
+      return 'font_hover_color';
+    default:
+      return focused ? 'font_focus_color' : 'font_color';
+  }
+}
+
 function paintButton(p: Painter, box: Rect, input: PreviewInput) {
   const state = buttonState(p, 'box', input);
   p.label = state;
@@ -272,7 +309,7 @@ function paintButton(p: Painter, box: Rect, input: PreviewInput) {
     }
   }
   const overflow = p.checkText('box', box, arrowW);
-  p.write(p.text.text, content, isOption ? 'left' : 'center');
+  p.write(p.text.text, content, isOption ? 'left' : 'center', 'middle', buttonFontItem(state, input.focused && !input.disabled));
   p.outline(content, overflow);
 }
 
@@ -282,6 +319,7 @@ function paintToggle(p: Painter, box: Rect, input: PreviewInput) {
   p.style('box', bgState, box);
   if (input.focused && !input.disabled) p.style('box', 'focus', box);
 
+  const font = buttonFontItem(bgState, input.focused && !input.disabled);
   const iconEl = isSwitch ? 'switch' : input.radio ? 'radio' : 'check';
   const prefix = !isSwitch && input.radio ? 'radio_' : '';
   const iconState = `${prefix}${input.checked ? 'checked' : 'unchecked'}${input.disabled ? '_disabled' : ''}`;
@@ -294,15 +332,15 @@ function paintToggle(p: Painter, box: Rect, input: PreviewInput) {
   if (size.w) {
     if (isSwitch) {
       p.icon(iconEl, iconState, box.w - size.w - m.right, iy);
-      p.write(p.text.text, { ...content, w: content.w - size.w - ICON_SEPARATION }, 'left');
+      p.write(p.text.text, { ...content, w: content.w - size.w - ICON_SEPARATION }, 'left', 'middle', font);
     } else {
       p.icon(iconEl, iconState, m.left, iy);
       const tx = m.left + size.w + ICON_SEPARATION;
-      p.write(p.text.text, { x: tx, y: content.y, w: content.w - size.w - ICON_SEPARATION, h: content.h }, 'left');
+      p.write(p.text.text, { x: tx, y: content.y, w: content.w - size.w - ICON_SEPARATION, h: content.h }, 'left', 'middle', font);
     }
   } else {
     p.placeholder({ x: isSwitch ? box.w - 12 - m.right : m.left, y: Math.floor((box.h - 12) / 2), w: 12, h: 12 });
-    p.write(p.text.text, { ...content, x: content.x + (isSwitch ? 0 : 12 + ICON_SEPARATION) }, 'left');
+    p.write(p.text.text, { ...content, x: content.x + (isSwitch ? 0 : 12 + ICON_SEPARATION) }, 'left', 'middle', font);
   }
   const overflow = p.checkText('box', box, (size.w || 12) + ICON_SEPARATION);
   p.outline(content, overflow);
@@ -327,7 +365,16 @@ function paintField(p: Painter, box: Rect, input: PreviewInput) {
     }
   }
   const overflow = !multiline && p.checkText(element, box);
-  p.write(p.text.text, content, 'left', multiline ? 'top' : 'middle');
+  const type = p.widget.type;
+  const font =
+    type === 'richtextlabel'
+      ? 'default_color'
+      : state === 'read_only'
+        ? type === 'textedit'
+          ? 'font_readonly_color'
+          : 'font_uneditable_color'
+        : 'font_color';
+  p.write(p.text.text, content, 'left', multiline ? 'top' : 'middle', font);
   p.outline(content, overflow);
 }
 
@@ -344,7 +391,8 @@ function paintPanel(p: Painter, box: Rect) {
   p.warnPatch('panel', box);
   if (!p.style('panel', 'panel', box)) p.placeholder(box);
   const content = p.content('panel', box);
-  p.write(p.text.text, content, 'left', p.widget.type === 'tooltip' ? 'middle' : 'top');
+  const tooltip = p.widget.type === 'tooltip';
+  p.write(p.text.text, content, 'left', tooltip ? 'middle' : 'top', tooltip ? 'font_color' : null);
   p.outline(content, false);
 }
 
@@ -357,7 +405,7 @@ function paintProgress(p: Painter, box: Rect, input: PreviewInput) {
   const mp = p.minSize('fill').w;
   const px = Math.round(input.value * (box.w - mp));
   if (px > 0) p.style('fill', 'fill', { x: 0, y: 0, w: px + mp, h: box.h });
-  p.write(p.label, box, 'center');
+  p.write(p.label, box, 'center', 'middle', 'font_color');
 }
 
 function paintTextureProgress(p: Painter, box: Rect, input: PreviewInput) {
@@ -555,7 +603,15 @@ function paintTabs(p: Painter, box: Rect, input: PreviewInput) {
     const st = stateOf(i);
     if (!p.style('tab', st, r)) p.placeholder(r);
     if (i === selected && input.focused) p.style('tab', 'tab_focus', r);
-    p.write(names[i], p.content('tab', r), 'center');
+    const font =
+      st === 'tab_selected'
+        ? 'font_selected_color'
+        : st === 'tab_hovered'
+          ? 'font_hovered_color'
+          : st === 'tab_disabled'
+            ? 'font_disabled_color'
+            : 'font_unselected_color';
+    p.write(names[i], p.content('tab', r), 'center', 'middle', font);
   }
   if (tabs.length && tabs[tabs.length - 1].x + tabs[tabs.length - 1].w > box.w) {
     p.warnings.push('Tabs are wider than the box — Godot would show scroll arrows');
@@ -632,6 +688,14 @@ function paintList(p: Painter, box: Rect, input: PreviewInput) {
       return;
     }
     const hovered = contains(r, input.pointer);
+    let font = 'font_color';
+    if (type === 'popupmenu') {
+      if (hovered) font = 'font_hover_color';
+    } else if (i === selected) {
+      font = 'font_selected_color';
+    } else if (hovered && type === 'itemlist') {
+      font = 'font_hovered_color';
+    }
     if (type === 'popupmenu') {
       if (hovered) {
         p.style('hover', 'hover', r);
@@ -653,7 +717,7 @@ function paintList(p: Painter, box: Rect, input: PreviewInput) {
     if (row.arrow) iconAt('arrow', row.arrow === 'open' ? 'arrow' : 'arrow_collapsed');
     if (row.check === 'check') iconAt('check', row.checked ? 'checked' : 'unchecked');
     if (row.check === 'radio') iconAt('radio', row.checked ? 'radio_checked' : 'radio_unchecked');
-    p.write(row.text, { x, y: r.y, w: r.w - (x - r.x), h: r.h }, 'left');
+    p.write(row.text, { x, y: r.y, w: r.w - (x - r.x), h: r.h }, 'left', 'middle', font);
     if (row.submenu) {
       const s = p.iconSize('submenu', 'submenu');
       if (s.w) p.icon('submenu', 'submenu', r.x + r.w - s.w - 2, r.y + Math.floor((r.h - s.h) / 2));
@@ -680,7 +744,7 @@ function paintWindow(p: Painter, box: Rect, input: PreviewInput) {
   const closeState = contains(c, input.pointer) && input.pressed ? 'close_pressed' : 'close';
   if (c.w) p.icon('close', closeState, c.x, c.y);
   const m = p.margins('border');
-  p.write(p.text.text, { x: 3, y: 0, w: box.w - 6 - c.w, h: Math.max(m.top, p.text.size + 2) }, 'left');
+  p.write(p.text.text, { x: 3, y: 0, w: box.w - 6 - c.w, h: Math.max(m.top, p.text.size + 2) }, 'left', 'middle', 'title_color');
   p.outline(p.content('border', box), false);
 }
 
