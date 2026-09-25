@@ -137,3 +137,6 @@ export const PIXEL_FILE_EXT = '.voxui';
 
 /** Largest canvas edge the editor allows (per element). */
 export const MAX_CANVAS = 1024;
+
+/** Largest corner radius the rectangle tool offers. */
+export const MAX_CORNER_RADIUS = 32;

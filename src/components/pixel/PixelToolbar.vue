@@ -8,6 +8,7 @@ import { hasDirectoryPicker, pickDirectory, writeFileToDirectory, downloadBlob }
 import { resPrefix, setResPrefix } from '@/editor/pixel/exportPrefs';
 import { ZOOM_LEVELS } from '@/pixel/PixelRenderer';
 import { MAX_BRUSH } from '@/core/pixel/brush';
+import { MAX_CORNER_RADIUS } from '@/core/pixel/types';
 import { toast } from '@/editor/toasts';
 import Icon from '@/components/Icon.vue';
 import ContextMenu, { type MenuItem } from '@/components/ContextMenu.vue';
@@ -20,7 +21,6 @@ import {
   faVectorSquare,
   faSlash,
   faCircle,
-  faSquareFull,
   faSquareDashed,
   faCircleDashed,
   faLasso,
@@ -68,7 +68,6 @@ const toolGroups: ToolDef[][] = [
     { id: 'line', icon: faSlash, label: 'Line' },
     { id: 'rect', icon: faVectorSquare, label: 'Rectangle (U, Shift = square)' },
     { id: 'circle', icon: faCircle, label: 'Ellipse (Shift = circle)' },
-    { id: 'squircle', icon: faSquareFull, label: 'Squircle (Shift = symmetric)' },
   ],
 ];
 
@@ -105,6 +104,11 @@ const canPaste = computed(() => {
 
 const zoomLabel = (z: number) => (z < 1 ? `${Math.round(z * 100)}%` : `${z}×`);
 const zoomOptions = computed(() => (ZOOM_LEVELS.includes(store.zoom) ? ZOOM_LEVELS : [...ZOOM_LEVELS, store.zoom].sort((a, b) => a - b)));
+
+function setCornerRadius(e: Event) {
+  const n = Math.round(Number((e.target as HTMLInputElement).value));
+  if (Number.isFinite(n)) store.cornerRadius = Math.max(0, Math.min(MAX_CORNER_RADIUS, n));
+}
 
 function setBrush(e: Event) {
   const n = Math.round(Number((e.target as HTMLInputElement).value));
@@ -358,6 +362,35 @@ async function exportAll() {
           title="Round brush (off = square)"
           @click="store.brushShape = store.brushShape === 'round' ? 'square' : 'round'"
         >Round</button>
+      </template>
+
+      <template v-if="store.toolId === 'rect'">
+        <button
+          class="tool small"
+          :class="{ active: store.cornerRadius > 0 }"
+          title="Rounded corners"
+          @click="store.cornerRadius = store.cornerRadius > 0 ? 0 : 4"
+        >Rounded corners</button>
+        <template v-if="store.cornerRadius > 0">
+          <input
+            v-model.number="store.cornerRadius"
+            type="range"
+            min="1"
+            :max="MAX_CORNER_RADIUS"
+            class="range"
+            title="Corner radius in pixels"
+          />
+          <input
+            type="number"
+            class="num"
+            min="1"
+            :max="MAX_CORNER_RADIUS"
+            :value="store.cornerRadius"
+            title="Corner radius in pixels (1–32)"
+            @change="setCornerRadius"
+          />
+          <span class="val">px</span>
+        </template>
       </template>
 
       <template v-if="showsTolerance">

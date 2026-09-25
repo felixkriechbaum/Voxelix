@@ -50,6 +50,8 @@ export const usePixelStore = defineStore('pixel', () => {
   const toolId = ref<PixelToolId>('pencil');
   const brushSize = ref(1);
   const brushShape = ref<BrushShape>('square');
+  /** rectangle tool corner rounding, 0 = sharp, up to MAX_CORNER_RADIUS px */
+  const cornerRadius = ref(0);
   const contiguous = ref(true);
   /** bucket / wand colour tolerance, 0..255 per channel */
   const tolerance = ref(0);
@@ -253,6 +255,7 @@ export const usePixelStore = defineStore('pixel', () => {
     toolId,
     brushSize,
     brushShape,
+    cornerRadius,
     contiguous,
     tolerance,
     gradientKind,

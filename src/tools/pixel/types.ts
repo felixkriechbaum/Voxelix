@@ -16,8 +16,7 @@ export type PixelToolId =
   | 'gradient'
   | 'line'
   | 'rect'
-  | 'circle'
-  | 'squircle';
+  | 'circle';
 
 export interface PixelPointer {
   clientX: number;
@@ -54,6 +53,8 @@ export interface PixelToolContext {
   /** brush edge in pixels — every tool must honour this, never default to one pixel */
   readonly brushSize: number;
   readonly brushShape: BrushShape;
+  /** rectangle tool: corner rounding in pixels, 0 = sharp corners */
+  readonly cornerRadius: number;
   /** bucket / wand: only the connected region (off = every matching pixel) */
   readonly contiguous: boolean;
   /** bucket / wand: per-channel colour tolerance, 0..255 */

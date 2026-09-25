@@ -161,7 +161,7 @@ function lineCells(x0: number, y0: number, x1: number, y1: number): Array<[numbe
   return cells;
 }
 
-/** Normalised box (corners -> bounds) plus the inscribed ellipse's continuous centre/radii, shared by ellipseCells and squircleCells. */
+/** Normalised box (corners -> bounds) plus the inscribed ellipse's continuous centre/radii. */
 function boxRadii(x0: number, y0: number, x1: number, y1: number) {
   const minX = Math.min(x0, x1);
   const maxX = Math.max(x0, x1);
@@ -192,18 +192,32 @@ function ellipseCells(x0: number, y0: number, x1: number, y1: number): Array<[nu
   return cells;
 }
 
-/** Superellipse exponent for the "squircle" shape — 4 is the usual textbook value for a rounded-square look, between an ellipse (2) and a true rounded rect (very large). */
-const SQUIRCLE_N = 4;
-
-/** Same area-test approach as ellipseCells, but against |nx|^n + |ny|^n <= 1 — a rounded square rather than a round ellipse. */
-function squircleCells(x0: number, y0: number, x1: number, y1: number): Array<[number, number]> {
-  const { minX, maxX, minY, maxY, rx, ry, cx, cy } = boxRadii(x0, y0, x1, y1);
+/**
+ * Cells of a filled rectangle whose corners are rounded with `radius`
+ * pixels — same cell-centre area test as ellipseCells, against a quarter
+ * circle in each corner. The radius is clamped to half the shorter side, so
+ * a big radius on a small box gives a pill / circle rather than overlapping
+ * corners. radius 0 = plain rectangle.
+ */
+function roundedRectCells(r: PixelRectSel, radius: number): Array<[number, number]> {
+  const rad = Math.max(0, Math.min(radius, r.w / 2, r.h / 2));
   const cells: Array<[number, number]> = [];
-  for (let y = minY; y <= maxY; y++) {
-    const ny = Math.abs((y + 0.5 - cy) / ry);
-    for (let x = minX; x <= maxX; x++) {
-      const nx = Math.abs((x + 0.5 - cx) / rx);
-      if (nx ** SQUIRCLE_N + ny ** SQUIRCLE_N <= 1) cells.push([x, y]);
+  const left = r.x + rad;
+  const right = r.x + r.w - rad;
+  const top = r.y + rad;
+  const bottom = r.y + r.h - rad;
+  // testing cell centres against the full radius only nibbles a single
+  // pixel off each corner even at r=3; pulling the arc in a little gives the
+  // stepped corner pixel artists expect (r=1 drops the corner pixel, r=3
+  // steps 2-1) while staying symmetric
+  const cut = Math.max(0, rad - 0.3);
+  for (let y = r.y; y < r.y + r.h; y++) {
+    const py = y + 0.5;
+    const qy = py < top ? top - py : py > bottom ? py - bottom : 0;
+    for (let x = r.x; x < r.x + r.w; x++) {
+      const px = x + 0.5;
+      const qx = px < left ? left - px : px > right ? px - right : 0;
+      if (qx * qx + qy * qy <= cut * cut) cells.push([x, y]);
     }
   }
   return cells;
@@ -226,7 +240,7 @@ function constrainSquare(start: { x: number; y: number }, end: { x: number; y: n
 }
 
 /**
- * Shared "rubber-band" drag pattern for rect/line/circle/squircle: rather
+ * Shared "rubber-band" drag pattern for rect/line/circle: rather
  * than a separate preview overlay, each move reverts the in-progress batch
  * and repaints the shape from the (unchanged) start point to the new cursor
  * cell — the same begin/write/cancel machinery a single stroke already uses,
@@ -287,13 +301,14 @@ abstract class DragShapeTool implements PixelTool {
   }
 }
 
+/** Filled rectangle; shift constrains it to a square. Corners are rounded by the tool option's radius (0 = sharp). */
 class RectTool extends DragShapeTool {
   readonly id: PixelToolId = 'rect';
   protected label = 'Rectangle';
   protected paint(ctx: PixelToolContext, start: { x: number; y: number }, end0: { x: number; y: number }, value: number, shiftKey: boolean): void {
     const end = constrainSquare(start, end0, shiftKey);
     const r = normalizedRect(start.x, start.y, end.x, end.y);
-    for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) ctx.write(x, y, value);
+    for (const [x, y] of roundedRectCells(r, ctx.cornerRadius)) ctx.write(x, y, value);
   }
 }
 
@@ -314,16 +329,6 @@ class CircleTool extends DragShapeTool {
   protected paint(ctx: PixelToolContext, start: { x: number; y: number }, end0: { x: number; y: number }, value: number, shiftKey: boolean): void {
     const end = constrainSquare(start, end0, shiftKey);
     for (const [x, y] of ellipseCells(start.x, start.y, end.x, end.y)) ctx.write(x, y, value);
-  }
-}
-
-/** Superellipse ("squircle") inscribed in the drag box; shift constrains it to a symmetric squircle. */
-class SquircleTool extends DragShapeTool {
-  readonly id: PixelToolId = 'squircle';
-  protected label = 'Squircle';
-  protected paint(ctx: PixelToolContext, start: { x: number; y: number }, end0: { x: number; y: number }, value: number, shiftKey: boolean): void {
-    const end = constrainSquare(start, end0, shiftKey);
-    for (const [x, y] of squircleCells(start.x, start.y, end.x, end.y)) ctx.write(x, y, value);
   }
 }
 
@@ -558,8 +563,6 @@ export function createPixelTool(id: PixelToolId): PixelTool {
       return new LineTool();
     case 'circle':
       return new CircleTool();
-    case 'squircle':
-      return new SquircleTool();
     case 'select':
       return new SelectTool();
     case 'select-ellipse':
