@@ -8,7 +8,7 @@ import { gradientColor, gradientT } from '@/core/pixel/ops/gradient';
 import { createPixelTool } from '@/tools/pixel/tools';
 import type { PixelRenderer } from '@/pixel/PixelRenderer';
 import type { PixelTool, PixelToolContext, PixelToolId, PixelPointer, ToolOverlay } from '@/tools/pixel/types';
-import { MAX_CORNER_RADIUS, type BlendMode, type StateId } from '@/core/pixel/types';
+import { MAX_CORNER_RADIUS, MAX_RECT_BORDER, type BlendMode, type StateId } from '@/core/pixel/types';
 import type { PixelStore } from '@/stores/pixel';
 
 /** Layer properties editable from the layers panel. */
@@ -147,6 +147,9 @@ export class PixelRunner implements PixelToolContext {
   }
   get brushShape() {
     return this.store.brushShape;
+  }
+  get rectBorder(): number {
+    return Math.max(0, Math.min(MAX_RECT_BORDER, Math.round(this.store.rectBorder) || 0));
   }
   get cornerRadius(): number {
     return Math.max(0, Math.min(MAX_CORNER_RADIUS, Math.round(this.store.cornerRadius) || 0));

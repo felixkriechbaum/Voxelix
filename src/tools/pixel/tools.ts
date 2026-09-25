@@ -301,14 +301,33 @@ abstract class DragShapeTool implements PixelTool {
   }
 }
 
-/** Filled rectangle; shift constrains it to a square. Corners are rounded by the tool option's radius (0 = sharp). */
+/**
+ * Filled rectangle; shift constrains it to a square. Corners are rounded by
+ * the tool option's radius (0 = sharp). With a border width set, an inner
+ * border of that many pixels is drawn in the other colour (secondary when
+ * dragging with the left button, primary with the right) — the inner shape
+ * is the same rounded rect inset by the border, with its radius shrunk by the
+ * same amount, so the border stays even around the corners.
+ */
 class RectTool extends DragShapeTool {
   readonly id: PixelToolId = 'rect';
   protected label = 'Rectangle';
   protected paint(ctx: PixelToolContext, start: { x: number; y: number }, end0: { x: number; y: number }, value: number, shiftKey: boolean): void {
     const end = constrainSquare(start, end0, shiftKey);
     const r = normalizedRect(start.x, start.y, end.x, end.y);
-    for (const [x, y] of roundedRectCells(r, ctx.cornerRadius)) ctx.write(x, y, value);
+    const radius = Math.min(ctx.cornerRadius, r.w / 2, r.h / 2);
+    const b = ctx.rectBorder;
+    if (b <= 0) {
+      for (const [x, y] of roundedRectCells(r, radius)) ctx.write(x, y, value);
+      return;
+    }
+    const border = value === ctx.primary ? ctx.secondary : ctx.primary;
+    const innerRect = { x: r.x + b, y: r.y + b, w: r.w - 2 * b, h: r.h - 2 * b };
+    const inner = new Set<number>();
+    if (innerRect.w > 0 && innerRect.h > 0) {
+      for (const [x, y] of roundedRectCells(innerRect, Math.max(0, radius - b))) inner.add(x + y * 65536);
+    }
+    for (const [x, y] of roundedRectCells(r, radius)) ctx.write(x, y, inner.has(x + y * 65536) ? value : border);
   }
 }
 

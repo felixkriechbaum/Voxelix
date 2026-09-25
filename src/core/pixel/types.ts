@@ -142,3 +142,6 @@ export const MAX_CANVAS = 1024;
 
 /** Largest corner radius the rectangle tool offers. */
 export const MAX_CORNER_RADIUS = 32;
+
+/** Widest inner border the rectangle tool offers. */
+export const MAX_RECT_BORDER = 32;

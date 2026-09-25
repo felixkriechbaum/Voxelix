@@ -55,6 +55,8 @@ export interface PixelToolContext {
   readonly brushShape: BrushShape;
   /** rectangle tool: corner rounding in pixels, 0 = sharp corners */
   readonly cornerRadius: number;
+  /** rectangle tool: inner border width in pixels, drawn in the other colour; 0 = no border */
+  readonly rectBorder: number;
   /** bucket / wand: only the connected region (off = every matching pixel) */
   readonly contiguous: boolean;
   /** bucket / wand: per-channel colour tolerance, 0..255 */

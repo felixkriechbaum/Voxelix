@@ -8,8 +8,9 @@ import { hasDirectoryPicker, pickDirectory, writeFileToDirectory, downloadBlob }
 import { resPrefix, setResPrefix } from '@/editor/pixel/exportPrefs';
 import { ZOOM_LEVELS } from '@/pixel/PixelRenderer';
 import { MAX_BRUSH } from '@/core/pixel/brush';
-import { MAX_CORNER_RADIUS } from '@/core/pixel/types';
+import { MAX_CORNER_RADIUS, MAX_RECT_BORDER } from '@/core/pixel/types';
 import { toast } from '@/editor/toasts';
+import { rgbaToHex } from '@/core/pixel/pack';
 import Icon from '@/components/Icon.vue';
 import ContextMenu, { type MenuItem } from '@/components/ContextMenu.vue';
 import type { AdjustKind } from './AdjustDialog.vue';
@@ -104,6 +105,11 @@ const canPaste = computed(() => {
 
 const zoomLabel = (z: number) => (z < 1 ? `${Math.round(z * 100)}%` : `${z}×`);
 const zoomOptions = computed(() => (ZOOM_LEVELS.includes(store.zoom) ? ZOOM_LEVELS : [...ZOOM_LEVELS, store.zoom].sort((a, b) => a - b)));
+
+function setRectBorder(e: Event) {
+  const n = Math.round(Number((e.target as HTMLInputElement).value));
+  if (Number.isFinite(n)) store.rectBorder = Math.max(1, Math.min(MAX_RECT_BORDER, n));
+}
 
 function setCornerRadius(e: Event) {
   const n = Math.round(Number((e.target as HTMLInputElement).value));
@@ -391,6 +397,34 @@ async function exportAll() {
           />
           <span class="val">px</span>
         </template>
+        <span class="sep" />
+        <button
+          class="tool small"
+          :class="{ active: store.rectBorder > 0 }"
+          title="Inner border in the other colour (secondary on a left-drag, primary on a right-drag)"
+          @click="store.rectBorder = store.rectBorder > 0 ? 0 : 2"
+        >Border</button>
+        <template v-if="store.rectBorder > 0">
+          <span class="sw" :style="{ background: rgbaToHex(store.secondaryColor) }" title="Border colour (secondary)" />
+          <input
+            v-model.number="store.rectBorder"
+            type="range"
+            min="1"
+            :max="MAX_RECT_BORDER"
+            class="range"
+            title="Border width in pixels"
+          />
+          <input
+            type="number"
+            class="num"
+            min="1"
+            :max="MAX_RECT_BORDER"
+            :value="store.rectBorder"
+            title="Border width in pixels (1–32)"
+            @change="setRectBorder"
+          />
+          <span class="val">px</span>
+        </template>
       </template>
 
       <template v-if="showsTolerance">
@@ -498,6 +532,13 @@ async function exportAll() {
 .menu-btn {
   padding: 4px 9px;
   font-size: 12px;
+}
+.sw {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
 }
 .hint {
   color: var(--text-dim);
