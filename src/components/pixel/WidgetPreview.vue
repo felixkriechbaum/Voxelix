@@ -108,7 +108,7 @@ const slots = computed<Slot[]>(() => {
   const w = activeType.value ? store.activeWidget() : null;
   if (!w) return [];
   const list: Slot[] = [{ id: 'live', interactive: true }];
-  if (w.type === 'checkbox' && w.element('radio')?.states.get('radio_unchecked')?.bounds() != null) {
+  if (w.type === 'checkbox' && w.element('radio')?.isPainted('radio_unchecked')) {
     list.push({ id: 'radio', interactive: true });
   }
   if (previewShowDisabled.value && disabledSlotLabel(w)) list.push({ id: 'disabled', interactive: false });

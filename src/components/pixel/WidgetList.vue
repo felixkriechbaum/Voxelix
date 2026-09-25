@@ -4,7 +4,7 @@ import { usePixelStore } from '@/stores/pixel';
 import { usePixelSession } from '@/editor/pixel/session';
 import { toast } from '@/editor/toasts';
 import { specFor, stateLabel, stateSpec, widgetTypesByCategory } from '@/core/pixel/widgets';
-import type { StateId, WidgetType } from '@/core/pixel/types';
+import { MAX_CANVAS, type StateId, type WidgetType } from '@/core/pixel/types';
 import Icon from '@/components/Icon.vue';
 import { faPlus, faTrash, faCopy, faExpand } from '@fortawesome/pro-solid-svg-icons';
 
@@ -37,7 +37,7 @@ const activeElements = computed(() => {
       kind: es?.kind ?? 'texture',
       hint: es?.hint,
       size: `${el.width}×${el.height}`,
-      painted: [...el.states.values()].some((d) => d.bounds() !== null),
+      painted: [...el.states.values()].some((d) => !d.isEmpty()),
     };
   });
 });
@@ -57,7 +57,7 @@ const stateHasContent = computed(() => {
   void store.activeVersion;
   const map: Partial<Record<StateId, boolean>> = {};
   const el = store.activeElement();
-  if (el) for (const [id, data] of el.states) map[id] = data.bounds() !== null;
+  if (el) for (const [id, stack] of el.states) map[id] = !stack.isEmpty();
   return map;
 });
 
@@ -114,6 +114,8 @@ watch(
 function applyResize() {
   const w = store.activeElement();
   if (!w) return;
+  resizeW.value = Math.max(1, Math.min(MAX_CANVAS, Math.round(resizeW.value) || 1));
+  resizeH.value = Math.max(1, Math.min(MAX_CANVAS, Math.round(resizeH.value) || 1));
   if (resizeW.value === w.width && resizeH.value === w.height) return;
   store.resizeActiveElement(resizeW.value, resizeH.value, resizeAnchor.value);
   toast(`Resized to ${resizeW.value}×${resizeH.value} — undo history for this part was cleared`, 'info');
@@ -190,9 +192,9 @@ function applyResize() {
     </template>
     <p v-if="activeElementInfo?.hint" class="hint">{{ activeElementInfo.hint }}</p>
 
-    <div v-if="active" class="row resize-row" title="Resize this part's canvas (all its states) — clears its undo history">
-      <label>W<input v-model.number="resizeW" type="number" min="1" /></label>
-      <label>H<input v-model.number="resizeH" type="number" min="1" /></label>
+    <div v-if="active" class="row resize-row" :title="`Resize this part's canvas (all its states and layers, up to ${MAX_CANVAS}×${MAX_CANVAS}) — clears its undo history`">
+      <label>W<input v-model.number="resizeW" type="number" min="1" :max="MAX_CANVAS" /></label>
+      <label>H<input v-model.number="resizeH" type="number" min="1" :max="MAX_CANVAS" /></label>
       <select v-model="resizeAnchor">
         <option value="topleft">Top-left</option>
         <option value="center">Centre</option>

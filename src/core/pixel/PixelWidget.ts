@@ -1,4 +1,5 @@
 import { PixelData } from './PixelData';
+import { LayerStack } from './layers';
 import { specFor, type ElementSpec } from './widgets';
 import { clampContentMargins, clampPatch } from './ninepatch';
 import { defaultNinePatch } from './types';
@@ -6,7 +7,6 @@ import type {
   ContentMargins,
   NinePatch,
   PixelElementJson,
-  PixelLayerJson,
   PixelWidgetJson,
   StateId,
   WidgetType,
@@ -23,7 +23,8 @@ export class PixelElement {
   height: number;
   patch: NinePatch;
   contentMargins: ContentMargins;
-  states: Map<StateId, PixelData>;
+  /** each state is a layer stack; `stack.composite()` is the image it shows / exports */
+  states: Map<StateId, LayerStack>;
 
   constructor(opts: {
     id: string;
@@ -31,7 +32,7 @@ export class PixelElement {
     height: number;
     patch?: NinePatch;
     contentMargins?: ContentMargins;
-    states?: Map<StateId, PixelData>;
+    states?: Map<StateId, LayerStack>;
   }) {
     this.id = opts.id;
     this.width = Math.max(1, Math.round(opts.width));
@@ -50,15 +51,15 @@ export class PixelElement {
 
   /** Adds a blank canvas for any spec state this element doesn't have yet, in spec order. */
   ensureStates(spec: ElementSpec): void {
-    const ordered = new Map<StateId, PixelData>();
-    for (const s of spec.states) ordered.set(s.id, this.states.get(s.id) ?? new PixelData(this.width, this.height));
+    const ordered = new Map<StateId, LayerStack>();
+    for (const s of spec.states) ordered.set(s.id, this.states.get(s.id) ?? new LayerStack(this.width, this.height));
     // keep anything the spec doesn't know (a newer file) rather than dropping pixels
     for (const [id, data] of this.states) if (!ordered.has(id)) ordered.set(id, data);
     this.states = ordered;
   }
 
   /**
-   * Resizes every state's canvas, clamping the nine-patch so it never
+   * Resizes every state's canvas (every layer and mask), clamping the nine-patch so it never
    * overlaps the new, possibly smaller, bounds. A structural change: callers
    * drop this element's undo history, since a PixelEdit's flat index only
    * means something for the width it was recorded against.
@@ -73,22 +74,22 @@ export class PixelElement {
     this.patch = clampPatch(this.patch, w, h);
   }
 
-  /** The canvas a state paints into, created on demand. */
-  stateData(id: StateId): PixelData {
-    let data = this.states.get(id);
-    if (!data) {
-      data = new PixelData(this.width, this.height);
-      this.states.set(id, data);
+  /** The layer stack a state paints into, created on demand. */
+  stateStack(id: StateId): LayerStack {
+    let stack = this.states.get(id);
+    if (!stack) {
+      stack = new LayerStack(this.width, this.height);
+      this.states.set(id, stack);
     }
-    return data;
+    return stack;
   }
 
   isPainted(id: StateId): boolean {
-    return this.states.get(id)?.bounds() != null;
+    return this.states.get(id)?.isEmpty() === false;
   }
 
   toJSON(): PixelElementJson {
-    const states: Record<StateId, PixelLayerJson> = {};
+    const states: PixelElementJson['states'] = {};
     for (const [id, data] of this.states) states[id] = data.toJSON();
     return {
       width: this.width,
@@ -107,8 +108,8 @@ export class PixelElement {
       patch: json.patch,
       contentMargins: json.contentMargins,
     });
-    for (const [sid, layer] of Object.entries(json.states ?? {})) {
-      el.states.set(sid, PixelData.fromJSON(layer, el.width, el.height));
+    for (const [sid, stack] of Object.entries(json.states ?? {})) {
+      el.states.set(sid, LayerStack.fromJSON(stack, el.width, el.height));
     }
     return el;
   }
@@ -160,7 +161,7 @@ export class PixelWidget {
    * pixels, else the first painted state along its spec `from` chain (hover
    * → normal). null when nothing on that chain is painted.
    */
-  resolveState(elementId: string, stateId: StateId): { id: StateId; data: PixelData } | null {
+  resolveState(elementId: string, stateId: StateId): { id: StateId; data: PixelData; stack: LayerStack } | null {
     const el = this.elements.get(elementId);
     if (!el) return null;
     const es = specFor(this.type).elements.find((e) => e.id === elementId);
@@ -168,8 +169,11 @@ export class PixelWidget {
     let cur: StateId | undefined = stateId;
     while (cur && !seen.has(cur)) {
       seen.add(cur);
-      const data = el.states.get(cur);
-      if (data && data.bounds() !== null) return { id: cur, data };
+      const stack = el.states.get(cur);
+      if (stack) {
+        const data = stack.composite();
+        if (data.bounds() !== null) return { id: cur, data, stack };
+      }
       cur = es?.states.find((s) => s.id === cur)?.from;
     }
     return null;
@@ -208,7 +212,7 @@ function migrateV1(widget: PixelWidget, json: PixelWidgetJson): void {
   const h = json.height ?? 1;
   const el = new PixelElement({ id: target, width: w, height: h, patch: json.patch, contentMargins: json.contentMargins });
   for (const [sid, layer] of Object.entries(json.states ?? {})) {
-    el.states.set(rename[sid] ?? sid, PixelData.fromJSON(layer, w, h));
+    el.states.set(rename[sid] ?? sid, LayerStack.fromData(PixelData.fromJSON(layer, w, h)));
   }
   widget.elements.set(target, el);
 
@@ -216,7 +220,7 @@ function migrateV1(widget: PixelWidget, json: PixelWidgetJson): void {
     const es = spec.elements.find((e) => e.id === iconId);
     const [iw, ih] = es?.defaultSize ?? [w, h];
     const iconEl = new PixelElement({ id: iconId, width: iw, height: ih });
-    iconEl.states.set(es?.states[0]?.id ?? iconId, PixelData.fromJSON(layer, iw, ih));
+    iconEl.states.set(es?.states[0]?.id ?? iconId, LayerStack.fromData(PixelData.fromJSON(layer, iw, ih)));
     widget.elements.set(iconId, iconEl);
   }
 }

@@ -4,7 +4,9 @@ import { PixelProject } from '@/core/pixel/PixelProject';
 import type { PixelWidget } from '@/core/pixel/PixelWidget';
 import { packRgba } from '@/core/pixel/pack';
 import { clampContentMargins } from '@/core/pixel/ninepatch';
-import type { ContentMargins, NinePatch, StateId, WidgetType } from '@/core/pixel/types';
+import { MAX_CANVAS, type ContentMargins, type NinePatch, type StateId, type WidgetType } from '@/core/pixel/types';
+import type { BrushShape } from '@/core/pixel/brush';
+import type { GradientKind, GradientStyle } from '@/core/pixel/ops/gradient';
 import { usePixelSession } from '@/editor/pixel/session';
 import type { PixelToolId } from '@/tools/pixel/types';
 
@@ -28,6 +30,11 @@ export const usePixelStore = defineStore('pixel', () => {
   function bumpSelection() {
     selectionVersion.value++;
   }
+  /** bumps when the active state's layer stack changes shape (add / remove / reorder / properties / active layer) */
+  const layersVersion = ref(0);
+  function bumpLayers() {
+    layersVersion.value++;
+  }
 
   const autosaveBusy = ref(false);
   const autosaveAt = ref<number | null>(null);
@@ -42,7 +49,16 @@ export const usePixelStore = defineStore('pixel', () => {
   const activeStateId = ref<StateId>('normal');
   const toolId = ref<PixelToolId>('pencil');
   const brushSize = ref(1);
+  const brushShape = ref<BrushShape>('square');
   const contiguous = ref(true);
+  /** bucket / wand colour tolerance, 0..255 per channel */
+  const tolerance = ref(0);
+  const gradientKind = ref<GradientKind>('linear');
+  const gradientStyle = ref<GradientStyle>('smooth');
+  /** paint into the active layer's mask instead of its pixels */
+  const editMask = ref(false);
+  /** show the active layer's mask (grayscale) on the canvas instead of the image */
+  const viewMask = ref(false);
   const zoom = ref(12);
   const showGrid = ref(true);
   const primaryColor = ref(OPAQUE_BLACK);
@@ -129,6 +145,11 @@ export const usePixelStore = defineStore('pixel', () => {
     activeVersion.value++;
   }
 
+  /** The layer stack on the canvas right now. */
+  function activeStack() {
+    return activeElement()?.states.get(activeStateId.value) ?? null;
+  }
+
   function addWidget(type: WidgetType) {
     if (!project.value) return;
     const w = project.value.addWidget(type);
@@ -183,13 +204,14 @@ export const usePixelStore = defineStore('pixel', () => {
     if (!w || !el) return;
     const runner = usePixelSession().runner.value;
     runner?.forgetHistory(w.id, el.id);
-    el.resize(width, height, anchor);
+    el.resize(Math.min(MAX_CANVAS, width), Math.min(MAX_CANVAS, height), anchor);
     // element.resize() replaces each state's PixelData instance rather than
     // mutating it in place — the runner (and its renderer) would otherwise
     // keep drawing into the now-orphaned old one, since nothing else about
     // the active widget/state identity changed to trigger a re-sync
     runner?.syncActive();
     structureVersion.value++;
+    layersVersion.value++;
     editVersion.value++;
   }
 
@@ -220,6 +242,7 @@ export const usePixelStore = defineStore('pixel', () => {
     activeVersion,
     editVersion,
     selectionVersion,
+    layersVersion,
     autosaveBusy,
     autosaveAt,
     autosaveError,
@@ -229,7 +252,13 @@ export const usePixelStore = defineStore('pixel', () => {
     activeStateId,
     toolId,
     brushSize,
+    brushShape,
     contiguous,
+    tolerance,
+    gradientKind,
+    gradientStyle,
+    editMask,
+    viewMask,
     zoom,
     showGrid,
     primaryColor,
@@ -238,6 +267,7 @@ export const usePixelStore = defineStore('pixel', () => {
     projectName,
     activeWidget,
     activeElement,
+    activeStack,
     setProject,
     newProject,
     closeProject,
@@ -255,6 +285,7 @@ export const usePixelStore = defineStore('pixel', () => {
     setSecondary,
     bumpEdit,
     bumpSelection,
+    bumpLayers,
   };
 });
 

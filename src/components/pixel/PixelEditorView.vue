@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import PixelToolbar from './PixelToolbar.vue';
 import WidgetList from './WidgetList.vue';
+import LayersPanel from './LayersPanel.vue';
+import AdjustDialog, { type AdjustKind } from './AdjustDialog.vue';
 import ColorPanel from './ColorPanel.vue';
 import NinePatchPanel from './NinePatchPanel.vue';
 import WidgetPreview from './WidgetPreview.vue';
@@ -13,6 +15,9 @@ import { usePixelAutosave } from '@/editor/pixel/autosave';
 import { usePixelSession } from '@/editor/pixel/session';
 import { previewExpanded, previewWidth, previewResizing } from '@/editor/pixel/previewPrefs';
 import { sideExpanded, sideWidth, sideResizing, setSideWidth } from '@/editor/pixel/sidePrefs';
+import { nextZoom } from '@/pixel/PixelRenderer';
+import { MAX_BRUSH } from '@/core/pixel/brush';
+import type { PixelToolId } from '@/tools/pixel/types';
 
 const NUDGE_KEYS: Record<string, [number, number]> = {
   ArrowLeft: [-1, 0],
@@ -28,6 +33,14 @@ const anyResizing = computed(() => previewResizing.value || sideResizing.value);
 const store = usePixelStore();
 const { runner } = usePixelSession();
 const { flushAutosave } = usePixelAutosave();
+const canvasRef = ref<InstanceType<typeof PixelCanvas> | null>(null);
+/** open adjustment / scale dialog, if any */
+const adjustKind = ref<AdjustKind | null>(null);
+// switching widget / part / state ends any live preview (the runner reverts it) — close the dialog with it
+watch(
+  () => [store.activeWidgetId, store.activeElementId, store.activeStateId],
+  () => (adjustKind.value = null),
+);
 
 let sideDragStartX = 0;
 let sideDragStartWidth = 0;
@@ -63,42 +76,111 @@ function onContextMenu(e: MouseEvent) {
   e.preventDefault();
 }
 
+const TOOL_KEYS: Record<string, PixelToolId> = {
+  b: 'pencil',
+  e: 'eraser',
+  f: 'bucket',
+  i: 'picker',
+  v: 'move',
+  m: 'select',
+  l: 'lasso',
+  w: 'wand',
+  g: 'gradient',
+  u: 'rect',
+};
+
 function onKey(e: KeyboardEvent) {
-  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+  // an open adjustment dialog owns the keyboard (it handles Enter / Escape itself)
+  if (adjustKind.value || store.exportStatus) return;
+  const r = runner.value;
+  const mod = e.ctrlKey || e.metaKey;
+  const key = e.key.toLowerCase();
+
+  if (mod && !e.shiftKey && key === 'z') {
     e.preventDefault();
-    runner.value?.undo();
-  } else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+    r?.undo();
+  } else if (mod && (key === 'y' || (e.shiftKey && key === 'z'))) {
     e.preventDefault();
-    runner.value?.redo();
-  } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'c') {
-    if (runner.value?.selection) {
+    r?.redo();
+  } else if (mod && key === 'c') {
+    if (r && (r.selection || e.shiftKey)) {
       e.preventDefault();
-      runner.value.copySelection();
+      r.copySelection(e.shiftKey);
     }
-  } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'x') {
-    if (runner.value?.selection) {
+  } else if (mod && !e.shiftKey && key === 'x') {
+    if (r?.selection) {
       e.preventDefault();
-      runner.value.cutSelection();
+      r.cutSelection();
     }
-  } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'v') {
-    if (runner.value?.canPaste) {
+  } else if (mod && e.shiftKey && key === 'v') {
+    // plain Ctrl+V is handled by the canvas's paste listener (system clipboard images vs. in-app pixels)
+    if (r?.canPaste) {
       e.preventDefault();
-      runner.value.pasteSelection();
+      r.pasteSelection(true);
     }
-  } else if (NUDGE_KEYS[e.key]) {
-    if (runner.value?.selection) {
-      e.preventDefault();
-      const [dx, dy] = NUDGE_KEYS[e.key];
-      runner.value.moveSelection(dx, dy);
-    }
+  } else if (mod && !e.shiftKey && key === 'a') {
+    e.preventDefault();
+    r?.selectAll();
+  } else if (mod && !e.shiftKey && key === 'd') {
+    e.preventDefault();
+    r?.setSelection(null);
+  } else if (mod && e.shiftKey && key === 'i') {
+    e.preventDefault();
+    r?.invertSelection();
+  } else if (mod && !e.shiftKey && key === 'i') {
+    e.preventDefault();
+    r?.adjust({ kind: 'invert' }, 'Invert');
+  } else if (mod && e.shiftKey && key === 'u') {
+    e.preventDefault();
+    r?.adjust({ kind: 'desaturate' }, 'Desaturate');
+  } else if (mod && !e.shiftKey && key === 'u') {
+    e.preventDefault();
+    adjustKind.value = 'hsl';
+  } else if (mod && e.shiftKey && key === 'n') {
+    e.preventDefault();
+    r?.addLayer();
+  } else if (mod && !e.shiftKey && key === 'j') {
+    e.preventDefault();
+    const l = r?.activeLayer();
+    if (l) r?.duplicateLayer(l.id);
+  } else if (mod && !e.shiftKey && key === 'e') {
+    e.preventDefault();
+    const l = r?.activeLayer();
+    if (l) r?.mergeDown(l.id);
+  } else if (mod && (key === '0' || key === '1')) {
+    e.preventDefault();
+    if (key === '0') canvasRef.value?.fitView();
+    else store.zoom = 1;
+  } else if (!mod && (e.key === '+' || e.key === '=')) {
+    store.zoom = nextZoom(store.zoom, 1);
+  } else if (!mod && (e.key === '-' || e.key === '_')) {
+    store.zoom = nextZoom(store.zoom, -1);
+  } else if (!mod && (e.key === '[' || e.key === ']')) {
+    const s = store.brushSize;
+    const step = s >= 16 ? 4 : s >= 8 ? 2 : 1;
+    store.brushSize = Math.max(1, Math.min(MAX_BRUSH, e.key === ']' ? s + step : s - step));
+  } else if (NUDGE_KEYS[e.key] && !mod) {
+    e.preventDefault();
+    const [dx, dy] = NUDGE_KEYS[e.key];
+    const n = e.shiftKey ? 10 : 1;
+    r?.moveSelection(dx * n, dy * n);
+  } else if ((e.key === 'Delete' || e.key === 'Backspace') && (e.altKey || mod)) {
+    e.preventDefault();
+    r?.fillSelection(e.altKey ? 'primary' : 'secondary');
   } else if (e.key === 'Delete' || e.key === 'Backspace') {
-    if (runner.value?.selection) {
+    if (r?.selection) {
       e.preventDefault();
-      runner.value.eraseSelection();
+      r.eraseSelection();
     }
   } else if (e.key === 'Escape') {
-    if (runner.value?.selection) runner.value.setSelection(null);
+    if (r?.selection) r.setSelection(null);
+  } else if (!mod && !e.altKey && key === 'x') {
+    const p = store.primaryColor;
+    store.setPrimary(store.secondaryColor);
+    store.setSecondary(p);
+  } else if (!mod && !e.altKey && !e.shiftKey && TOOL_KEYS[key]) {
+    store.toolId = TOOL_KEYS[key];
   }
 }
 
@@ -116,10 +198,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
     :aria-busy="!!store.exportStatus"
     @contextmenu="onContextMenu"
   >
-    <PixelToolbar class="toolbar" :inert="!!store.exportStatus" @close-project="closeProject" />
+    <PixelToolbar
+      class="toolbar"
+      :inert="!!store.exportStatus"
+      @close-project="closeProject"
+      @open-adjust="adjustKind = $event"
+      @fit="canvasRef?.fitView()"
+    />
     <aside class="side" :class="{ collapsed: !sideExpanded }" :inert="!!store.exportStatus">
       <div v-if="sideExpanded" class="side-body">
         <WidgetList />
+        <LayersPanel />
         <ColorPanel />
         <NinePatchPanel />
       </div>
@@ -133,7 +222,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
       <div v-if="sideExpanded" class="handle" title="Drag to resize" @pointerdown="onSideHandleDown" />
     </aside>
     <main class="stage" :inert="!!store.exportStatus">
-      <PixelCanvas />
+      <PixelCanvas ref="canvasRef" />
+      <AdjustDialog v-if="adjustKind" :key="adjustKind" :kind="adjustKind" @close="adjustKind = null" />
     </main>
     <WidgetPreview class="preview" :inert="!!store.exportStatus" />
     <div class="status row">
@@ -213,6 +303,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 }
 .stage {
   grid-area: stage;
+  position: relative;
   min-width: 0;
   min-height: 0;
 }

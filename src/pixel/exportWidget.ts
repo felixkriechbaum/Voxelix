@@ -62,7 +62,9 @@ export async function exportWidgetFiles(widget: PixelWidget, resPrefix = 'res://
 
   for (const [elementId, el] of widget.elements) {
     const kind = spec.elements.find((e) => e.id === elementId)?.kind ?? 'texture';
-    for (const [state, data] of el.states) {
+    for (const [state, stack] of el.states) {
+      // layers are flattened on export — Godot gets exactly what the canvas shows
+      const data = stack.composite();
       if (data.bounds() === null) continue;
       let stem = `${base}_${sanitizeFilename(state, 'state')}`;
       if (usedNames.has(stem)) stem = `${base}_${sanitizeFilename(elementId, 'part')}_${sanitizeFilename(state, 'state')}`;

@@ -63,8 +63,34 @@ export function defaultContentMargins(): ContentMargins {
 
 /** Serialized form of one PixelData canvas. */
 export interface PixelLayerJson {
-  /** RLE-base64 of the Uint32 pixel array, row-major */
+  /** base64 of the Uint32 pixel array, row-major — RLE unless `enc` says otherwise */
   pixels: string;
+  enc?: 'raw';
+}
+
+export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'add' | 'difference';
+
+/** One layer of a state image. */
+export interface PixelStackLayerJson {
+  id: string;
+  name: string;
+  visible: boolean;
+  /** 0..1 */
+  opacity: number;
+  blend: BlendMode;
+  /** painting keeps each pixel's existing alpha (Photoshop's "lock transparent pixels") */
+  alphaLock?: boolean;
+  /** clipped to the alpha of the nearest unclipped layer below */
+  clip?: boolean;
+  data: PixelLayerJson;
+  /** grayscale layer mask (red channel = visibility), same size as the layer */
+  mask?: PixelLayerJson & { enabled: boolean };
+}
+
+/** A state image as a layer stack (format version 3+), bottom layer first. */
+export interface PixelStackJson {
+  layers: PixelStackLayerJson[];
+  activeLayerId?: string;
 }
 
 /** One part of a widget (e.g. a ProgressBar's fill, a slider's grabber):
@@ -75,7 +101,8 @@ export interface PixelElementJson {
   patch: NinePatch;
   /** -1 uses the corresponding nine-patch margin. */
   contentMargins: ContentMargins;
-  states: Record<StateId, PixelLayerJson>;
+  /** version ≤ 2 files hold a single flat canvas (PixelLayerJson) per state */
+  states: Record<StateId, PixelStackJson | PixelLayerJson>;
 }
 
 export interface PixelWidgetJson {
@@ -96,8 +123,8 @@ export interface PixelWidgetJson {
 
 export interface PixelProjectJson {
   format: 'voxelix-pixel';
-  /** 1 = one canvas per widget; 2 = per-element canvases */
-  version: 1 | 2;
+  /** 1 = one canvas per widget; 2 = per-element canvases; 3 = each state is a layer stack */
+  version: 1 | 2 | 3;
   id: string;
   name: string;
   /** swatch shelf, reused from core/palette.ts — not a storage index */
@@ -107,3 +134,6 @@ export interface PixelProjectJson {
 }
 
 export const PIXEL_FILE_EXT = '.voxui';
+
+/** Largest canvas edge the editor allows (per element). */
+export const MAX_CANVAS = 1024;

@@ -1,4 +1,4 @@
-import type { PixelData } from '@/core/pixel/PixelData';
+import type { PixelData, PixelRect } from '@/core/pixel/PixelData';
 
 /**
  * Copy a PixelData's pixels onto a 2D context sized to match it. Goes through
@@ -11,4 +11,12 @@ export function blitPixelData(ctx: CanvasRenderingContext2D, data: PixelData): v
   const imgData = ctx.createImageData(data.width, data.height);
   imgData.data.set(data.asImageBuffer());
   ctx.putImageData(imgData, 0, 0);
+}
+
+/** Copy just a sub-rect — how the canvas keeps up with a brush stroke on a large texture. */
+export function blitPixelRect(ctx: CanvasRenderingContext2D, data: PixelData, r: PixelRect): void {
+  if (r.w <= 0 || r.h <= 0) return;
+  const imgData = ctx.createImageData(r.w, r.h);
+  imgData.data.set(data.rectImageBuffer(r));
+  ctx.putImageData(imgData, r.x, r.y);
 }

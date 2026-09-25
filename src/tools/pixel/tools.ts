@@ -1,5 +1,6 @@
-import { floodRegion } from '@/core/pixel/ops/flood';
-import { brushBox } from '@/core/pixel/brush';
+import { floodIndices } from '@/core/pixel/ops/flood';
+import { brushCells as footprint } from '@/core/pixel/brush';
+import { PixelSelection, polygonSelection, selectionModeFor, type SelectionMode } from '@/core/pixel/selection';
 import type { PixelPointer, PixelRectSel, PixelTool, PixelToolContext, PixelToolId } from './types';
 
 /** Colour for a click: right mouse button paints the secondary colour, everything else primary. */
@@ -7,12 +8,9 @@ function colorFor(ctx: PixelToolContext, p: PixelPointer): number {
   return p.button === 2 ? ctx.secondary : ctx.primary;
 }
 
-/** Brush-aligned block of cells for (cx, cy) at the context's current brush size — never a single cell. */
+/** The brush footprint for (cx, cy) at the context's current brush size and shape — never a single cell. */
 function brushCells(ctx: PixelToolContext, cx: number, cy: number): Array<[number, number]> {
-  const box = brushBox(cx, cy, ctx.brushSize);
-  const cells: Array<[number, number]> = [];
-  for (let y = 0; y < box.h; y++) for (let x = 0; x < box.w; x++) cells.push([box.x + x, box.y + y]);
-  return cells;
+  return footprint(cx, cy, ctx.brushSize, ctx.brushShape);
 }
 
 abstract class DrawTool implements PixelTool {
@@ -98,7 +96,7 @@ class PickerTool implements PixelTool {
   pointerDown(ctx: PixelToolContext, p: PixelPointer): void {
     const cell = ctx.cellAt(p.clientX, p.clientY);
     if (!cell) return;
-    ctx.pickColor(ctx.data.get(cell.x, cell.y), p.button === 2 ? 'secondary' : 'primary');
+    ctx.pickColor(ctx.composite.get(cell.x, cell.y), p.button === 2 ? 'secondary' : 'primary');
   }
   pointerMove(ctx: PixelToolContext, p: PixelPointer): void {
     ctx.setCursor(ctx.cellAt(p.clientX, p.clientY));
@@ -116,11 +114,16 @@ class BucketTool implements PixelTool {
     if (!cell) return;
     const value = colorFor(ctx, p);
     const seed = ctx.data.get(cell.x, cell.y);
-    if (seed === value) return;
-    const cells = floodRegion(ctx.data, cell.x, cell.y, ctx.contiguous);
-    if (cells.length === 0) return;
+    if (seed === value && ctx.tolerance === 0) return;
+    const idx = floodIndices(ctx.data, cell.x, cell.y, ctx.contiguous, ctx.tolerance);
+    if (idx.length === 0) return;
+    const w = ctx.data.width;
     ctx.begin('Fill');
-    for (const [x, y] of cells) ctx.write(x, y, value);
+    for (let k = 0; k < idx.length; k++) {
+      const i = idx[k];
+      const x = i % w;
+      ctx.write(x, (i - x) / w, value);
+    }
     ctx.commit();
   }
   pointerMove(ctx: PixelToolContext, p: PixelPointer): void {
@@ -324,40 +327,219 @@ class SquircleTool extends DragShapeTool {
   }
 }
 
-/** Drag a rectangular selection; a plain click (no drag) clears it. Doesn't touch pixels itself. */
-class SelectTool implements PixelTool {
-  readonly id: PixelToolId = 'select';
+/**
+ * Shared marquee behaviour for the rectangle / ellipse select tools. The
+ * combine mode comes from the modifiers held at pointer-down (Shift add, Alt
+ * subtract, both intersect) and stays fixed for the drag, same as Photoshop.
+ * A plain click without a modifier deselects.
+ */
+abstract class MarqueeTool implements PixelTool {
+  abstract readonly id: PixelToolId;
   private start: { x: number; y: number } | null = null;
+  private base: PixelSelection | null = null;
+  private mode: SelectionMode = 'replace';
   private dragged = false;
 
+  protected abstract shape(ctx: PixelToolContext, r: PixelRectSel): PixelSelection;
+
   pointerDown(ctx: PixelToolContext, p: PixelPointer): void {
-    const cell = ctx.cellAt(p.clientX, p.clientY);
-    if (!cell) return;
-    this.start = cell;
+    this.start = clampCell(ctx, ctx.pointAt(p.clientX, p.clientY));
+    this.base = ctx.selection;
+    this.mode = this.base ? selectionModeFor(p.shiftKey, p.altKey) : 'replace';
     this.dragged = false;
-    ctx.setSelection(normalizedRect(cell.x, cell.y, cell.x, cell.y));
   }
 
   pointerMove(ctx: PixelToolContext, p: PixelPointer): void {
-    const cell = ctx.cellAt(p.clientX, p.clientY);
     if (!this.start) {
-      ctx.setCursor(cell);
+      ctx.setCursor(ctx.cellAt(p.clientX, p.clientY));
       return;
     }
-    if (!cell) return;
+    const cell = clampCell(ctx, ctx.pointAt(p.clientX, p.clientY));
+    if (!this.dragged && cell.x === this.start.x && cell.y === this.start.y) return;
     this.dragged = true;
-    ctx.setSelection(normalizedRect(this.start.x, this.start.y, cell.x, cell.y));
+    const next = this.shape(ctx, normalizedRect(this.start.x, this.start.y, cell.x, cell.y));
+    ctx.setSelection(this.base ? this.base.combine(next, this.mode) : next);
   }
 
   pointerUp(ctx: PixelToolContext): void {
-    if (this.start && !this.dragged) ctx.setSelection(null); // a plain click clears the selection
+    if (this.start && !this.dragged && this.mode === 'replace') ctx.setSelection(null);
     this.start = null;
+    this.base = null;
   }
 
   clearPreview(ctx: PixelToolContext): void {
     ctx.setCursor(null);
-    this.start = null;
   }
+}
+
+class SelectTool extends MarqueeTool {
+  readonly id: PixelToolId = 'select';
+  protected shape(ctx: PixelToolContext, r: PixelRectSel): PixelSelection {
+    return PixelSelection.rect(ctx.data.width, ctx.data.height, r);
+  }
+}
+
+class EllipseSelectTool extends MarqueeTool {
+  readonly id: PixelToolId = 'select-ellipse';
+  protected shape(ctx: PixelToolContext, r: PixelRectSel): PixelSelection {
+    return PixelSelection.fromCells(ctx.data.width, ctx.data.height, ellipseCells(r.x, r.y, r.x + r.w - 1, r.y + r.h - 1));
+  }
+}
+
+/** Freehand lasso: drag a closed outline; cells whose centre falls inside are selected. */
+class LassoTool implements PixelTool {
+  readonly id: PixelToolId = 'lasso';
+  private points: Array<{ x: number; y: number }> | null = null;
+  private base: PixelSelection | null = null;
+  private mode: SelectionMode = 'replace';
+
+  pointerDown(ctx: PixelToolContext, p: PixelPointer): void {
+    this.points = [ctx.pointAt(p.clientX, p.clientY)];
+    this.base = ctx.selection;
+    this.mode = this.base ? selectionModeFor(p.shiftKey, p.altKey) : 'replace';
+    ctx.setOverlay({ points: this.points, closed: false });
+  }
+
+  pointerMove(ctx: PixelToolContext, p: PixelPointer): void {
+    if (!this.points) {
+      ctx.setCursor(ctx.cellAt(p.clientX, p.clientY));
+      return;
+    }
+    const pt = ctx.pointAt(p.clientX, p.clientY);
+    const last = this.points[this.points.length - 1];
+    if (Math.abs(pt.x - last.x) + Math.abs(pt.y - last.y) < 0.35) return;
+    this.points.push(pt);
+    ctx.setOverlay({ points: this.points, closed: false });
+  }
+
+  pointerUp(ctx: PixelToolContext): void {
+    const pts = this.points;
+    this.points = null;
+    ctx.setOverlay(null);
+    if (!pts) return;
+    if (pts.length < 3) {
+      if (this.mode === 'replace') ctx.setSelection(null);
+      return;
+    }
+    const next = polygonSelection(ctx.data.width, ctx.data.height, pts);
+    const combined = this.base ? this.base.combine(next, this.mode) : next;
+    ctx.setSelection(combined.isEmpty() ? null : combined);
+  }
+
+  clearPreview(ctx: PixelToolContext): void {
+    ctx.setCursor(null);
+    if (this.points) this.pointerUp(ctx);
+  }
+}
+
+/** Magic wand: selects pixels of (roughly) the clicked colour on the active layer — tolerance + contiguous from the tool options. */
+class WandTool implements PixelTool {
+  readonly id: PixelToolId = 'wand';
+  pointerDown(ctx: PixelToolContext, p: PixelPointer): void {
+    const cell = ctx.cellAt(p.clientX, p.clientY);
+    if (!cell) return;
+    const { width, height } = ctx.data;
+    const next = PixelSelection.fromIndices(width, height, floodIndices(ctx.data, cell.x, cell.y, ctx.contiguous, ctx.tolerance));
+    const base = ctx.selection;
+    const combined = base ? base.combine(next, selectionModeFor(p.shiftKey, p.altKey)) : next;
+    ctx.setSelection(combined.isEmpty() ? null : combined);
+  }
+  pointerMove(ctx: PixelToolContext, p: PixelPointer): void {
+    ctx.setCursor(ctx.cellAt(p.clientX, p.clientY));
+  }
+  pointerUp(): void {}
+  clearPreview(ctx: PixelToolContext): void {
+    ctx.setCursor(null);
+  }
+}
+
+/** Drags the selected pixels (or, with no selection, the whole layer). Shift locks to the dominant axis. */
+class MoveTool implements PixelTool {
+  readonly id: PixelToolId = 'move';
+  private start: { x: number; y: number } | null = null;
+
+  pointerDown(ctx: PixelToolContext, p: PixelPointer): void {
+    if (!ctx.moveBegin()) return;
+    const pt = ctx.pointAt(p.clientX, p.clientY);
+    this.start = { x: Math.floor(pt.x), y: Math.floor(pt.y) };
+  }
+  pointerMove(ctx: PixelToolContext, p: PixelPointer): void {
+    if (!this.start) return;
+    const pt = ctx.pointAt(p.clientX, p.clientY);
+    let dx = Math.floor(pt.x) - this.start.x;
+    let dy = Math.floor(pt.y) - this.start.y;
+    if (p.shiftKey) {
+      if (Math.abs(dx) >= Math.abs(dy)) dy = 0;
+      else dx = 0;
+    }
+    ctx.moveTo(dx, dy);
+  }
+  pointerUp(ctx: PixelToolContext): void {
+    if (!this.start) return;
+    this.start = null;
+    ctx.moveEnd();
+  }
+  clearPreview(ctx: PixelToolContext): void {
+    ctx.setCursor(null);
+    if (this.start) this.pointerUp(ctx);
+  }
+}
+
+/** Drag a line; release fills the selection (or layer) with a primary → secondary gradient. Right button reverses it, Shift snaps to 45°. */
+class GradientTool implements PixelTool {
+  readonly id: PixelToolId = 'gradient';
+  private start: { x: number; y: number } | null = null;
+  private end: { x: number; y: number } | null = null;
+  private reverse = false;
+
+  pointerDown(ctx: PixelToolContext, p: PixelPointer): void {
+    const pt = ctx.pointAt(p.clientX, p.clientY);
+    this.start = pt;
+    this.end = pt;
+    this.reverse = p.button === 2;
+    ctx.setOverlay({ points: [pt, pt], closed: false });
+  }
+  pointerMove(ctx: PixelToolContext, p: PixelPointer): void {
+    if (!this.start) {
+      ctx.setCursor(ctx.cellAt(p.clientX, p.clientY));
+      return;
+    }
+    let pt = ctx.pointAt(p.clientX, p.clientY);
+    if (p.shiftKey) pt = snap45(this.start, pt);
+    this.end = pt;
+    ctx.setOverlay({ points: [this.start, pt], closed: false });
+  }
+  pointerUp(ctx: PixelToolContext): void {
+    const { start, end } = this;
+    this.start = null;
+    this.end = null;
+    ctx.setOverlay(null);
+    if (!start || !end) return;
+    ctx.fillGradient(start, end, this.reverse);
+  }
+  clearPreview(ctx: PixelToolContext): void {
+    ctx.setCursor(null);
+    if (this.start) {
+      this.start = null;
+      this.end = null;
+      ctx.setOverlay(null);
+    }
+  }
+}
+
+function snap45(a: { x: number; y: number }, b: { x: number; y: number }): { x: number; y: number } {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  const ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+  return { x: a.x + Math.cos(ang) * len, y: a.y + Math.sin(ang) * len };
+}
+
+function clampCell(ctx: PixelToolContext, pt: { x: number; y: number }): { x: number; y: number } {
+  return {
+    x: Math.max(0, Math.min(ctx.data.width - 1, Math.floor(pt.x))),
+    y: Math.max(0, Math.min(ctx.data.height - 1, Math.floor(pt.y))),
+  };
 }
 
 export function createPixelTool(id: PixelToolId): PixelTool {
@@ -380,5 +562,15 @@ export function createPixelTool(id: PixelToolId): PixelTool {
       return new SquircleTool();
     case 'select':
       return new SelectTool();
+    case 'select-ellipse':
+      return new EllipseSelectTool();
+    case 'lasso':
+      return new LassoTool();
+    case 'wand':
+      return new WandTool();
+    case 'move':
+      return new MoveTool();
+    case 'gradient':
+      return new GradientTool();
   }
 }

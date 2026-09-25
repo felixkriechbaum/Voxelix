@@ -2,8 +2,9 @@
 
 A second, independent workspace inside Voxelix for pixel-art UI widgets
 (buttons, panels, etc.) with nine-patch preview and Godot `.tres` export.
-Not a general-purpose Aseprite clone: no layers, no animation (for now),
-no tilemaps.
+Not a general-purpose Aseprite clone: no animation (for now), no tilemaps.
+Layers, masks and large textures were added later — see "Layers, masks,
+large textures" at the end.
 
 Reached from the start screen, alongside the existing voxel-project list —
 its own tab, its own IndexedDB store, its own Pinia store. The voxel editor
@@ -442,3 +443,35 @@ absorbs frames later without a rewrite), layers, tilemaps, `expand_margin`.
 `bun run typecheck` **and** `bun run build` — the History generic and the new
 canvas module are exactly the kind of change where typecheck passes and the
 bundler trips. No `Co-Authored-By` trailer (repo convention).
+
+## Layers, masks, large textures (added after M5)
+
+- **Each state is a `LayerStack`** (`core/pixel/layers.ts`): layers bottom
+  first, each with opacity, blend mode (normal/multiply/screen/overlay/
+  darken/lighten/add/difference), alpha lock, clip-to-below and an optional
+  mask. `stack.composite()` is what everything downstream sees (renderer,
+  export, preview, onion) — it aliases the layer's own buffer when there is
+  one plain layer, and otherwise recomposites only the rect that changed.
+  Format version 3; v1/v2 files load as a single layer.
+- **Masks are gray `PixelData`** (red channel = visibility), so every paint
+  tool, the bucket, gradient, clipboard and transforms work on a mask
+  unchanged — `PixelRunner.write` just converts the colour to gray
+  (luminance × alpha; the eraser hides).
+- **Change tracking is revision-based** (`PixelData.rev` / `changedSince`),
+  so compositing, the canvas, the preview and thumbnails each re-blit only
+  what changed. This is what keeps a 1024² canvas (`MAX_CANVAS`) responsive.
+- **Selections are per-pixel** (`core/pixel/selection.ts`) — rect, ellipse,
+  lasso, magic wand; Shift add / Alt subtract / both intersect. Painting is
+  clipped to the selection.
+- **Undo is `PixelHistory`**, not core/history: typed-array pixel batches
+  (deduped per pixel by `EditRecorder`) plus layer-stack snapshot entries.
+  Pixel entries point at the `PixelData` itself, so undoing a layer delete
+  and then older strokes on it works.
+- **The renderer is a viewport**: the canvas fills the stage; zoom 1/8×–64×
+  (wheel around the pointer), pan with Space-drag / middle mouse, auto-fit on
+  part switch or resize. Only visible cells, grid lines and outline runs are
+  drawn.
+- Transforms (flip / rotate / nearest-neighbour scale / move) and
+  adjustments (hue-sat, brightness-contrast, posterize, replace colour,
+  invert, desaturate) act on the selection or the whole active buffer as one
+  undo step; adjustment dialogs preview live and revert on cancel.

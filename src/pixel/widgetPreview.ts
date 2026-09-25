@@ -1,4 +1,4 @@
-import { blitPixelData } from './blit';
+import { blitPixelData, blitPixelRect } from './blit';
 import { paintNinePatch } from './NinePatchPainter';
 import { minDrawSize, resolveContentMargins } from '@/core/pixel/ninepatch';
 import { specFor, stateLabel } from '@/core/pixel/widgets';
@@ -83,27 +83,28 @@ function clamp01(v: number): number {
   return Math.min(1, Math.max(0, Number.isFinite(v) ? v : 0));
 }
 
-/** Offscreen canvases holding each PixelData's pixels, reblitted once per paint pass. */
+/** Offscreen canvases holding each PixelData's pixels, re-blitted (only the changed rect) when its revision moves. */
 class ImageCache {
-  private canvases = new WeakMap<PixelData, { canvas: HTMLCanvasElement; pass: number }>();
+  private canvases = new WeakMap<PixelData, { canvas: HTMLCanvasElement; rev: number }>();
   pass = 0;
 
   get(data: PixelData): HTMLCanvasElement {
     let entry = this.canvases.get(data);
     if (!entry) {
-      entry = { canvas: document.createElement('canvas'), pass: -1 };
+      entry = { canvas: document.createElement('canvas'), rev: -1 };
       this.canvases.set(data, entry);
     }
-    if (entry.pass !== this.pass) {
-      const c = entry.canvas;
-      if (c.width !== data.width || c.height !== data.height) {
-        c.width = data.width;
-        c.height = data.height;
-      }
-      const ctx = c.getContext('2d');
+    const c = entry.canvas;
+    const ctx = c.getContext('2d');
+    if (c.width !== data.width || c.height !== data.height || entry.rev < 0) {
+      c.width = data.width;
+      c.height = data.height;
       if (ctx) blitPixelData(ctx, data);
-      entry.pass = this.pass;
+    } else {
+      const r = data.changedSince(entry.rev);
+      if (r && ctx) blitPixelRect(ctx, data, r);
     }
+    entry.rev = data.rev;
     return entry.canvas;
   }
 }

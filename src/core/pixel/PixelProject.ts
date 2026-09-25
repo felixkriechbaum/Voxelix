@@ -69,7 +69,7 @@ export class PixelProject {
   toJSON(): PixelProjectJson {
     return {
       format: 'voxelix-pixel',
-      version: 2,
+      version: 3,
       id: this.id,
       name: this.name,
       palette: this.palette,
