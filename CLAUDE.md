@@ -198,5 +198,9 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   along the start face's normal; off → the box is narrowed to camera-visible
   voxels (`ops/visibility.ts`, grid-marched sight lines) and becomes a cell
   selection, highlighted per voxel by `Gizmos`.
-- **Next — iter 4:** ideas — selection copy/paste across objects, marquee in
-  screen space, per-object up-axis/pivot in the export dialog, mirror modelling.
+- **Next up:** mirror modelling — edits mirrored across the chosen plane(s),
+  with the selected mirror plane (XY / XZ / ZY) drawn in the viewport so it's
+  visible where the mirroring happens. Mirrored writes must honour the brush
+  size and go through the ToolRunner write path (overlays + undo).
+- **Later — iter 4 ideas:** selection copy/paste across objects, marquee in
+  screen space, per-object up-axis/pivot in the export dialog.
