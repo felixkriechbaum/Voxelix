@@ -75,18 +75,30 @@ function add() {
   if (!obj || !runner.value) return;
   const read = runner.value.data;
   const det = store.activeDetail; // dimensions are entered in voxels
+  // the shape is rasterised at the brush's resolution: each unit is a grid-aligned
+  // block of `block`³ cells (a full voxel, a half, a third or a single cell)
+  const block = runner.value.brushSize;
   const w = clamp(spec.w, maxDims.value[0]) * det;
   const h = clamp(spec.h, maxDims.value[1]) * det;
   const d = clamp(spec.d, maxDims.value[2]) * det;
-  const cells = voxelizeShape({ kind: spec.kind, w, h, d, hollow: spec.hollow });
-  const ox = Math.max(0, Math.floor((read.sizeX - w) / 2));
-  const oz = Math.max(0, Math.floor((read.sizeZ - d) / 2));
+  const units = voxelizeShape({
+    kind: spec.kind,
+    w: Math.max(1, Math.round(w / block)),
+    h: Math.max(1, Math.round(h / block)),
+    d: Math.max(1, Math.round(d / block)),
+    hollow: spec.hollow,
+  });
+  const ox = Math.max(0, Math.floor((read.sizeX - w) / 2 / block) * block);
+  const oz = Math.max(0, Math.floor((read.sizeZ - d) / 2 / block) * block);
   const value = store.currentColor + 1;
   runner.value.runExternal(`Add ${spec.kind}`, (write) => {
-    for (const [x, y, z] of cells) {
-      const px = ox + x;
-      const pz = oz + z;
-      if (read.inBounds(px, y, pz)) write(px, y, pz, value);
+    for (const [ux, uy, uz] of units) {
+      const bx = ox + ux * block;
+      const by = uy * block;
+      const bz = oz + uz * block;
+      for (let z = bz; z < bz + block; z++)
+        for (let y = by; y < by + block; y++)
+          for (let x = bx; x < bx + block; x++) if (read.inBounds(x, y, z)) write(x, y, z, value);
     }
   });
   close();
