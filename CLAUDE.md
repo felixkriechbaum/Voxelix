@@ -193,5 +193,10 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   "ext ⚠". `store.rotateOverlay` — spin just an overlay's diff to re-align it by
   hand. `resolve.extendFamily` keeps a base + its whole overlay chain together
   for rotate / subdivide; `Project.remove` cascades transitively.
+  Select-tool X-ray (`store.xray`, Alt+Z, only rendered while select is active):
+  on → meshes go see-through and a box drag reaches through the whole grid
+  along the start face's normal; off → the box is narrowed to camera-visible
+  voxels (`ops/visibility.ts`, grid-marched sight lines) and becomes a cell
+  selection, highlighted per voxel by `Gizmos`.
 - **Next — iter 4:** ideas — selection copy/paste across objects, marquee in
   screen space, per-object up-axis/pivot in the export dialog, mirror modelling.

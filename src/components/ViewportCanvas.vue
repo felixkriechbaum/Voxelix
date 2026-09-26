@@ -94,7 +94,13 @@ function syncSelectionGizmo() {
           color: 0x28e0ff,
         }
       : null,
+    sel?.cells,
   );
+}
+
+/** X-ray only shows while the select tool is active — it's a selection aid. */
+function syncXray() {
+  viewport?.setXray(store.xray && store.toolId === 'select');
 }
 
 /** Ctrl+A: switch to the select tool and select the active object's filled bounds. */
@@ -160,6 +166,7 @@ onMounted(() => {
   window.addEventListener('beforeunload', persistCamera);
 
   syncSelectionGizmo();
+  syncXray();
 
   ro = new ResizeObserver(() => viewport?.resize());
   ro.observe(c);
@@ -232,7 +239,14 @@ function onKey(e: KeyboardEvent) {
     }
     return;
   }
-  if (e.altKey) return;
+  if (e.altKey) {
+    // Alt+Z: X-ray, as in Blender (select tool)
+    if (e.key.toLowerCase() === 'z' && store.toolId === 'select') {
+      e.preventDefault();
+      store.xray = !store.xray;
+    }
+    return;
+  }
   if (e.code === 'KeyF') {
     viewport?.frameActive();
     return;
@@ -414,8 +428,10 @@ watch(
   (id) => {
     runner?.setTool(id);
     syncSelectionGizmo();
+    syncXray();
   },
 );
+watch(() => store.xray, syncXray);
 watch(
   () => store.boxMode,
   () => runner?.syncBoxMode(),

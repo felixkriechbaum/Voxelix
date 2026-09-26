@@ -3,6 +3,7 @@ import type { VoxelData } from '@/core/voxel/VoxelData';
 import type { PickResult, BuildPlane } from '@/viewport/Picker';
 import type { CursorBox } from '@/viewport/Gizmos';
 import type { Selection } from '@/core/ops/selection';
+import type { ViewRay } from '@/core/ops/visibility';
 
 export type ToolId = 'place' | 'erase' | 'box' | 'paint' | 'bucket' | 'eyedropper' | 'select';
 
@@ -35,6 +36,10 @@ export interface ToolContext {
   readonly brushSize: number;
   /** how far a paint-bucket click spreads */
   readonly bucketMode: BucketMode;
+  /** select tool: box selection reaches through to hidden voxels (Blender-style X-ray) */
+  readonly xray: boolean;
+  /** current camera, for visibility tests */
+  viewRay(): ViewRay;
   pick(clientX: number, clientY: number): PickResult | null;
   /** cell where the ray crosses the plane at `planeCoord`, axis forced to `cellValue` */
   pickOnPlane(

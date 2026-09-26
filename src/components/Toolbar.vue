@@ -241,6 +241,18 @@ async function exportAll() {
       <label class="lbl" title="Hold Shift on click to recolour every matching voxel in scope, ignoring connectivity">Shift = loose</label>
     </template>
 
+    <template v-if="store.toolId === 'select'">
+      <span class="divider" />
+      <button
+        :class="{ active: store.xray }"
+        :aria-pressed="store.xray"
+        title="X-Ray (Alt+Z) — see through the object; box selection reaches every voxel behind, not just the visible ones"
+        @click="store.xray = !store.xray"
+      >
+        X-Ray
+      </button>
+    </template>
+
     <template v-if="['place', 'erase', 'box', 'paint'].includes(store.toolId)">
       <span class="divider" />
       <label class="lbl">Brush</label>

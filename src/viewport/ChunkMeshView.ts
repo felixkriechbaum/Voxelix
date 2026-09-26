@@ -14,6 +14,8 @@ export class ChunkMeshView {
   private meshes = new Map<number, THREE.Mesh>();
   private material: THREE.MeshStandardMaterial;
   private paletteOverride: Float32Array | undefined;
+  private baseOpacity: number;
+  private baseTransparent: boolean;
 
   constructor(
     public readonly id: string,
@@ -29,7 +31,18 @@ export class ChunkMeshView {
       transparent: !!opts.dimmed,
       opacity: opts.dimmed ? 0.92 : 1,
     });
+    this.baseOpacity = this.material.opacity;
+    this.baseTransparent = this.material.transparent;
     data.markAllChunksDirty();
+  }
+
+  /** X-ray: faint and depth-write-free so voxels behind show through. */
+  setXray(on: boolean): void {
+    const m = this.material;
+    m.transparent = on || this.baseTransparent;
+    m.opacity = on ? this.baseOpacity * 0.3 : this.baseOpacity;
+    m.depthWrite = !on;
+    m.needsUpdate = true;
   }
 
   /** Swap in a freshly-derived grid (extend re-resolve, resize) and re-mesh it.

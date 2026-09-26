@@ -27,6 +27,8 @@ export class Gizmos {
   private cursorFill: THREE.Mesh;
   private selection: THREE.LineSegments;
   private selectionFill: THREE.Mesh;
+  /** per-voxel highlight for a cell-exact selection (visible-only / flood) */
+  private selectionCells: THREE.Mesh;
   private frontLabel: THREE.Sprite;
   private leftLabel: THREE.Sprite;
 
@@ -86,6 +88,24 @@ export class Gizmos {
     this.selectionFill.visible = false;
     this.selectionFill.renderOrder = 998;
     this.group.add(this.selectionFill);
+
+    this.selectionCells = new THREE.Mesh(
+      new THREE.BufferGeometry(),
+      new THREE.MeshBasicMaterial({
+        color: 0x28e0ff,
+        transparent: true,
+        opacity: 0.45,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        toneMapped: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -4,
+      }),
+    );
+    this.selectionCells.visible = false;
+    this.selectionCells.renderOrder = 998;
+    this.group.add(this.selectionCells);
 
     this.selection = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
@@ -189,9 +209,14 @@ export class Gizmos {
     this.applyBox(this.cursorFill, box);
   }
 
-  setSelection(box: CursorBox | null): void {
+  /** Selection outline; with `cells`, those voxels are highlighted instead of the whole box. */
+  setSelection(box: CursorBox | null, cells?: Array<[number, number, number]>): void {
     this.applyBox(this.selection, box);
-    this.applyBox(this.selectionFill, box);
+    this.applyBox(this.selectionFill, box && !cells ? box : null);
+    this.selectionCells.geometry.dispose();
+    this.selectionCells.geometry = box && cells ? cellFacesGeometry(cells) : new THREE.BufferGeometry();
+    this.selectionCells.visible = !!(box && cells);
+    if (box) (this.selectionCells.material as THREE.MeshBasicMaterial).color.setHex(box.color);
   }
 
   private applyBox(target: THREE.LineSegments | THREE.Mesh, box: CursorBox | null): void {
@@ -218,6 +243,35 @@ export class Gizmos {
     (this.leftLabel.material as THREE.SpriteMaterial).map?.dispose();
     this.group.clear();
   }
+}
+
+/** The outer faces of a set of cells (faces between two selected cells are skipped). */
+function cellFacesGeometry(cells: Array<[number, number, number]>): THREE.BufferGeometry {
+  const key = (x: number, y: number, z: number) => `${x},${y},${z}`;
+  const set = new Set(cells.map(([x, y, z]) => key(x, y, z)));
+  // per face: outward normal + its 4 corners as offsets from the cell origin
+  const faces: Array<[[number, number, number], number[]]> = [
+    [[1, 0, 0], [1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1]],
+    [[-1, 0, 0], [0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0]],
+    [[0, 1, 0], [0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0]],
+    [[0, -1, 0], [0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1]],
+    [[0, 0, 1], [0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1]],
+    [[0, 0, -1], [0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0]],
+  ];
+  const pos: number[] = [];
+  const idx: number[] = [];
+  for (const [x, y, z] of cells) {
+    for (const [n, c] of faces) {
+      if (set.has(key(x + n[0], y + n[1], z + n[2]))) continue;
+      const base = pos.length / 3;
+      for (let i = 0; i < 12; i += 3) pos.push(x + c[i], y + c[i + 1], z + c[i + 2]);
+      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  return g;
 }
 
 function makeLabelSprite(): THREE.Sprite {

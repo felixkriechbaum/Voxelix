@@ -8,6 +8,7 @@ import type { ActiveRender } from '@/core/project/resolve';
 import type { VoxelData } from '@/core/voxel/VoxelData';
 import { adjustPaletteLinear } from '@/core/palette';
 import type { ColorAdjust } from '@/core/project/types';
+import type { ViewRay } from '@/core/ops/visibility';
 
 export class Viewport {
   readonly scene = new THREE.Scene();
@@ -25,6 +26,7 @@ export class Viewport {
   private raf = 0;
   private paletteLinear: Float32Array<ArrayBufferLike> = new Float32Array(768);
   private activeColorAdjust: ColorAdjust | null = null;
+  private xray = false;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.scene.background = new THREE.Color(0x181b23);
@@ -84,6 +86,7 @@ export class Viewport {
     } else {
       this.editableView?.dispose();
       this.editableView = new ChunkMeshView(render.editableId, render.editableData, this.mesher);
+      this.editableView.setXray(this.xray);
       this.scene.add(this.editableView.group);
       this.editableView.setPaletteOverride(this.colorAdjustOverride());
     }
@@ -96,6 +99,7 @@ export class Viewport {
       } else {
         this.baseView?.dispose();
         this.baseView = new ChunkMeshView(baseId, render.baseContext, this.mesher, { dimmed: true });
+        this.baseView.setXray(this.xray);
         this.scene.add(this.baseView.group);
         this.baseView.setPaletteOverride(this.colorAdjustOverride());
       }
@@ -159,6 +163,22 @@ export class Viewport {
     return this.picker.pickPlane(this.ndc(clientX, clientY), this.controls.camera, axis, planeCoord, cellValue);
   }
 
+  /** Camera position + direction, for voxel visibility tests. */
+  viewRay(): ViewRay {
+    const cam = this.controls.camera;
+    cam.updateMatrixWorld();
+    const eye = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
+    const dir = cam.getWorldDirection(new THREE.Vector3());
+    return { eye: [eye.x, eye.y, eye.z], dir: [dir.x, dir.y, dir.z], ortho: this.controls.mode === 'ortho' };
+  }
+
+  /** See-through voxel meshes (select tool X-ray). */
+  setXray(on: boolean): void {
+    this.xray = on;
+    this.editableView?.setXray(on);
+    this.baseView?.setXray(on);
+  }
+
   get projection(): ProjectionMode {
     return this.controls.mode;
   }
@@ -181,8 +201,8 @@ export class Viewport {
     this.gizmos.setCursor(box);
   }
 
-  setSelectionBox(box: CursorBox | null): void {
-    this.gizmos.setSelection(box);
+  setSelectionBox(box: CursorBox | null, cells?: Array<[number, number, number]>): void {
+    this.gizmos.setSelection(box, cells);
   }
 
   frameActive(): void {

@@ -14,6 +14,7 @@ import type { VoxelEdit } from '@/core/voxel/types';
 import type { VoxelObject } from '@/core/project/VoxelObject';
 import type { CursorBox } from '@/viewport/Gizmos';
 import type { Viewport } from '@/viewport/Viewport';
+import type { ViewRay } from '@/core/ops/visibility';
 import type { EditorStore } from '@/stores/editor';
 
 interface ActiveCtx {
@@ -106,6 +107,14 @@ export class ToolRunner implements ToolContext {
 
   get bucketMode() {
     return this.store.bucketMode;
+  }
+
+  get xray(): boolean {
+    return this.store.xray;
+  }
+
+  viewRay(): ViewRay {
+    return this.viewport.viewRay();
   }
 
   /** brush footprint in grid cells: a voxel (detail cells) divided by the chosen fraction */

@@ -5,9 +5,12 @@ import {
   cellSelection,
   clampSelection,
   makeSelection,
+  selectionCells,
   selectionContains,
   translateSelection,
+  type Selection,
 } from '@/core/ops/selection';
+import { visibleCellsInBox } from '@/core/ops/visibility';
 import { floodRegion } from '@/core/ops/flood';
 import { moveSelection } from '@/editor/selectionOps';
 import type { VoxelData } from '@/core/voxel/VoxelData';
@@ -558,11 +561,14 @@ export class SelectTool implements Tool {
   private cornerB: THREE.Vector3 | null = null;
   private moveFrom: THREE.Vector3 | null = null;
   private moveDelta: [number, number, number] = [0, 0, 0];
+  /** X-ray: the box runs through the whole grid along the start face's normal */
+  private depthAxis: 0 | 1 | 2 = 1;
 
   pointerDown(ctx: ToolContext, p: PointerInfo): void {
     if (p.button !== 0) return;
     const hit = ctx.pick(p.clientX, p.clientY);
     if (!hit) return;
+    this.depthAxis = normalAxis(hit.normal);
     const sel = ctx.selection;
     const under = hit.remove ?? hit.place;
 
@@ -616,11 +622,8 @@ export class SelectTool implements Tool {
 
   pointerUp(ctx: ToolContext): void {
     if (this.phase === 'box' && this.cornerA && this.cornerB) {
-      const box = makeSelection(
-        [this.cornerA.x, this.cornerA.y, this.cornerA.z],
-        [this.cornerB.x, this.cornerB.y, this.cornerB.z],
-      );
-      ctx.setSelection(clampSelection(box, ctx.data));
+      const box = clampSelection(this.boxFor(ctx, this.cornerA, this.cornerB), ctx.data);
+      ctx.setSelection(box && !ctx.xray ? visibleOnly(ctx, box) : box);
     } else if (this.phase === 'move' && ctx.selection) {
       moveSelection(ctx, ctx.selection, this.moveDelta);
     }
@@ -638,14 +641,37 @@ export class SelectTool implements Tool {
     ctx.setCursor(null);
   }
 
-  private drawBox(ctx: ToolContext, a: THREE.Vector3, b: THREE.Vector3, color: number): void {
+  /** The dragged box; with X-ray it reaches through the whole grid along the depth axis. */
+  private boxFor(ctx: ToolContext, a: THREE.Vector3, b: THREE.Vector3): Selection {
     const s = makeSelection([a.x, a.y, a.z], [b.x, b.y, b.z]);
+    if (ctx.xray) {
+      const size = [ctx.data.sizeX, ctx.data.sizeY, ctx.data.sizeZ];
+      s.min[this.depthAxis] = 0;
+      s.max[this.depthAxis] = size[this.depthAxis] - 1;
+    }
+    return s;
+  }
+
+  private drawBox(ctx: ToolContext, a: THREE.Vector3, b: THREE.Vector3, color: number): void {
+    const s = this.boxFor(ctx, a, b);
     ctx.setCursor({
       min: new THREE.Vector3(...s.min),
       max: new THREE.Vector3(s.max[0] + 1, s.max[1] + 1, s.max[2] + 1),
       color,
     });
   }
+}
+
+/**
+ * X-ray off: narrow a box selection to the voxels the camera can actually see.
+ * Stays a plain box when nothing inside it is hidden, so box-only behaviour
+ * (moving empty space, handing deletions back to the base) keeps working.
+ */
+function visibleOnly(ctx: ToolContext, box: Selection): Selection | null {
+  const solid = selectionCells(ctx.data, box).length;
+  if (solid === 0) return box;
+  const visible = visibleCellsInBox(ctx.data, box, ctx.viewRay());
+  return visible.length === solid ? box : cellSelection(visible);
 }
 
 function ordered(a: THREE.Vector3, b: THREE.Vector3): [THREE.Vector3, THREE.Vector3] {
