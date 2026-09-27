@@ -195,6 +195,8 @@ export class Gizmos {
     this.leftLabel = makeLabelSprite();
     for (const s of [this.frontLabel, this.leftLabel]) this.group.add(s);
     this.redrawLabels();
+    // the label face is a web font — repaint once it has actually loaded
+    document.fonts?.ready.then(() => this.redrawLabels());
 
     this.setObjectSize(16, 16, 16);
   }
@@ -439,7 +441,7 @@ function makeLabelSprite(): THREE.Sprite {
 }
 
 function makeLabelTexture(text: string, color: string): { texture: THREE.CanvasTexture; aspect: number } {
-  const font = '600 48px "Josefin Sans", system-ui, sans-serif';
+  const font = '600 48px "Chakra Petch", system-ui, sans-serif';
   const pad = 14;
   const probe = document.createElement('canvas').getContext('2d')!;
   probe.font = font;

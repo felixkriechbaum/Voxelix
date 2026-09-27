@@ -1,42 +1,52 @@
 /* ---------------------------------------------------------------------------
    Voxelix design tokens
-   The workspace is quiet graphite so the model in the viewport is the hero.
-   Colour lives in exactly two places: the palette swatches, and one warm
-   amber that marks "active" and the primary action.
+   A cool slate workspace so the model in the viewport is the hero. Colour
+   comes from the brand's own cubes: mint marks "active" and the primary
+   action; the X / Y / Z axis colours label anything spatial (plane, mirror,
+   size fields), so the UI and the viewport gizmos speak one language.
    Dark is the default; useTheme() sets [data-theme] to a concrete light/dark.
 --------------------------------------------------------------------------- */
 :root {
-  --surface-0: #15171c; /* app background, behind panels */
-  --surface-1: #1d2027; /* panels */
-  --surface-2: #272b34; /* raised controls, inputs */
-  --surface-hi: #313641; /* hover */
-  --line: #343a46;
-  --line-strong: #454c5c;
+  --surface-0: #181b21; /* app background, behind panels */
+  --surface-1: #1f232a; /* panels */
+  --surface-2: #292e37; /* raised controls, inputs */
+  --surface-hi: #333945; /* hover */
+  --line: #313743;
+  --line-strong: #454c5a;
 
-  --ink: #e3e6ed;
-  --ink-dim: #939aa8;
-  --ink-faint: #848b9a;
+  --ink: #e6e9ee;
+  --ink-dim: #9aa2b1;
+  --ink-faint: #8a92a1;
 
-  --accent: #f2b134;
-  --accent-hover: #ffc157;
-  --accent-ink: #1b1408;
+  --accent: #7de3b4;
+  --accent-hover: #9aebc6;
+  --accent-ink: #0d2419;
+  /* the darker side face of an active key — the cube's shadowed flank */
+  --accent-side: #3f9b73;
+  --accent-soft: rgba(125, 227, 180, 0.13);
 
-  --warn: #ef5350;
-  --warn-ink: #180a0a;
+  /* the three axes, same as the viewport gizmo */
+  --axis-x: #ff5f5f;
+  --axis-y: #5fe08e;
+  --axis-z: #5a9dff;
 
-  /* status accents for transient feedback — deliberately desaturated so they
-     read next to the amber without shouting over the viewport */
-  --status-success: #6faa86;
-  --status-info: var(--accent);
-  --status-error: #d47b74;
+  --warn: #ef5d5a;
+  --warn-ink: #1a0909;
 
-  --scrim: rgba(8, 9, 12, 0.62);
-  --shadow: 0 12px 34px -10px rgba(0, 0, 0, 0.6);
+  --status-success: var(--accent);
+  --status-info: #8fb8ff;
+  --status-error: #e38a83;
 
-  --accent-soft: rgba(242, 177, 52, 0.16); /* selection / hover tint */
+  --scrim: rgba(9, 11, 15, 0.62);
+  --shadow: 0 14px 36px -12px rgba(0, 0, 0, 0.65);
+  /* the side face under a raised key */
+  --key-side: #14171c;
 
-  --radius: 4px;
-  --radius-sm: 3px;
+  --radius: 6px;
+  --radius-sm: 4px;
+
+  --font-ui: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Chakra Petch', 'IBM Plex Sans', system-ui, sans-serif;
 
   /* aliases kept so component styles need no churn */
   --bg: var(--surface-0);
@@ -52,31 +62,37 @@
 }
 
 :root[data-theme='light'] {
-  --surface-0: #e8eaee;
+  --surface-0: #e9ecf0;
   --surface-1: #ffffff;
-  --surface-2: #eef0f4;
-  --surface-hi: #e3e6ec;
-  --line: #d6dae2;
-  --line-strong: #c2c8d2;
+  --surface-2: #f1f3f6;
+  --surface-hi: #e4e8ed;
+  --line: #d7dce3;
+  --line-strong: #bfc6d0;
 
-  --ink: #1f232b;
-  --ink-dim: #596070;
-  --ink-faint: #697080;
+  --ink: #1b1f27;
+  --ink-dim: #565e6c;
+  --ink-faint: #677080;
 
-  --accent: #b06d12;
-  --accent-hover: #925a0d;
-  --accent-ink: #fff7ec;
+  --accent: #1c8a5c;
+  --accent-hover: #16734c;
+  --accent-ink: #f2fff8;
+  --accent-side: #0f5a3b;
+  --accent-soft: rgba(28, 138, 92, 0.12);
 
-  --warn: #ce3439;
+  --axis-x: #d93b3b;
+  --axis-y: #1f9a52;
+  --axis-z: #2e6fd8;
+
+  --warn: #cc3437;
   --warn-ink: #ffffff;
 
-  /* darker on white, same restraint */
-  --status-success: #3f7d5f;
+  --status-success: var(--accent);
+  --status-info: #2e6fd8;
   --status-error: #b25850;
 
-  --accent-soft: rgba(176, 109, 18, 0.14);
   --scrim: rgba(22, 26, 34, 0.34);
-  --shadow: 0 12px 34px -12px rgba(20, 24, 34, 0.28);
+  --shadow: 0 14px 36px -14px rgba(20, 24, 34, 0.3);
+  --key-side: #c9cfd8;
 
   color-scheme: light;
 }
@@ -95,18 +111,16 @@ body,
 body {
   background: var(--surface-0);
   color: var(--ink);
-  font-family: 'Josefin Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-size: 14px;
+  font-family: var(--font-ui);
+  font-size: 13px;
   line-height: 1.45;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Josefin Sans has no lining/tabular figures — borrow the system font for
-   dense numeric fields so columns line up and stay legible at small sizes */
+/* numbers line up in columns */
 input[type='number'],
 .tabular {
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-variant-numeric: tabular-nums;
 }
 
@@ -122,7 +136,7 @@ button {
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 5px 10px;
+  padding: 4px 10px;
   cursor: pointer;
   transition: background-color 0.12s, border-color 0.12s, color 0.12s;
 }
@@ -206,14 +220,62 @@ select {
   flex: 1;
 }
 
-/* section labels — sentence case, no tracking, no shouting */
+/* section headings — the squared display face, sentence case, no tracking */
 h3 {
   margin: 0 0 8px;
-  font-size: 12px;
+  font-family: var(--font-display);
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0;
+  letter-spacing: 0.01em;
   text-transform: none;
+  color: var(--ink);
+}
+
+/* a keyboard key, for shortcut hints */
+kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 4px;
+  font: 500 10.5px/16px var(--font-ui);
+  text-align: center;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+}
+
+/* segmented control: a row of mutually related buttons sharing one outline */
+.seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--surface-0);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.seg > button {
+  border-color: transparent;
+  background: transparent;
+  padding: 3px 9px;
   color: var(--ink-dim);
+}
+.seg > button:hover:not(:disabled) {
+  background: var(--surface-hi);
+  border-color: transparent;
+  color: var(--ink);
+}
+.seg > button.active,
+.seg > button.active:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* range sliders in the accent, not the browser's blue */
+input[type='range'] {
+  accent-color: var(--accent);
+  height: 18px;
 }
 
 @media (prefers-reduced-motion: reduce) {

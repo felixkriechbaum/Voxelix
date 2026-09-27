@@ -24,12 +24,15 @@ export class Viewport {
   private baseView: ChunkMeshView | null = null;
   private timer = new THREE.Timer();
   private raf = 0;
-  private paletteLinear: Float32Array<ArrayBufferLike> = new Float32Array(768);
+  private paletteLinear: Float32Array<ArrayBufferLike> = new Float32Array(256 * 4);
   private activeColorAdjust: ColorAdjust | null = null;
   private xray = false;
+  /** the three scene lights at their normal strength, for the screenshot brightness slider */
+  private lights: Array<{ light: THREE.Light; base: number }> = [];
+  private background = new THREE.Color(0x181b23);
 
   constructor(private canvas: HTMLCanvasElement) {
-    this.scene.background = new THREE.Color(0x181b23);
+    this.scene.background = this.background;
 
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 4000);
     // wide symmetric depth slab so an orbiting ortho camera never clips the object
@@ -50,6 +53,7 @@ export class Viewport {
     const fill = new THREE.DirectionalLight(0xbcd0ff, 0.5);
     fill.position.set(-20, 12, -24);
     this.scene.add(hemi, key, fill);
+    this.lights = [hemi, key, fill].map((light) => ({ light, base: light.intensity }));
     this.scene.add(this.gizmos.group);
 
     this.mesher.onResult((r) => {
@@ -189,7 +193,7 @@ export class Viewport {
 
   /** Match the editor theme — viewport background + grid colours. */
   setDark(dark: boolean): void {
-    (this.scene.background as THREE.Color).setHex(dark ? 0x181b23 : 0xe4e7ec);
+    this.background.setHex(dark ? 0x181b23 : 0xe4e7ec);
     this.gizmos.setDark(dark);
   }
 
@@ -216,16 +220,135 @@ export class Viewport {
   }
 
   frameActive(): void {
+    const f = this.activeFraming();
+    if (f) this.controls.frame(f.center, Math.max(f.radius, 3));
+  }
+
+  /** Centre + rough radius of what's filled in the active object (the grid if it's empty). */
+  private activeFraming(): { center: THREE.Vector3; radius: number; bounds: THREE.Box3 } | null {
     const d = this.editableView?.data;
-    if (!d) return;
+    if (!d) return null;
     const b = d.filledBounds() ?? this.baseView?.data.filledBounds() ?? null;
-    const center = b
-      ? new THREE.Vector3((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2)
-      : new THREE.Vector3(d.sizeX / 2, d.sizeY / 2, d.sizeZ / 2);
-    const radius = b
-      ? Math.max(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z) * 0.5
-      : Math.max(d.sizeX, d.sizeY, d.sizeZ) * 0.5;
-    this.controls.frame(center, Math.max(radius, 3));
+    // filled bounds are already in world units (max exclusive: a voxel spans [x, x + 1])
+    const bounds = b
+      ? new THREE.Box3(new THREE.Vector3(b.min.x, b.min.y, b.min.z), new THREE.Vector3(b.max.x, b.max.y, b.max.z))
+      : new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(d.sizeX, d.sizeY, d.sizeZ));
+    const center = bounds.getCenter(new THREE.Vector3());
+    const size = bounds.getSize(new THREE.Vector3());
+    return { center, radius: Math.max(size.x, size.y, size.z) * 0.5, bounds };
+  }
+
+  // ---- screenshot mode ---------------------------------------------------
+
+  /** Hide every editor helper (grid, axes, cursor, selection) and lock mouse navigation. */
+  setScreenshotMode(on: boolean): void {
+    this.gizmos.group.visible = !on;
+    this.controls.enabled = !on;
+    if (!on) this.setLightScale(1);
+  }
+
+  /** Scale all scene lights (1 = normal). */
+  setLightScale(k: number): void {
+    for (const { light, base } of this.lights) light.intensity = base * k;
+  }
+
+  /**
+   * Aim the camera at the active object for a screenshot. `zoom` 1 fits the
+   * whole object inside the square crop; 2 is twice as close.
+   */
+  applyShot(o: { yaw: number; pitch: number; zoom: number; mode: ProjectionMode }): void {
+    const f = this.activeFraming();
+    if (!f) return;
+    this.controls.setMode(o.mode);
+    // the bounding sphere of the filled box, so no view direction clips a corner
+    const sphere = f.bounds.getBoundingSphere(new THREE.Sphere());
+    const halfFov = (this.camera.fov * Math.PI) / 360;
+    // the square crop is as tall as the viewport, or as wide on a portrait one
+    const cropScale = Math.min(1, this.camera.aspect);
+    const fit = (sphere.radius * 1.08) / (Math.tan(halfFov) * cropScale);
+    this.controls.setOrbit({
+      target: sphere.center,
+      distance: Math.max(2, fit / Math.max(0.05, o.zoom)),
+      yaw: o.yaw,
+      pitch: o.pitch,
+    });
+  }
+
+  /**
+   * Render the square crop of the current view to a PNG, `size` pixels on a
+   * side, helpers hidden. Transparent: only the object, no background.
+   */
+  async renderShot(size: number, transparent: boolean): Promise<Blob | null> {
+    const cam = this.shotCamera();
+    const target = new THREE.WebGLRenderTarget(size, size, { samples: 4 });
+    target.texture.colorSpace = THREE.SRGBColorSpace;
+    const helpersVisible = this.gizmos.group.visible;
+    const prevBackground = this.scene.background;
+    const prevClear = this.renderer.getClearColor(new THREE.Color());
+    const prevAlpha = this.renderer.getClearAlpha();
+    try {
+      this.gizmos.group.visible = false;
+      if (transparent) {
+        this.scene.background = null;
+        this.renderer.setClearColor(0x000000, 0);
+      }
+      this.renderer.setRenderTarget(target);
+      this.renderer.clear();
+      this.renderer.render(this.scene, cam);
+      const px = new Uint8Array(size * size * 4);
+      this.renderer.readRenderTargetPixels(target, 0, 0, size, size, px);
+
+      const out = document.createElement('canvas');
+      out.width = out.height = size;
+      const g = out.getContext('2d');
+      if (!g) return null;
+      const img = g.createImageData(size, size);
+      // GL rows run bottom-up; edge pixels come out premultiplied — undo both
+      for (let y = 0; y < size; y++) {
+        const src = (size - 1 - y) * size * 4;
+        const dst = y * size * 4;
+        for (let x = 0; x < size * 4; x += 4) {
+          const a = px[src + x + 3];
+          const k = a > 0 && a < 255 ? 255 / a : 1;
+          img.data[dst + x] = Math.min(255, px[src + x] * k);
+          img.data[dst + x + 1] = Math.min(255, px[src + x + 1] * k);
+          img.data[dst + x + 2] = Math.min(255, px[src + x + 2] * k);
+          img.data[dst + x + 3] = a;
+        }
+      }
+      g.putImageData(img, 0, 0);
+      return await new Promise<Blob | null>((resolve) => out.toBlob(resolve, 'image/png'));
+    } finally {
+      this.renderer.setRenderTarget(null);
+      this.scene.background = prevBackground;
+      this.renderer.setClearColor(prevClear, prevAlpha);
+      this.gizmos.group.visible = helpersVisible;
+      target.dispose();
+    }
+  }
+
+  /** A square-aspect copy of the live camera that sees exactly the crop frame. */
+  private shotCamera(): THREE.Camera {
+    const live = this.controls.camera;
+    const aspect = this.camera.aspect;
+    if (live instanceof THREE.OrthographicCamera) {
+      const half = live.top * Math.min(1, aspect);
+      const cam = new THREE.OrthographicCamera(-half, half, half, -half, live.near, live.far);
+      cam.position.copy(live.position);
+      cam.quaternion.copy(live.quaternion);
+      cam.updateProjectionMatrix();
+      cam.updateMatrixWorld();
+      return cam;
+    }
+    const p = live as THREE.PerspectiveCamera;
+    // on a portrait viewport the crop is as wide as the view, so narrow the fov to match
+    const halfFov = Math.atan(Math.tan((p.fov * Math.PI) / 360) * Math.min(1, aspect));
+    const cam = new THREE.PerspectiveCamera((halfFov * 360) / Math.PI, 1, p.near, p.far);
+    cam.position.copy(p.position);
+    cam.quaternion.copy(p.quaternion);
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    return cam;
   }
 
   resize(): void {

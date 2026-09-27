@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import Toolbar from './Toolbar.vue';
+import ToolRail from './ToolRail.vue';
 import Outliner from './Outliner.vue';
 import PalettePanel from './PalettePanel.vue';
 import ViewportCanvas from './ViewportCanvas.vue';
@@ -52,18 +53,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
     <Toolbar
       class="toolbar"
       :inert="!!store.exportStatus"
-      @add-shape="showShape = true"
       @settings="showSettings = true"
       @close-project="closeProject"
     />
+    <ToolRail class="rail" :inert="!!store.exportStatus" @add-shape="showShape = true" />
+    <main class="stage" :inert="!!store.exportStatus">
+      <ViewportCanvas />
+    </main>
     <aside class="side" :inert="!!store.exportStatus">
       <Outliner />
       <PalettePanel />
       <SupportLink />
     </aside>
-    <main class="stage" :inert="!!store.exportStatus">
-      <ViewportCanvas />
-    </main>
 
     <ShapeDialog v-if="showShape" @close="showShape = false" />
     <SettingsDialog v-if="showSettings" @close="showSettings = false" />
@@ -82,47 +83,46 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 .editor {
   height: 100%;
   display: grid;
-  grid-template-columns: 264px 1fr;
-  grid-template-rows: auto 1fr;
-  gap: 8px;
-  padding: 8px;
+  grid-template-columns: auto minmax(0, 1fr) 280px;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    'top top top'
+    'rail stage side';
+  gap: 6px;
+  padding: 6px;
 }
 .toolbar {
-  grid-column: 1 / 3;
+  grid-area: top;
 }
-.side {
-  grid-row: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 0;
-  overflow: auto;
+.rail {
+  grid-area: rail;
 }
 .stage {
-  grid-row: 2;
+  grid-area: stage;
   min-width: 0;
   min-height: 0;
   border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid var(--line);
 }
+.side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  overflow: auto;
+}
 
 @media (max-width: 720px) {
   .editor {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(180px, 34vh) minmax(320px, 1fr);
+    grid-template-rows: auto auto minmax(360px, 70vh) auto;
+    grid-template-areas: 'top' 'rail' 'stage' 'side';
     overflow: auto;
-    padding: 6px;
-    gap: 6px;
-  }
-  .toolbar {
-    grid-column: 1;
   }
   .side {
-    grid-row: 2;
-  }
-  .stage {
-    grid-row: 3;
+    overflow: visible;
   }
 }
 .export-overlay {

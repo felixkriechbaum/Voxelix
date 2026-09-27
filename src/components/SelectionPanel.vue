@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { useEditorStore } from '@/stores/editor';
 import { useSession } from '@/editor/session';
-import { selectionDims } from '@/core/ops/selection';
+import { selectionCells, selectionDims } from '@/core/ops/selection';
 import {
   deleteSelection,
   duplicateSelection,
@@ -35,6 +35,17 @@ function duplicate() {
 function remove() {
   if (runner.value && store.selection) deleteSelection(runner.value, store.selection);
 }
+/** only normal objects have parts — an overlay is a single diff */
+const canSplit = computed(() => {
+  void store.activeVersion;
+  void store.structureVersion;
+  return store.activeObject()?.kind === 'normal';
+});
+function toNewPart() {
+  if (runner.value && store.selection) store.selectionToNewPart(
+      selectionCells(runner.value.data, store.selection).map((c): [number, number, number] => [c.x, c.y, c.z]),
+    );
+}
 function toBase() {
   if (runner.value && store.selection) revertSelectionToBase(runner.value, store.selection);
 }
@@ -49,12 +60,12 @@ function toBase() {
     </div>
 
     <div class="nudge">
-      <button title="Move −X (←)" @click="nudge([-1, 0, 0])">−X</button>
-      <button title="Move +X (→)" @click="nudge([1, 0, 0])">+X</button>
-      <button title="Move +Y (Shift ↑)" @click="nudge([0, 1, 0])">+Y</button>
-      <button title="Move −Y (Shift ↓)" @click="nudge([0, -1, 0])">−Y</button>
-      <button title="Move −Z (↑)" @click="nudge([0, 0, -1])">−Z</button>
-      <button title="Move +Z (↓)" @click="nudge([0, 0, 1])">+Z</button>
+      <button title="Move −X (←)" @click="nudge([-1, 0, 0])">−<span class="ax" style="color: var(--axis-x)">X</span></button>
+      <button title="Move +X (→)" @click="nudge([1, 0, 0])">+<span class="ax" style="color: var(--axis-x)">X</span></button>
+      <button title="Move +Y (Shift ↑)" @click="nudge([0, 1, 0])">+<span class="ax" style="color: var(--axis-y)">Y</span></button>
+      <button title="Move −Y (Shift ↓)" @click="nudge([0, -1, 0])">−<span class="ax" style="color: var(--axis-y)">Y</span></button>
+      <button title="Move −Z (↑)" @click="nudge([0, 0, -1])">−<span class="ax" style="color: var(--axis-z)">Z</span></button>
+      <button title="Move +Z (↓)" @click="nudge([0, 0, 1])">+<span class="ax" style="color: var(--axis-z)">Z</span></button>
     </div>
 
     <div class="acts">
@@ -62,6 +73,14 @@ function toBase() {
       <button title="Stamp a copy alongside" @click="duplicate">Duplicate</button>
       <button class="danger" title="Delete voxels (Del)" @click="remove">Delete</button>
       <button title="Clear selection (Esc)" @click="store.clearSelection()">Deselect</button>
+      <button
+        v-if="canSplit"
+        class="wide"
+        title="Move these voxels into a part of their own — then give just that part a modifier"
+        @click="toNewPart"
+      >
+        Move to new part
+      </button>
       <button
         v-if="canGiveBack"
         class="wide"
@@ -76,19 +95,16 @@ function toBase() {
 
 <style scoped>
 .sel {
-  position: absolute;
-  top: 10px;
-  left: 10px;
   padding: 8px;
+  box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: 150px;
+  width: 176px;
 }
 .hd {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink-dim);
+  font: 600 13px/1.3 var(--font-display);
+  color: var(--ink);
   display: flex;
   justify-content: space-between;
   gap: 6px;
@@ -111,6 +127,9 @@ function toBase() {
 .sel button {
   padding: 4px 6px;
   font-size: 11px;
+}
+.ax {
+  font-weight: 600;
 }
 .acts .wide {
   grid-column: 1 / -1;

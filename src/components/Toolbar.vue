@@ -21,22 +21,19 @@ import {
   faGear,
   faFileExport,
   faBoxesStacked,
-  faShapes,
-  faFolderOpen,
+  faChevronLeft,
 } from '@fortawesome/pro-solid-svg-icons';
-import type { ToolId } from '@/tools/types';
-import type { BuildPlane } from '@/viewport/Picker';
 
 const store = useEditorStore();
 const { runner } = useSession();
 const emit = defineEmits<{
-  (e: 'add-shape'): void;
   (e: 'settings'): void;
   (e: 'close-project'): void;
 }>();
 const { saving, saveProject } = useProjectSave();
 
 const busy = ref('');
+const iconUrl = `${import.meta.env.BASE_URL}icon.png`;
 
 const canUndo = computed(() => {
   void store.editVersion;
@@ -55,65 +52,6 @@ const autosave = computed(() => {
   if (store.autosaveAt) return { text: 'Saved locally', bad: false };
   return { text: '', bad: false };
 });
-
-const tools: Array<{ id: ToolId; label: string; key: string }> = [
-  { id: 'place', label: 'Place', key: 'W or 1' },
-  { id: 'erase', label: 'Erase', key: 'E or 2' },
-  { id: 'box', label: 'Box', key: 'R or 3' },
-  { id: 'paint', label: 'Paint', key: 'T or 4' },
-  { id: 'bucket', label: 'Bucket', key: 'G or 5' },
-  { id: 'eyedropper', label: 'Pick', key: 'Q or 6' },
-  { id: 'select', label: 'Select', key: 'V or 7' },
-];
-/** Build planes; the dots are the two axes the plane spans (same colours as the viewport axes). */
-const planes: Array<{ id: BuildPlane; colors: [string, string]; title: string }> = [
-  { id: 'xz', colors: ['#ff4d4d', '#4d9bff'], title: 'Ground plane (XZ) — build flat on the floor' },
-  { id: 'xy', colors: ['#ff4d4d', '#4dff88'], title: 'Front plane (XY) — build upright, facing front' },
-  { id: 'yz', colors: ['#4dff88', '#4d9bff'], title: 'Side plane (YZ) — build upright, facing the side' },
-];
-
-/** Mirror planes, keyed by the axis each flips — listed in the same order as the build planes. */
-const mirrorPlanes: Array<{ axis: 0 | 1 | 2; label: string; color: string; title: string }> = [
-  { axis: 1, label: 'XZ', color: '#4dff88', title: 'Mirror top ↔ bottom across the XZ plane (flips Y)' },
-  { axis: 2, label: 'XY', color: '#4d9bff', title: 'Mirror front ↔ back across the XY plane (flips Z)' },
-  { axis: 0, label: 'YZ', color: '#ff4d4d', title: 'Mirror left ↔ right across the YZ plane (flips X)' },
-];
-
-const brushes = [
-  { f: 1, size: 16, label: 'Full voxel' },
-  { f: 2, size: 10, label: 'Half voxel' },
-  { f: 3, size: 6, label: 'Third of a voxel' },
-  { f: 6, size: 3, label: 'Single cell (sixth of a voxel)' },
-];
-function pickBrush(f: number) {
-  store.voxelFraction = f;
-  // any sub-voxel choice subdivides the object so the smaller sizes are distinct
-  if (store.activeObjectId) store.ensureDetail(store.activeObjectId);
-}
-const currentBrushF = computed(() => Math.min(store.activeDetail, store.voxelFraction));
-
-const maxBuildOffsetCells = computed(() => {
-  void store.activeVersion;
-  void store.structureVersion;
-  const obj = store.activeObject();
-  if (!obj || !store.project) return 0;
-  const data = resolveEffectiveData(obj, store.project);
-  const size = store.buildPlane === 'xz' ? data.sizeY : store.buildPlane === 'xy' ? data.sizeZ : data.sizeX;
-  return Math.max(0, size - 1);
-});
-const buildOffsetVoxels = computed({
-  get: () => store.buildOffset / store.activeDetail,
-  set: (value: number) => {
-    const cells = Math.round((Number(value) || 0) * store.activeDetail);
-    store.buildOffset = Math.max(0, Math.min(maxBuildOffsetCells.value, cells));
-  },
-});
-const maxBuildOffsetVoxels = computed(() => maxBuildOffsetCells.value / store.activeDetail);
-
-function setBuildPlane(value: BuildPlane) {
-  store.buildPlane = value;
-  store.buildOffset = Math.min(store.buildOffset, maxBuildOffsetCells.value);
-}
 
 async function exportActive() {
   const obj = store.activeObject();
@@ -180,203 +118,21 @@ async function exportAll() {
 </script>
 
 <template>
-  <div class="panel bar">
+  <header class="bar">
     <button
-      class="ic"
-      title="Projects — open or start another (this one is saved automatically)"
-      aria-label="Back to projects"
+      class="ic back"
+      title="All projects — this one is saved automatically"
+      aria-label="Back to all projects"
       @click="emit('close-project')"
     >
-      <Icon :icon="faFolderOpen" />
+      <Icon :icon="faChevronLeft" />
     </button>
-    <strong class="name" :title="`Project: ${store.projectName}`">{{ store.projectName }}</strong>
-    <span class="divider" />
-
-    <button
-      v-for="t in tools"
-      :key="t.id"
-      :class="{ active: store.toolId === t.id }"
-      :aria-pressed="store.toolId === t.id"
-      :title="`${t.label} tool — press ${t.key}`"
-      @click="store.toolId = t.id"
-    >
-      {{ t.label }}
-    </button>
-
-    <template v-if="store.toolId === 'box'">
-      <span class="divider" />
-      <button
-        :class="{ active: store.boxMode === 'fill' }"
-        :aria-pressed="store.boxMode === 'fill'"
-        title="Fill the box with the current colour"
-        @click="store.boxMode = 'fill'"
-      >
-        Fill
-      </button>
-      <button
-        :class="{ active: store.boxMode === 'erase' }"
-        :aria-pressed="store.boxMode === 'erase'"
-        title="Clear every voxel inside the box"
-        @click="store.boxMode = 'erase'"
-      >
-        Erase
-      </button>
-    </template>
-
-    <template v-if="store.toolId === 'bucket'">
-      <span class="divider" />
-      <label class="lbl">Spread</label>
-      <button
-        :class="{ active: store.bucketMode === 'volume' }"
-        :aria-pressed="store.bucketMode === 'volume'"
-        title="Whole connected region of this colour, through the object (3D flood)"
-        @click="store.bucketMode = 'volume'"
-      >
-        Volume
-      </button>
-      <button
-        :class="{ active: store.bucketMode === 'face' }"
-        :aria-pressed="store.bucketMode === 'face'"
-        title="Only the clicked face's surface layer — the coplanar patch of this colour"
-        @click="store.bucketMode = 'face'"
-      >
-        Face
-      </button>
-      <button
-        :class="{ active: store.bucketMode === 'outline' }"
-        :aria-pressed="store.bucketMode === 'outline'"
-        title="Only the border ring of that face patch"
-        @click="store.bucketMode = 'outline'"
-      >
-        Outline
-      </button>
-      <label class="lbl" title="Hold Shift on click to recolour every matching voxel in scope, ignoring connectivity">Shift = loose</label>
-    </template>
-
-    <template v-if="store.toolId === 'select'">
-      <span class="divider" />
-      <button
-        :class="{ active: store.xray }"
-        :aria-pressed="store.xray"
-        title="X-Ray (Alt+Z) — see through the object; box selection reaches every voxel behind, not just the visible ones"
-        @click="store.xray = !store.xray"
-      >
-        X-Ray
-      </button>
-    </template>
-
-    <template v-if="['place', 'erase', 'box', 'paint'].includes(store.toolId)">
-      <span class="divider" />
-      <label class="lbl">Brush</label>
-      <button
-        v-for="b in brushes"
-        :key="b.f"
-        class="brush"
-        :class="{ active: currentBrushF === b.f }"
-        :aria-pressed="currentBrushF === b.f"
-        :aria-label="b.label"
-        :title="`${b.label} — the object is subdivided the first time you pick a smaller size`"
-        @click="pickBrush(b.f)"
-      >
-        <span class="sq" :style="{ width: b.size + 'px', height: b.size + 'px' }" />
-      </button>
-    </template>
-
-    <template v-if="['place', 'erase', 'box', 'paint', 'bucket'].includes(store.toolId)">
-      <span class="divider" />
-      <label class="lbl" title="Edits are copied across every active plane, through the centre of the object">Mirror</label>
-      <button
-        v-for="m in mirrorPlanes"
-        :key="m.axis"
-        class="mirror"
-        :class="{ active: store.mirror[m.axis] }"
-        :aria-pressed="store.mirror[m.axis]"
-        :title="m.title"
-        @click="store.toggleMirror(m.axis)"
-      >
-        <span class="dot" :style="{ background: m.color }" />{{ m.label }}
-      </button>
-    </template>
-
-    <span class="divider" />
-    <button
-      :class="{ active: store.rmbErase }"
-      :aria-pressed="store.rmbErase"
-      title="When on, a right-click erases the voxel under the cursor instead of opening the menu"
-      @click="store.rmbErase = !store.rmbErase"
-    >
-      RMB erase
-    </button>
-
-    <span class="divider" />
-    <label
-      class="lbl"
-      title="Where new voxels land when you click empty space — and the plane a Box drag stays in"
-      >Plane</label
-    >
-    <button
-      v-for="p in planes"
-      :key="p.id"
-      class="plane"
-      :class="{ active: store.buildPlane === p.id }"
-      :aria-pressed="store.buildPlane === p.id"
-      :title="p.title"
-      @click="setBuildPlane(p.id)"
-    >
-      <span class="dots"
-        ><span class="dot" :style="{ background: p.colors[0] }" /><span
-          class="dot"
-          :style="{ background: p.colors[1] }"
-      /></span>
-      {{ p.id.toUpperCase() }}
-    </button>
-    <input
-      class="num"
-      type="number"
-      title="Height of the build plane, in voxels"
-      aria-label="Build plane offset in voxels"
-      v-model.number="buildOffsetVoxels"
-      min="0"
-      :max="maxBuildOffsetVoxels"
-      :step="1 / store.activeDetail"
-    />
-
-    <span class="divider" />
-    <button
-      class="ic"
-      title="Add a primitive shape — box, sphere, cylinder or pyramid"
-      aria-label="Add shape"
-      @click="emit('add-shape')"
-    >
-      <Icon :icon="faShapes" />
-    </button>
-    <button
-      class="ic"
-      :disabled="!canUndo"
-      title="Undo the last edit on this object — Ctrl+Z"
-      aria-label="Undo"
-      @click="runner?.undo()"
-    >
-      <Icon :icon="faRotateLeft" />
-    </button>
-    <button
-      class="ic"
-      :disabled="!canRedo"
-      title="Redo — Ctrl+Shift+Z"
-      aria-label="Redo"
-      @click="runner?.redo()"
-    >
-      <Icon :icon="faRotateRight" />
-    </button>
-
-    <span class="spacer" />
+    <img class="logo" :src="iconUrl" alt="" width="22" height="22" />
+    <h1 class="name" :title="store.projectName">{{ store.projectName }}</h1>
     <span class="statusbox" role="status" aria-live="polite">
       <span v-if="saving || store.autosaveBusy || store.exportStatus" class="spin" />
       <span v-if="store.exportStatus" class="status">{{ store.exportStatus }}</span>
-      <span
-        v-else-if="saving"
-        class="status"
-      >Saving project…</span>
+      <span v-else-if="saving" class="status">Saving project…</span>
       <span
         v-else-if="autosave.text"
         class="status"
@@ -387,153 +143,135 @@ async function exportAll() {
       </span>
     </span>
 
-    <button
-      class="ic"
-      :disabled="saving"
-      title="Save the project file — Ctrl+S"
-      aria-label="Save project"
-      @click="saveProject"
-    >
-      <Icon :icon="faFloppyDisk" />
-    </button>
+    <span class="history">
+      <button
+        class="ic"
+        :disabled="!canUndo"
+        title="Undo the last edit on this object — Ctrl+Z"
+        aria-label="Undo"
+        @click="runner?.undo()"
+      >
+        <Icon :icon="faRotateLeft" />
+      </button>
+      <button
+        class="ic"
+        :disabled="!canRedo"
+        title="Redo — Ctrl+Shift+Z"
+        aria-label="Redo"
+        @click="runner?.redo()"
+      >
+        <Icon :icon="faRotateRight" />
+      </button>
+    </span>
+
+    <span class="spacer" />
+
     <button class="ic" title="Settings — theme and export scale" aria-label="Settings" @click="emit('settings')">
       <Icon :icon="faGear" />
     </button>
     <button
-      class="ic"
-      :disabled="!!busy || !store.activeObjectId"
-      title="Export the active object as a .glb file"
-      aria-label="Export active object"
-      @click="exportActive"
+      class="text-btn"
+      :disabled="saving"
+      title="Save the project as a .voxproj file — Ctrl+S"
+      @click="saveProject"
     >
-      <Icon :icon="faFileExport" />
+      <Icon :icon="faFloppyDisk" :size="13" />
+      <span>Save</span>
     </button>
     <button
-      class="ic primary"
+      class="text-btn"
+      :disabled="!!busy || !store.activeObjectId"
+      title="Export the selected object as a .glb file"
+      @click="exportActive"
+    >
+      <Icon :icon="faFileExport" :size="13" />
+      <span>Export object</span>
+    </button>
+    <button
+      class="text-btn primary"
       :disabled="!!busy || store.objects.length === 0"
-      :title="hasDirectoryPicker ? 'Export every object as .glb into a chosen folder' : 'Download one .glb per object'"
-      aria-label="Export all objects"
+      :title="hasDirectoryPicker ? 'Export every object as its own .glb into a folder you choose' : 'Download one .glb per object'"
       @click="exportAll"
     >
-      <Icon :icon="faBoxesStacked" />
+      <Icon :icon="faBoxesStacked" :size="13" />
+      <span>Export all</span>
     </button>
-  </div>
+  </header>
 </template>
 
 <style scoped>
 .bar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
-  padding: 7px 9px;
+  gap: 6px;
+  padding: 6px 8px;
+  min-width: 0;
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.logo {
+  width: 22px;
+  height: 22px;
+  flex: none;
 }
 .name {
-  font-size: 13px;
-  font-weight: 600;
-  max-width: 160px;
+  margin: 0 4px 0 2px;
+  font: 600 16px/1 var(--font-display);
+  letter-spacing: 0.01em;
+  max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lbl {
-  color: var(--ink-dim);
-}
-.brush {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  color: var(--ink-dim);
-}
-.brush.active {
-  color: var(--accent-ink);
-}
-.brush .sq {
-  display: block;
-  background: currentColor;
-  border-radius: 1px;
-}
-.plane {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.plane .dots {
+.history {
   display: inline-flex;
   gap: 2px;
-}
-.plane .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  opacity: 0.35;
-}
-.plane.active .dot {
-  opacity: 1;
-}
-.mirror {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.mirror .dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  opacity: 0.35;
-}
-.mirror.active .dot {
-  opacity: 1;
+  margin-left: 6px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
 }
 .ic {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 30px;
-  height: 28px;
+  height: 30px;
   padding: 0;
   color: var(--ink-dim);
+  background: transparent;
+  border-color: transparent;
 }
 .ic:hover:not(:disabled) {
   color: var(--ink);
 }
-.ic.primary,
-.ic.primary:hover:not(:disabled) {
-  color: var(--accent-ink);
+.text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px;
 }
-.num {
-  width: 52px;
-}
-.divider {
-  width: 1px;
-  align-self: stretch;
-  background: var(--line);
-  margin: 0 3px;
+.text-btn.primary {
+  font-weight: 600;
 }
 .statusbox {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-right: 10px;
+  min-width: 0;
 }
 .status {
-  font: 11px/1.4 system-ui, sans-serif;
+  font-size: 12px;
   color: var(--ink-faint);
-  max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .status.bad {
   color: var(--warn);
 }
 .spin {
-  width: 12px;
-  height: 12px;
-  flex: none;
+  width: 11px;
+  height: 11px;
   border: 2px solid var(--line);
   border-top-color: var(--accent);
   border-radius: 50%;
@@ -542,6 +280,18 @@ async function exportAll() {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 900px) {
+  .text-btn span {
+    display: none;
+  }
+  .text-btn {
+    padding: 0 9px;
+  }
+  .statusbox {
+    display: none;
   }
 }
 </style>

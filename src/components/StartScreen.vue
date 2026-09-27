@@ -345,7 +345,8 @@ function ago(ts: number): string {
 }
 h1 {
   margin: 0;
-  font-size: 22px;
+  font: 600 24px/1 var(--font-display);
+  letter-spacing: 0.01em;
 }
 .tabs {
   gap: 0;

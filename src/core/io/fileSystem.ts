@@ -97,12 +97,19 @@ export async function saveTextFile(
   return { handle: null, outcome: 'downloaded' };
 }
 
-export async function saveBinaryFile(suggestedName: string, blob: Blob): Promise<void> {
+export interface SaveFileType {
+  description: string;
+  accept: Record<string, string[]>;
+}
+
+const GLB_TYPE: SaveFileType = { description: 'glTF binary', accept: { 'model/gltf-binary': ['.glb'] } };
+
+export async function saveBinaryFile(suggestedName: string, blob: Blob, type: SaveFileType = GLB_TYPE): Promise<void> {
   if (w.showSaveFilePicker) {
     try {
       const h = await w.showSaveFilePicker({
         suggestedName,
-        types: [{ description: 'glTF binary', accept: { 'model/gltf-binary': ['.glb'] } }],
+        types: [type],
       });
       const writable = await h.createWritable();
       await writable.write(blob);

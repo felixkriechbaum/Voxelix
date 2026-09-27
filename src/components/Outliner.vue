@@ -4,6 +4,7 @@ import { useEditorStore } from '@/stores/editor';
 import { useSession } from '@/editor/session';
 import { MAX_SIZE } from '@/core/voxel/constants';
 import ContextMenu, { type MenuItem } from './ContextMenu.vue';
+import ModifierStack from './ModifierStack.vue';
 import { toast } from '@/editor/toasts';
 import Icon from './Icon.vue';
 import {
@@ -13,6 +14,8 @@ import {
   faTrash,
   faRotateLeft,
   faRotateRight,
+  faLayerGroup,
+  faXmark,
 } from '@fortawesome/pro-solid-svg-icons';
 
 const store = useEditorStore();
@@ -24,6 +27,45 @@ const menu = ref<{ x: number; y: number; items: MenuItem[] } | null>(null);
 const deleteTargetId = ref<string | null>(null);
 
 const active = computed(() => store.activeObject());
+
+/** The active object's parts + modifiers as plain data (the project itself is markRaw). */
+const partsView = computed(() => {
+  void store.activeVersion;
+  void store.structureVersion;
+  void store.editVersion;
+  const o = store.activeObject();
+  if (!o) return null;
+  return {
+    extend: o.kind === 'extend',
+    activeId: o.activePartId,
+    parts: o.parts.map((p) => ({ id: p.id, name: p.name, mods: p.modifiers.length })),
+    modifiers: o.activePart.modifiers.map((m) => (m.type === 'move' ? { ...m, offset: [...m.offset] as [number, number, number] } : { ...m })),
+    activeName: o.activePart.name,
+  };
+});
+
+const renamingPartId = ref<string | null>(null);
+const partRenameText = ref('');
+function startPartRename(id: string, name: string) {
+  renamingPartId.value = id;
+  partRenameText.value = name;
+  nextTick(() => (document.getElementById(`part-rename-${id}`) as HTMLInputElement | null)?.select());
+}
+function commitPartRename() {
+  if (renamingPartId.value) store.renamePart(renamingPartId.value, partRenameText.value);
+  renamingPartId.value = null;
+}
+function onPartKey(e: KeyboardEvent, id: string, name: string) {
+  if (e.target instanceof HTMLInputElement) return;
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    store.setActivePart(id);
+  } else if (e.key === 'F2') {
+    e.preventDefault();
+    startPartRename(id, name);
+  }
+}
+
 /** edited in voxels (grid cells / detail) */
 const size = ref<[number, number, number]>([16, 16, 16]);
 const maxVoxels = computed(() => Math.floor(MAX_SIZE / store.activeDetail));
@@ -183,9 +225,10 @@ function resetColorAdjust() {
 </script>
 
 <template>
-  <div class="panel outliner">
-    <div class="row">
-      <h3>Objects</h3>
+  <div class="outliner">
+  <section class="panel box" aria-labelledby="objects-heading">
+    <div class="row head">
+      <h3 id="objects-heading">Objects</h3>
       <span class="spacer" />
       <button class="ic" title="Add a new object" aria-label="Add object" @click="addObject">
         <Icon :icon="faPlus" />
@@ -228,7 +271,7 @@ function resetColorAdjust() {
                 ? 'linked overlay of its base'
                 : 'overlay — its base link is broken; right-click → Set base'
             "
-          >{{ baseExists(o) ? 'ext' : 'ext ⚠' }}</span>
+          >{{ baseExists(o) ? 'extends' : 'base missing' }}</span>
         </template>
       </li>
     </ul>
@@ -293,30 +336,92 @@ function resetColorAdjust() {
       </div>
     </div>
 
-    <template v-if="active">
-      <h3 style="margin-top: 12px">
-        Size in voxels (max {{ maxVoxels }})
-        <span v-if="active.kind === 'extend'" class="hint">— overlay grid</span>
-      </h3>
-      <div class="row">
-        <input v-model.number="size[0]" type="number" min="1" :max="maxVoxels" title="Width (X)" aria-label="Width in voxels" />
-        <input v-model.number="size[1]" type="number" min="1" :max="maxVoxels" title="Height (Y)" aria-label="Height in voxels" />
-        <input v-model.number="size[2]" type="number" min="1" :max="maxVoxels" title="Depth (Z)" aria-label="Depth in voxels" />
-        <button title="Resize the grid — voxels outside the new bounds are cut" @click="applyResize">
-          Set
-        </button>
-      </div>
+  </section>
 
-      <h3 style="margin-top: 12px">
-        Colour
+  <section v-if="active" class="panel box" aria-labelledby="object-heading">
+      <h3 id="object-heading" class="obj-title" :title="active.name">{{ active.name }}</h3>
+
+      <template v-if="partsView && !partsView.extend">
+        <div class="sub">
+          <span>Parts</span>
+          <button class="mini" title="Add an empty part — its own mesh inside this object" @click="store.addPart()">
+            + Add part
+          </button>
+        </div>
+        <ul class="parts" aria-label="Parts of this object">
+          <li
+            v-for="p in partsView.parts"
+            :key="p.id"
+            :class="{ sel: p.id === partsView.activeId }"
+            :role="renamingPartId === p.id ? undefined : 'button'"
+            :aria-pressed="renamingPartId === p.id ? undefined : p.id === partsView.activeId"
+            :tabindex="renamingPartId === p.id ? -1 : 0"
+            title="Click to edit this part · double-click to rename"
+            @click="store.setActivePart(p.id)"
+            @dblclick="startPartRename(p.id, p.name)"
+            @keydown="onPartKey($event, p.id, p.name)"
+          >
+            <Icon :icon="faLayerGroup" :size="11" class="part-ic" />
+            <input
+              v-if="renamingPartId === p.id"
+              :id="`part-rename-${p.id}`"
+              v-model="partRenameText"
+              type="text"
+              @keydown.enter="commitPartRename"
+              @keydown.esc="renamingPartId = null"
+              @blur="commitPartRename"
+              @click.stop
+            />
+            <template v-else>
+              <span class="pname">{{ p.name }}</span>
+              <span v-if="p.mods" class="tag" title="This part has modifiers">{{ p.mods }} mod{{ p.mods > 1 ? 's' : '' }}</span>
+              <button
+                v-if="partsView.parts.length > 1"
+                class="part-del"
+                :title="`Delete ${p.name}`"
+                :aria-label="`Delete ${p.name}`"
+                @click.stop="store.removePart(p.id)"
+              >
+                <Icon :icon="faXmark" :size="11" />
+              </button>
+            </template>
+          </li>
+        </ul>
+
+        <ModifierStack :part-id="partsView.activeId" :part-name="partsView.activeName" :modifiers="partsView.modifiers" />
+      </template>
+
+      <div class="sub">
+        <span>Grid size in voxels</span>
+        <span class="dim">{{ active.kind === 'extend' ? 'overlay grid, ' : '' }}max {{ maxVoxels }}</span>
+      </div>
+      <form class="row size" @submit.prevent="applyResize">
+        <label class="axis" title="Width (X)">
+          <span class="ax" style="color: var(--axis-x)">X</span>
+          <input v-model.number="size[0]" type="number" min="1" :max="maxVoxels" aria-label="Width in voxels" />
+        </label>
+        <label class="axis" title="Height (Y)">
+          <span class="ax" style="color: var(--axis-y)">Y</span>
+          <input v-model.number="size[1]" type="number" min="1" :max="maxVoxels" aria-label="Height in voxels" />
+        </label>
+        <label class="axis" title="Depth (Z)">
+          <span class="ax" style="color: var(--axis-z)">Z</span>
+          <input v-model.number="size[2]" type="number" min="1" :max="maxVoxels" aria-label="Depth in voxels" />
+        </label>
+        <button type="submit" title="Resize the grid — voxels outside the new bounds are cut">Resize</button>
+      </form>
+
+      <div class="sub">
+        <span>Colour shift</span>
         <button
           class="reset"
+          :disabled="colorAdjustPct[0] === 0 && colorAdjustPct[1] === 0"
           title="Reset saturation and brightness for this object"
           @click="resetColorAdjust"
         >
           Reset
         </button>
-      </h3>
+      </div>
       <div class="row slider">
         <label for="object-saturation">Saturation</label>
         <input
@@ -341,7 +446,7 @@ function resetColorAdjust() {
         />
         <span class="pct">{{ colorAdjustPct[1] }}%</span>
       </div>
-    </template>
+  </section>
 
     <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menu.items" @close="menu = null" />
   </div>
@@ -349,11 +454,20 @@ function resetColorAdjust() {
 
 <style scoped>
 .outliner {
-  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: none;
+}
+.box {
+  padding: 10px 10px 12px;
+}
+.head h3 {
+  margin: 0;
 }
 .list {
   list-style: none;
-  margin: 6px 0;
+  margin: 8px -4px 6px;
   padding: 0;
   max-height: 220px;
   overflow: auto;
@@ -362,8 +476,8 @@ function resetColorAdjust() {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 7px;
-  border-radius: 5px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 .list li:hover {
@@ -371,7 +485,7 @@ function resetColorAdjust() {
 }
 .list li.sel {
   background: var(--accent-soft);
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 .list li:focus-visible {
   outline-offset: -2px;
@@ -383,21 +497,20 @@ function resetColorAdjust() {
   white-space: nowrap;
 }
 .tag {
-  font-size: 10px;
-  padding: 1px 4px;
-  border-radius: 3px;
-  background: var(--surface-2);
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
   color: var(--ink-dim);
 }
 .tag.broken {
   color: var(--warn);
-}
-.hint {
-  letter-spacing: 0;
-  color: var(--ink-dim);
+  border-color: color-mix(in srgb, var(--warn) 50%, var(--line));
 }
 .actions {
-  margin-top: 6px;
+  gap: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
 }
 .delete-confirm {
   margin-top: 8px;
@@ -408,8 +521,8 @@ function resetColorAdjust() {
 }
 .delete-confirm p {
   margin: 0 0 7px;
-  font-size: 11px;
-  line-height: 1.35;
+  font-size: 12px;
+  line-height: 1.4;
 }
 .delete-confirm .row {
   justify-content: flex-end;
@@ -418,48 +531,154 @@ function resetColorAdjust() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
+  width: 30px;
   height: 28px;
   padding: 0;
   color: var(--ink-dim);
+  background: transparent;
+  border-color: transparent;
 }
 .ic:hover:not(:disabled) {
   color: var(--ink);
 }
 .ic.danger:hover:not(:disabled) {
   color: var(--warn);
-  border-color: var(--warn);
+  border-color: transparent;
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
 }
-.outliner h3 .reset {
-  float: right;
-  padding: 0 6px;
-  font-size: 10px;
-  font-weight: 400;
+.parts {
+  list-style: none;
+  margin: 0 -4px;
+  padding: 0;
+  max-height: 180px;
+  overflow: auto;
+}
+.parts li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.parts li:hover {
+  background: var(--surface-2);
+}
+.parts li.sel {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.part-ic {
+  color: var(--ink-faint);
+}
+.pname {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.parts input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 5px;
+}
+.part-del {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--ink-faint);
+  background: transparent;
+  border-color: transparent;
+}
+.part-del:hover:not(:disabled) {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border-color: transparent;
+}
+.parts li:not(:hover):not(:focus-within) .part-del {
+  opacity: 0;
+}
+.mini {
+  padding: 1px 8px;
+  font-size: 11.5px;
+}
+.obj-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 10px;
+}
+.sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 12px 0 6px;
+  font-size: 12px;
   color: var(--ink-dim);
 }
-.outliner h3 .reset:hover {
-  color: var(--ink);
+.obj-title + .sub {
+  margin-top: 0;
+}
+.sub .dim {
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.size {
+  gap: 4px;
+}
+.axis {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  background: var(--surface-0);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.axis:focus-within {
+  border-color: var(--accent);
+}
+.ax {
+  padding: 0 0 0 7px;
+  font: 600 11px/1 var(--font-display);
+}
+.axis input {
+  border: 0;
+  background: transparent;
+  min-width: 0;
+  padding: 4px 6px 4px 5px;
+}
+.axis input:focus {
+  outline: none;
+}
+.reset {
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--ink-dim);
 }
 .slider {
-  gap: 6px;
-  margin-top: 4px;
+  gap: 8px;
+  margin-top: 2px;
 }
 .slider label {
-  width: 62px;
+  width: 70px;
   flex: none;
   color: var(--ink-dim);
-  font-size: 11px;
+  font-size: 12px;
 }
 .slider input[type='range'] {
   flex: 1;
   min-width: 0;
 }
 .slider .pct {
-  width: 3.2em;
+  width: 3.4em;
   flex: none;
   text-align: right;
   color: var(--ink-dim);
   font-variant-numeric: tabular-nums;
-  font-size: 11px;
+  font-size: 12px;
 }
 </style>

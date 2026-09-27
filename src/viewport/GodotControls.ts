@@ -39,6 +39,8 @@ export class GodotControls {
   /** viewport aspect (w / h), kept in sync by the Viewport */
   aspect = 1;
   mode: ProjectionMode = 'perspective';
+  /** false = mouse / keyboard navigation is ignored (screenshot mode drives the camera itself) */
+  enabled = true;
 
   private readonly minPitch = -Math.PI / 2 + 0.05;
   private readonly maxPitch = Math.PI / 2 - 0.05;
@@ -106,6 +108,15 @@ export class GodotControls {
     this.apply();
   }
 
+  /** Set the orbit directly — angles in radians. */
+  setOrbit(o: { target?: THREE.Vector3; distance?: number; yaw?: number; pitch?: number }): void {
+    if (o.target) this.target.copy(o.target);
+    if (o.distance !== undefined) this.distance = o.distance;
+    if (o.yaw !== undefined) this.yaw = o.yaw;
+    if (o.pitch !== undefined) this.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, o.pitch));
+    this.apply();
+  }
+
   /** Snap the orbit to an axis-aligned (or isometric) direction. */
   setView(view: PresetView): void {
     const p = Math.PI;
@@ -122,6 +133,7 @@ export class GodotControls {
   }
 
   private onPointerDown = (e: PointerEvent) => {
+    if (!this.enabled) return;
     if (e.button === 1 || e.button === 2) {
       this.dragButton = e.button;
       this.last.set(e.clientX, e.clientY);
@@ -190,6 +202,7 @@ export class GodotControls {
   }
 
   private onWheel = (e: WheelEvent) => {
+    if (!this.enabled) return;
     e.preventDefault();
     const factor = Math.exp(e.deltaY * 0.001);
     this.distance = Math.max(2, Math.min(400, this.distance * factor));
@@ -197,6 +210,7 @@ export class GodotControls {
   };
 
   private onKeyDown = (e: KeyboardEvent) => {
+    if (!this.enabled) return;
     this.keys.add(e.code);
   };
 

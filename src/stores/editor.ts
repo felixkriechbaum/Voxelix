@@ -16,6 +16,15 @@ import type { ToolId } from '@/tools/types';
 import type { BuildPlane } from '@/viewport/Picker';
 import type { Selection } from '@/core/ops/selection';
 import type { VoxelObject } from '@/core/project/VoxelObject';
+import { VoxelData } from '@/core/voxel/VoxelData';
+import {
+  newModifier,
+  normalizeModifier,
+  rotateModifierY,
+  VoxelPart,
+  type Modifier,
+  type ModifierType,
+} from '@/core/project/parts';
 
 export const useEditorStore = defineStore('editor', () => {
   const project = shallowRef<Project | null>(null);
@@ -46,6 +55,8 @@ export const useEditorStore = defineStore('editor', () => {
   const bucketMode = ref<'volume' | 'face' | 'outline'>('volume');
   /** select tool: see-through viewport + box selection reaches hidden voxels */
   const xray = ref(false);
+  /** screenshot mode: helpers hidden, the camera driven by the screenshot panel */
+  const screenshotMode = ref(false);
   /** right-click in the viewport erases a voxel instead of opening the context menu */
   const rmbErase = ref(false);
   /** brush size as a fraction of a voxel: 1 = full voxel, 2 = half, 3 = third */
@@ -121,6 +132,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   /** Back to the start screen. Autosave has the project; nothing is lost. */
   function closeProject() {
+    screenshotMode.value = false;
     project.value = null;
     fileHandle.value = null;
     activeObjectId.value = null;
@@ -190,11 +202,13 @@ export const useEditorStore = defineStore('editor', () => {
     const targetDetail = Math.max(obj.detail, base.detail);
     for (const o of extendFamily(base, proj)) {
       if (o.detail < targetDetail) {
-        o.data.upscale(targetDetail / o.detail);
+        for (const p of o.parts) p.data.upscale(targetDetail / o.detail);
         o.detail = targetDetail;
         runner.value?.forgetHistory(o.id);
       }
     }
+    // an overlay is a single diff grid — merge any parts / modifiers into it first
+    obj.flatten();
     if (obj.detail < targetDetail) obj.data.upscale(targetDetail / obj.detail);
 
     obj.kind = 'extend';
@@ -276,7 +290,7 @@ export const useEditorStore = defineStore('editor', () => {
   function resizeActive(size: [number, number, number]) {
     const o = activeObject();
     if (!o) return;
-    o.data.resize(size[0], size[1], size[2]);
+    for (const p of o.parts) p.data.resize(size[0], size[1], size[2]);
     selection.value = null;
     activeVersion.value++;
   }
@@ -306,7 +320,7 @@ export const useEditorStore = defineStore('editor', () => {
     const factor = CELLS_PER_VOXEL / target.detail;
     const touched = extendFamily(target, proj);
     for (const o of touched) {
-      o.data.upscale(factor);
+      for (const p of o.parts) p.data.upscale(factor);
       o.detail = CELLS_PER_VOXEL;
     }
     const { runner } = useSession();
@@ -331,7 +345,13 @@ export const useEditorStore = defineStore('editor', () => {
     const base = obj.kind === 'extend' && obj.baseId ? proj.getById(obj.baseId) : obj;
     if (!base) return;
     const touched = extendFamily(base, proj);
-    for (const o of touched) o.data.rotateY(dir);
+    for (const o of touched) {
+      for (const p of o.parts) {
+        p.data.rotateY(dir);
+        // modifiers turn with the object (axes, directions, offsets)
+        for (const m of p.modifiers) rotateModifierY(m, dir);
+      }
+    }
     const { runner } = useSession();
     for (const o of touched) runner.value?.forgetHistory(o.id);
     selection.value = null;
@@ -342,6 +362,119 @@ export const useEditorStore = defineStore('editor', () => {
 
   function bumpEdit() {
     editVersion.value++;
+  }
+
+  // ---- parts (several meshes in one object) --------------------------------
+
+  /** A part change re-renders the object and is worth an autosave. */
+  function partsChanged(structural = false) {
+    if (structural) structureVersion.value++;
+    activeVersion.value++;
+    editVersion.value++;
+  }
+
+  function uniquePartName(obj: VoxelObject): string {
+    const names = new Set(obj.parts.map((p) => p.name));
+    for (let i = obj.parts.length + 1; ; i++) if (!names.has(`Part ${i}`)) return `Part ${i}`;
+  }
+
+  /** Add an empty part to the active object and make it the one being edited. */
+  function addPart() {
+    const obj = activeObject();
+    if (!obj || obj.kind === 'extend') return;
+    const d = obj.data;
+    const part = new VoxelPart({ name: uniquePartName(obj), data: new VoxelData(d.sizeX, d.sizeY, d.sizeZ) });
+    obj.parts.push(part);
+    obj.activePartId = part.id;
+    selection.value = null;
+    partsChanged(true);
+  }
+
+  function setActivePart(partId: string) {
+    const obj = activeObject();
+    if (!obj || obj.activePartId === partId || !obj.parts.some((p) => p.id === partId)) return;
+    obj.activePartId = partId;
+    selection.value = null;
+    activeVersion.value++;
+    structureVersion.value++;
+  }
+
+  function renamePart(partId: string, name: string) {
+    const part = activeObject()?.parts.find((p) => p.id === partId);
+    if (!part || !name.trim()) return;
+    part.name = name.trim();
+    partsChanged(true);
+  }
+
+  function removePart(partId: string) {
+    const obj = activeObject();
+    if (!obj || obj.parts.length <= 1) return;
+    const idx = obj.parts.findIndex((p) => p.id === partId);
+    if (idx < 0) return;
+    obj.parts.splice(idx, 1);
+    if (obj.activePartId === partId) obj.activePartId = obj.parts[Math.max(0, idx - 1)].id;
+    useSession().runner.value?.forgetHistory(`${obj.id}/${partId}`);
+    selection.value = null;
+    partsChanged(true);
+  }
+
+  /**
+   * Move the selected voxels out of the active part into a new part of their
+   * own — the usual first step before giving just that piece a modifier.
+   * Undo history of both parts is dropped (the move spans two grids).
+   */
+  function selectionToNewPart(cells: Array<[number, number, number]>) {
+    const obj = activeObject();
+    if (!obj || obj.kind === 'extend' || cells.length === 0) return;
+    const src = obj.activePart;
+    const d = src.data;
+    const part = new VoxelPart({ name: uniquePartName(obj), data: new VoxelData(d.sizeX, d.sizeY, d.sizeZ) });
+    for (const [x, y, z] of cells) {
+      const v = d.get(x, y, z);
+      if (v === 0) continue;
+      part.data.setRaw(x, y, z, v);
+      d.setRaw(x, y, z, 0);
+    }
+    if (part.data.isEmpty()) return;
+    obj.parts.push(part);
+    obj.activePartId = part.id;
+    const { runner } = useSession();
+    runner.value?.forgetHistory(`${obj.id}/${src.id}`);
+    selection.value = null;
+    partsChanged(true);
+  }
+
+  function addModifier(partId: string, type: ModifierType) {
+    const part = activeObject()?.parts.find((p) => p.id === partId);
+    if (!part) return;
+    part.modifiers.push(newModifier(type));
+    partsChanged();
+  }
+
+  /** Patch a modifier's settings; the result is clamped to sane values. */
+  function updateModifier(partId: string, modId: string, patch: Partial<Modifier>) {
+    const part = activeObject()?.parts.find((p) => p.id === partId);
+    const i = part?.modifiers.findIndex((m) => m.id === modId) ?? -1;
+    if (!part || i < 0) return;
+    const current = part.modifiers[i];
+    part.modifiers[i] = normalizeModifier({ ...current, ...patch, id: current.id, type: current.type } as Modifier);
+    partsChanged();
+  }
+
+  /** Reorder the stack — modifiers apply top to bottom, so order changes the result. */
+  function moveModifier(partId: string, modId: string, delta: -1 | 1) {
+    const mods = activeObject()?.parts.find((p) => p.id === partId)?.modifiers;
+    const i = mods?.findIndex((m) => m.id === modId) ?? -1;
+    if (!mods || i < 0 || i + delta < 0 || i + delta >= mods.length) return;
+    [mods[i], mods[i + delta]] = [mods[i + delta], mods[i]];
+    partsChanged();
+  }
+
+  function removeModifier(partId: string, modId: string) {
+    const part = activeObject()?.parts.find((p) => p.id === partId);
+    if (!part) return;
+    part.modifiers = part.modifiers.filter((m) => m.id !== modId);
+    partsChanged();
   }
 
   function updateExportSettings(patch: Partial<ExportSettings>) {
@@ -398,6 +531,7 @@ export const useEditorStore = defineStore('editor', () => {
     boxMode,
     bucketMode,
     xray,
+    screenshotMode,
     rmbErase,
     voxelFraction,
     mirror,
@@ -422,6 +556,15 @@ export const useEditorStore = defineStore('editor', () => {
     rotateActive,
     ensureDetail,
     bumpEdit,
+    addPart,
+    setActivePart,
+    renamePart,
+    removePart,
+    selectionToNewPart,
+    addModifier,
+    updateModifier,
+    moveModifier,
+    removeModifier,
     updateExportSettings,
     setSelection,
     clearSelection,

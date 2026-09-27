@@ -32,6 +32,11 @@ build catches worker/bundler issues the typecheck misses.
 - TypeScript strict, `noUnusedLocals`/`noUnusedParameters` on. Path alias `@/` → `src/`.
 - The typed-array lib generics are strict here: palette buffers flowing to the
   worker are typed `Float32Array<ArrayBufferLike>`.
+- UI tokens live in `src/style.css`: slate surfaces, the brand mint as the one
+  accent, `--axis-x/y/z` for anything spatial (plane / mirror / size fields,
+  matching the viewport gizmo). Chakra Petch for headings, IBM Plex Sans for UI.
+  Editor layout: `Toolbar` (project + file actions) on top, `ToolRail` (tools)
+  left, `ToolOptions` floating in the viewport, objects + palette right.
 - Keep `core/` free of Three.js and Vue — it is pure logic and must stay testable
   in `bun` without a DOM.
 
@@ -45,9 +50,12 @@ src/
                    is an overlay-only "explicitly deleted" marker
     mesh/          greedyMesh (shared by editor + export), mesher.worker,
                    ChunkMesher (owns the worker)
-    project/       Project (has a stable id), VoxelObject, resolve.ts (extend
-                   resolution), types (.voxproj schema)
-    shapes/        primitive voxelisation (box/sphere/cylinder/pyramid)
+    project/       Project (has a stable id), VoxelObject, parts.ts (VoxelPart +
+                   array modifier, mergeParts), resolve.ts (extend resolution),
+                   types (.voxproj schema)
+    shapes/        primitive voxelisation: solids (box/sphere/dome/cylinder/
+                   cone/pyramid/wedge/tube) + flat shapes (plane/circle/ring)
+                   laid on a chosen XZ/XY/YZ plane
     export/        exportGlb.ts — per-object merge + pivot/scale/up-axis via
                    GLTFExporter; exportProjectToGlbs() for batch export
     ops/           flood.ts, selection.ts (Selection box + region helpers)
@@ -55,7 +63,8 @@ src/
                    pickDirectory), serialize (LE base64), projectStore
                    (IndexedDB: autosave target + recent-projects source)
     history/       History (per-object undo stack of voxel diffs) + HistoryStore
-    palette.ts     256 sRGB hex slots; paletteToLinearArray for meshing/export
+    palette.ts     256 sRGB hex slots, "#rrggbb" or "#rrggbbaa" (see-through);
+                   paletteToLinearArray → 256 × RGBA (linear rgb + alpha)
   viewport/        Three.js. Viewport composes GodotControls (perspective + ortho
                    off one orbit state), Gizmos, Picker, ChunkMeshView (one mesh
                    per non-empty chunk)
@@ -94,6 +103,12 @@ src/
   zooming moves the eye in, so close up it sits inside the object. `Picker`
   therefore starts ortho rays at the near plane (`aim`), not at the eye —
   otherwise clicks from some sides miss the visible faces.
+- See-through colours (palette alpha < 1, glass): `greedyMesh` returns
+  `{ opaque, glass }` per chunk. Opaque faces show against empty *or* glass
+  neighbours (a wall behind a pane is kept); glass faces show against empty or
+  a different glass colour only. `ChunkMeshView` renders glass with its own
+  blended, depth-write-free material (still raycastable). Export keeps ONE mesh
+  with two primitives — the glass one gets alphaMode BLEND; COLOR_0 is RGBA.
 - Meshing is always off-thread. A chunk is re-meshed when its voxels or a
   neighbour's border voxels change (`VoxelData.dirty`).
 - Autosave writes the whole project (+ a viewport JPEG thumbnail) to IndexedDB
@@ -137,6 +152,32 @@ src/
 - Export wraps the mesh in a `THREE.Scene` named after the object. Handing
   `GLTFExporter` a loose Object3D makes it invent its own wrapper hardcoded to
   `AuxScene`, which is the name Godot then gives the imported scene's root.
+
+### Parts (several meshes per object)
+
+A `VoxelObject` holds `parts: VoxelPart[]` — each its own `VoxelData` in the
+object's shared grid (same size + detail) plus a non-destructive modifier
+stack, applied top to bottom (`evaluatePart`), UI in `ModifierStack.vue`:
+- array: count / axis / direction ± / gap ≥ 0 voxels, step = part extent + gap
+- mirror: across the grid-centre plane that flips an axis
+- move: whole-voxel offset (× detail)
+- radial: 2 (180°) or 4 (90°) copies about Y through the grid centre
+Everything generated is clipped at the grid. A 90° object rotation turns each
+modifier with it (`rotateModifierY`); `normalizeModifier` clamps edits + loads
+(a modifier without a `type` is a pre-stack array). `obj.data` is a getter for the **active
+part**, so tools, `ToolRunner` and overlays keep working on one grid; undo
+stacks are keyed `objectId/partId`. Anything that changes the grid as a whole
+(resize, rotate, subdivide) must loop over `obj.parts`.
+- `obj.merged()` = all parts, modifiers applied, later parts win — what
+  `resolveEffectiveData` returns for a normal object, so export gets ONE mesh.
+- `buildActiveRender`: the active part is the editable mesh; other parts and all
+  generated copies (`mergeParts(..., skip = active)`) are the dimmed context.
+  `ToolRunner.afterEdit` regenerates that context live when the active part
+  has modifiers.
+- Extend overlays are always single-part; `setExtendBase` flattens first.
+- File format: `data` is always the merged look (older versions still open it);
+  `parts` / `activePartId` are only written when there's more than one plain part.
+- Select tool → "Move to new part" splits the selection into its own part.
 
 ### Extend / overlay objects (the subtle part)
 
@@ -211,5 +252,16 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   `Gizmos` draws the active planes (axis-coloured) + ghost cursors. The build
   plane is a toolbar toggle (XZ/XY/YZ); `Gizmos.setBuildPlane` lights up the
   two axes it spans (glow bars along the grid edges), the normal axis fades.
+  Screenshot mode (`store.screenshotMode`, camera key in `ToolRail`, Esc
+  leaves): `ScreenshotPanel` drives the camera via `Viewport.applyShot`
+  (view / tilt / zoom / light / projection, settings in localStorage), gizmos
+  hidden, mouse nav + tools off, an overlay shows merged with its base. The
+  square crop is drawn in the viewport; `Viewport.renderShot` renders exactly
+  that square to a PNG (MSAA render target, un-premultiplied) named after the
+  object. The modelling camera is restored on exit.
+- **Done — iter 5:** UI redesign (brand mint, tool rail, floating tool
+  options, axis colours throughout), shape dialog (more solids + flat shapes,
+  voxel size, remembered input), screenshot mode, parts + modifier stack
+  (array / mirror / move / radial), see-through palette colours (glass).
 - **Later — iter 4 ideas:** selection copy/paste across objects, marquee in
   screen space, per-object up-axis/pivot in the export dialog.
