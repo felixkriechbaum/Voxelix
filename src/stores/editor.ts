@@ -50,6 +50,12 @@ export const useEditorStore = defineStore('editor', () => {
   const rmbErase = ref(false);
   /** brush size as a fraction of a voxel: 1 = full voxel, 2 = half, 3 = third */
   const voxelFraction = ref(1);
+  /**
+   * Mirror modelling, indexed by the axis that gets flipped: [0] = the YZ plane
+   * (mirrors X), [1] = XZ (mirrors Y), [2] = XY (mirrors Z). Each plane runs
+   * through the centre of the active grid; several can be on at once.
+   */
+  const mirror = ref<[boolean, boolean, boolean]>([false, false, false]);
   const buildPlane = ref<BuildPlane>('xz');
   const buildOffset = ref(0);
   /** active voxel selection (select tool); per-object, cleared on switch */
@@ -352,6 +358,12 @@ export const useEditorStore = defineStore('editor', () => {
     selection.value = null;
   }
 
+  function toggleMirror(axis: 0 | 1 | 2) {
+    const next = [...mirror.value] as [boolean, boolean, boolean];
+    next[axis] = !next[axis];
+    mirror.value = next;
+  }
+
   function setColor(i: number) {
     currentColor.value = i;
   }
@@ -388,6 +400,7 @@ export const useEditorStore = defineStore('editor', () => {
     xray,
     rmbErase,
     voxelFraction,
+    mirror,
     buildPlane,
     buildOffset,
     selection,
@@ -412,6 +425,7 @@ export const useEditorStore = defineStore('editor', () => {
     updateExportSettings,
     setSelection,
     clearSelection,
+    toggleMirror,
     setColor,
     setPaletteColor,
     palette,

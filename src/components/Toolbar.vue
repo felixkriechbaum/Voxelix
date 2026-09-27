@@ -65,7 +65,19 @@ const tools: Array<{ id: ToolId; label: string; key: string }> = [
   { id: 'eyedropper', label: 'Pick', key: 'Q or 6' },
   { id: 'select', label: 'Select', key: 'V or 7' },
 ];
-const planes: BuildPlane[] = ['xz', 'xy', 'yz'];
+/** Build planes; the dots are the two axes the plane spans (same colours as the viewport axes). */
+const planes: Array<{ id: BuildPlane; colors: [string, string]; title: string }> = [
+  { id: 'xz', colors: ['#ff4d4d', '#4d9bff'], title: 'Ground plane (XZ) — build flat on the floor' },
+  { id: 'xy', colors: ['#ff4d4d', '#4dff88'], title: 'Front plane (XY) — build upright, facing front' },
+  { id: 'yz', colors: ['#4dff88', '#4d9bff'], title: 'Side plane (YZ) — build upright, facing the side' },
+];
+
+/** Mirror planes, keyed by the axis each flips — listed in the same order as the build planes. */
+const mirrorPlanes: Array<{ axis: 0 | 1 | 2; label: string; color: string; title: string }> = [
+  { axis: 1, label: 'XZ', color: '#4dff88', title: 'Mirror top ↔ bottom across the XZ plane (flips Y)' },
+  { axis: 2, label: 'XY', color: '#4d9bff', title: 'Mirror front ↔ back across the XY plane (flips Z)' },
+  { axis: 0, label: 'YZ', color: '#ff4d4d', title: 'Mirror left ↔ right across the YZ plane (flips X)' },
+];
 
 const brushes = [
   { f: 1, size: 16, label: 'Full voxel' },
@@ -98,8 +110,8 @@ const buildOffsetVoxels = computed({
 });
 const maxBuildOffsetVoxels = computed(() => maxBuildOffsetCells.value / store.activeDetail);
 
-function setBuildPlane(value: string) {
-  store.buildPlane = value as BuildPlane;
+function setBuildPlane(value: BuildPlane) {
+  store.buildPlane = value;
   store.buildOffset = Math.min(store.buildOffset, maxBuildOffsetCells.value);
 }
 
@@ -270,6 +282,22 @@ async function exportAll() {
       </button>
     </template>
 
+    <template v-if="['place', 'erase', 'box', 'paint', 'bucket'].includes(store.toolId)">
+      <span class="divider" />
+      <label class="lbl" title="Edits are copied across every active plane, through the centre of the object">Mirror</label>
+      <button
+        v-for="m in mirrorPlanes"
+        :key="m.axis"
+        class="mirror"
+        :class="{ active: store.mirror[m.axis] }"
+        :aria-pressed="store.mirror[m.axis]"
+        :title="m.title"
+        @click="store.toggleMirror(m.axis)"
+      >
+        <span class="dot" :style="{ background: m.color }" />{{ m.label }}
+      </button>
+    </template>
+
     <span class="divider" />
     <button
       :class="{ active: store.rmbErase }"
@@ -283,18 +311,25 @@ async function exportAll() {
     <span class="divider" />
     <label
       class="lbl"
-      for="build-plane"
       title="Where new voxels land when you click empty space — and the plane a Box drag stays in"
       >Plane</label
     >
-    <select
-      id="build-plane"
-      :value="store.buildPlane"
-      title="Build plane: ground (XZ), front (XY) or side (YZ)"
-      @change="setBuildPlane(($event.target as HTMLSelectElement).value)"
+    <button
+      v-for="p in planes"
+      :key="p.id"
+      class="plane"
+      :class="{ active: store.buildPlane === p.id }"
+      :aria-pressed="store.buildPlane === p.id"
+      :title="p.title"
+      @click="setBuildPlane(p.id)"
     >
-      <option v-for="p in planes" :key="p" :value="p">{{ p.toUpperCase() }}</option>
-    </select>
+      <span class="dots"
+        ><span class="dot" :style="{ background: p.colors[0] }" /><span
+          class="dot"
+          :style="{ background: p.colors[1] }"
+      /></span>
+      {{ p.id.toUpperCase() }}
+    </button>
     <input
       class="num"
       type="number"
@@ -420,6 +455,38 @@ async function exportAll() {
   display: block;
   background: currentColor;
   border-radius: 1px;
+}
+.plane {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.plane .dots {
+  display: inline-flex;
+  gap: 2px;
+}
+.plane .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  opacity: 0.35;
+}
+.plane.active .dot {
+  opacity: 1;
+}
+.mirror {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.mirror .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  opacity: 0.35;
+}
+.mirror.active .dot {
+  opacity: 1;
 }
 .ic {
   display: inline-flex;

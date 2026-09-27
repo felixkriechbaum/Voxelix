@@ -107,7 +107,7 @@ export class PlaceEraseTool implements Tool {
     this.last = null;
     this.lock = lockPlane(hit, t, this.id === 'erase');
 
-    ctx.begin(this.id === 'place' ? 'Place' : 'Erase');
+    ctx.begin(this.id === 'place' ? 'Place' : 'Erase', 'draw');
     this.stamp(ctx, t);
   }
 
@@ -231,7 +231,7 @@ export class BoxTool implements Tool {
     const box = this.snapped(ctx);
     if (!box) return;
     const [a, b] = box;
-    ctx.begin(this.mode === 'fill' ? 'Box fill' : 'Box erase');
+    ctx.begin(this.mode === 'fill' ? 'Box fill' : 'Box erase', 'draw');
     for (let z = a.z; z <= b.z; z++)
       for (let y = a.y; y <= b.y; y++)
         for (let x = a.x; x <= b.x; x++) {
@@ -291,7 +291,7 @@ export class PaintTool implements Tool {
     this.anchor = hit.remove.clone();
     this.last = null;
     this.lock = lockPlane(hit, hit.remove, true);
-    ctx.begin('Paint');
+    ctx.begin('Paint', 'recolour');
     this.stamp(ctx, hit.remove);
   }
 
@@ -388,7 +388,7 @@ export class BucketTool implements Tool {
     if (cells.length === 0) return;
 
     const value = ctx.colorIndex + 1;
-    ctx.begin(`Bucket (${ctx.bucketMode})`);
+    ctx.begin(`Bucket (${ctx.bucketMode})`, 'recolour');
     for (const [cx, cy, cz] of cells) ctx.write(cx, cy, cz, value);
     ctx.commit();
   }

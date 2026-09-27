@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { BuildPlane } from './Picker';
 
 export interface CursorBox {
   min: THREE.Vector3;
@@ -9,6 +10,13 @@ export interface CursorBox {
 /** Grid / bbox colours per theme: [cell, voxel, bbox]. */
 const GRID_DARK = { cell: 0x2a2f3d, cellLine: 0x23272f, voxel: 0x3a4252, voxelLine: 0x2a2f3d, bbox: 0x4a5568 };
 const GRID_LIGHT = { cell: 0xcfd3db, cellLine: 0xdadde3, voxel: 0xb2b8c4, voxelLine: 0xcfd3db, bbox: 0x9aa1af };
+
+/** X / Y / Z colours, shared by the axis lines, their build-plane glow and the mirror planes. */
+const AXIS_COLORS = [0xff4d4d, 0x4dff88, 0x4d9bff] as const;
+const MIRROR_COLORS = AXIS_COLORS;
+
+/** The two axes a build plane spans. */
+const PLANE_AXES: Record<BuildPlane, [0 | 1 | 2, 0 | 1 | 2]> = { xz: [0, 2], xy: [0, 1], yz: [1, 2] };
 
 /** Ground-edge orientation labels: FRONT sits on the +Z edge, LEFT on the -X edge. */
 const LABEL_INK = { dark: '#9aa3b7', light: '#5b6473' };
@@ -23,6 +31,10 @@ export class Gizmos {
   private theme = GRID_DARK;
   private bbox: THREE.LineSegments;
   private axes: THREE.Group;
+  /** per axis: the short line at the origin + a glowing bar shown while it spans the build plane */
+  private axisLines: THREE.Line[] = [];
+  private axisGlow: THREE.Mesh[] = [];
+  private buildPlane: BuildPlane = 'xz';
   private cursor: THREE.LineSegments;
   private cursorFill: THREE.Mesh;
   private selection: THREE.LineSegments;
@@ -31,6 +43,11 @@ export class Gizmos {
   private selectionCells: THREE.Mesh;
   private frontLabel: THREE.Sprite;
   private leftLabel: THREE.Sprite;
+  /** mirrored copies of the cursor, one per mirror image (max 7) */
+  private ghosts: Array<{ line: THREE.LineSegments; fill: THREE.Mesh }> = [];
+  /** one translucent quad + outline per mirror plane, indexed by flipped axis */
+  private mirrorPlanes: Array<{ fill: THREE.Mesh; edge: THREE.LineLoop }> = [];
+  private mirrorAxes: readonly [boolean, boolean, boolean] = [false, false, false];
 
   constructor() {
     this.bbox = new THREE.LineSegments(
@@ -39,7 +56,29 @@ export class Gizmos {
     );
     this.group.add(this.bbox);
 
-    this.axes = buildAxes();
+    this.axes = new THREE.Group();
+    for (let a = 0; a < 3; a++) {
+      const dir = new THREE.Vector3().setComponent(a, 4);
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), dir]),
+        new THREE.LineBasicMaterial({ color: AXIS_COLORS[a], transparent: true }),
+      );
+      const glow = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 1, 1),
+        new THREE.MeshBasicMaterial({
+          color: AXIS_COLORS[a],
+          transparent: true,
+          opacity: 0.85,
+          depthTest: false,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+      );
+      glow.renderOrder = 960;
+      this.axes.add(line, glow);
+      this.axisLines.push(line);
+      this.axisGlow.push(glow);
+    }
     this.group.add(this.axes);
 
     this.cursorFill = new THREE.Mesh(
@@ -120,6 +159,37 @@ export class Gizmos {
     this.selection.visible = false;
     this.selection.renderOrder = 999;
     this.group.add(this.selection);
+
+    for (let a = 0; a < 3; a++) {
+      const fill = new THREE.Mesh(
+        new THREE.BufferGeometry(),
+        new THREE.MeshBasicMaterial({
+          color: MIRROR_COLORS[a],
+          transparent: true,
+          opacity: 0.1,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+          toneMapped: false,
+        }),
+      );
+      fill.renderOrder = 950;
+      // the frame ignores depth so the plane's extent reads even where voxels cover it
+      const edge = new THREE.LineLoop(
+        new THREE.BufferGeometry(),
+        new THREE.LineBasicMaterial({
+          color: MIRROR_COLORS[a],
+          transparent: true,
+          opacity: 0.85,
+          depthTest: false,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+      );
+      edge.renderOrder = 951;
+      fill.visible = edge.visible = false;
+      this.group.add(fill, edge);
+      this.mirrorPlanes.push({ fill, edge });
+    }
 
     this.frontLabel = makeLabelSprite();
     this.leftLabel = makeLabelSprite();
@@ -202,11 +272,77 @@ export class Gizmos {
     this.group.add(this.gridVoxel);
 
     this.layoutLabels();
+    this.layoutMirror();
+    this.layoutAxes();
   }
 
-  setCursor(box: CursorBox | null): void {
+  /** Light up the two axes the build plane spans; the one it's normal to fades. */
+  setBuildPlane(plane: BuildPlane): void {
+    this.buildPlane = plane;
+    this.layoutAxes();
+  }
+
+  private layoutAxes(): void {
+    const active = PLANE_AXES[this.buildPlane];
+    const size = this.lastSize;
+    // thick enough to read at any zoom, thin enough to stay a line
+    const t = Math.max(0.08, Math.max(...size) * 0.006);
+    for (let a = 0; a < 3; a++) {
+      const on = active.includes(a as 0 | 1 | 2);
+      (this.axisLines[a].material as THREE.LineBasicMaterial).opacity = on ? 1 : 0.3;
+      const glow = this.axisGlow[a];
+      glow.visible = on;
+      if (!on) continue;
+      // run the bar along the whole grid edge, so the plane's extent reads too
+      const len = size[a];
+      glow.scale.set(t, t, t).setComponent(a, len);
+      glow.position.set(0, 0, 0).setComponent(a, len / 2);
+    }
+  }
+
+  /** Show the mirror planes whose flipped axis is on; each cuts the grid centre. */
+  setMirror(axes: readonly [boolean, boolean, boolean]): void {
+    this.mirrorAxes = axes;
+    this.layoutMirror();
+  }
+
+  private layoutMirror(): void {
+    const size = this.lastSize;
+    this.mirrorPlanes.forEach(({ fill, edge }, a) => {
+      const on = this.mirrorAxes[a];
+      fill.visible = edge.visible = on;
+      if (!on) return;
+      const corners = mirrorQuad(a as 0 | 1 | 2, size);
+      fill.geometry.dispose();
+      fill.geometry = new THREE.BufferGeometry().setFromPoints(corners);
+      fill.geometry.setIndex([0, 1, 2, 0, 2, 3]);
+      edge.geometry.dispose();
+      edge.geometry = new THREE.BufferGeometry().setFromPoints(corners);
+    });
+  }
+
+  /** The edit cursor, plus dimmer copies at its mirror positions. */
+  setCursor(box: CursorBox | null, mirrored: CursorBox[] = []): void {
     this.applyBox(this.cursor, box);
     this.applyBox(this.cursorFill, box);
+    while (this.ghosts.length < mirrored.length) this.ghosts.push(this.makeGhost());
+    this.ghosts.forEach((g, i) => {
+      const b = box ? (mirrored[i] ?? null) : null;
+      this.applyBox(g.line, b);
+      this.applyBox(g.fill, b);
+    });
+  }
+
+  private makeGhost(): { line: THREE.LineSegments; fill: THREE.Mesh } {
+    const line = this.cursor.clone();
+    line.material = (this.cursor.material as THREE.LineBasicMaterial).clone();
+    (line.material as THREE.LineBasicMaterial).opacity = 0.55;
+    const fill = this.cursorFill.clone();
+    fill.material = (this.cursorFill.material as THREE.MeshBasicMaterial).clone();
+    (fill.material as THREE.MeshBasicMaterial).opacity = 0.1;
+    line.visible = fill.visible = false;
+    this.group.add(line, fill);
+    return { line, fill };
   }
 
   /** Selection outline; with `cells`, those voxels are highlighted instead of the whole box. */
@@ -243,6 +379,20 @@ export class Gizmos {
     (this.leftLabel.material as THREE.SpriteMaterial).map?.dispose();
     this.group.clear();
   }
+}
+
+/** Corners of the mirror plane that flips `axis`, spanning the grid at its centre. */
+function mirrorQuad(axis: 0 | 1 | 2, [x, y, z]: [number, number, number]): THREE.Vector3[] {
+  if (axis === 0) {
+    const c = x / 2;
+    return [new THREE.Vector3(c, 0, 0), new THREE.Vector3(c, y, 0), new THREE.Vector3(c, y, z), new THREE.Vector3(c, 0, z)];
+  }
+  if (axis === 1) {
+    const c = y / 2;
+    return [new THREE.Vector3(0, c, 0), new THREE.Vector3(x, c, 0), new THREE.Vector3(x, c, z), new THREE.Vector3(0, c, z)];
+  }
+  const c = z / 2;
+  return [new THREE.Vector3(0, 0, c), new THREE.Vector3(x, 0, c), new THREE.Vector3(x, y, c), new THREE.Vector3(0, y, c)];
 }
 
 /** The outer faces of a set of cells (faces between two selected cells are skipped). */
@@ -308,16 +458,4 @@ function makeLabelTexture(text: string, color: string): { texture: THREE.CanvasT
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 4;
   return { texture, aspect: w / h };
-}
-
-function buildAxes(): THREE.Group {
-  const g = new THREE.Group();
-  const mk = (dir: THREE.Vector3, color: number) => {
-    const geom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), dir]);
-    return new THREE.Line(geom, new THREE.LineBasicMaterial({ color }));
-  };
-  g.add(mk(new THREE.Vector3(4, 0, 0), 0xff4d4d));
-  g.add(mk(new THREE.Vector3(0, 4, 0), 0x4dff88));
-  g.add(mk(new THREE.Vector3(0, 0, 4), 0x4d9bff));
-  return g;
 }

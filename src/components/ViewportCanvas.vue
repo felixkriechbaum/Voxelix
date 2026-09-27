@@ -103,6 +103,12 @@ function syncXray() {
   viewport?.setXray(store.xray && store.toolId === 'select');
 }
 
+/** Mirror planes only show while a tool that mirrors is active. */
+function syncMirror() {
+  const mirrors = ['place', 'erase', 'box', 'paint', 'bucket'].includes(store.toolId);
+  viewport?.setMirror(mirrors ? store.mirror : [false, false, false]);
+}
+
 /** Ctrl+A: switch to the select tool and select the active object's filled bounds. */
 function selectAll() {
   if (!runner) return;
@@ -167,6 +173,8 @@ onMounted(() => {
 
   syncSelectionGizmo();
   syncXray();
+  syncMirror();
+  viewport.setBuildPlane(store.buildPlane);
 
   ro = new ResizeObserver(() => viewport?.resize());
   ro.observe(c);
@@ -306,7 +314,8 @@ function rmbEraseAt(x: number, y: number) {
   if (!runner) return;
   const hit = runner.pick(x, y);
   if (!hit?.remove) return;
-  eraseCells(brushCellsAt(hit.remove), 'Erase');
+  // RMB erase stands in for the erase tool, so it follows the mirror planes too
+  eraseCells(brushCellsAt(hit.remove), 'Erase', true);
 }
 
 function openContextMenu(x: number, y: number) {
@@ -396,11 +405,15 @@ function openContextMenu(x: number, y: number) {
   menu.value = { x, y, items };
 }
 
-function eraseCells(cells: Array<[number, number, number]>, label: string) {
+function eraseCells(cells: Array<[number, number, number]>, label: string, mirrored = false) {
   if (!runner || cells.length === 0) return;
-  runner.runExternal(label, (write) => {
-    for (const [x, y, z] of cells) write(x, y, z, 0);
-  });
+  runner.runExternal(
+    label,
+    (write) => {
+      for (const [x, y, z] of cells) write(x, y, z, 0);
+    },
+    mirrored ? 'draw' : 'none',
+  );
 }
 
 function fillCells(cells: Array<[number, number, number]>, colour: number, label: string) {
@@ -429,9 +442,15 @@ watch(
     runner?.setTool(id);
     syncSelectionGizmo();
     syncXray();
+    syncMirror();
   },
 );
 watch(() => store.xray, syncXray);
+watch(() => store.mirror, syncMirror);
+watch(
+  () => store.buildPlane,
+  (p) => viewport?.setBuildPlane(p),
+);
 watch(
   () => store.boxMode,
   () => runner?.syncBoxMode(),

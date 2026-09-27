@@ -16,6 +16,13 @@ export type BucketMode =
   /** just the border ring of what 'face' would select */
   | 'outline';
 
+/**
+ * How a batch reacts to the mirror planes: `draw` copies every write to its
+ * mirror image(s), `recolour` only where the mirrored cell is already solid (so
+ * paint never adds voxels on the far side), `none` ignores mirroring.
+ */
+export type MirrorMode = 'none' | 'draw' | 'recolour';
+
 export interface PointerInfo {
   clientX: number;
   clientY: number;
@@ -49,8 +56,8 @@ export interface ToolContext {
     planeCoord: number,
     cellValue: number,
   ): THREE.Vector3 | null;
-  /** open an undo batch */
-  begin(label: string): void;
+  /** open an undo batch; `mirror` opts its writes into the active mirror planes */
+  begin(label: string, mirror?: MirrorMode): void;
   /** queue a raw-value voxel write inside the open batch */
   write(x: number, y: number, z: number, value: number): void;
   /** commit the batch, push to history, re-mesh */

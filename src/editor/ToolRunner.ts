@@ -8,7 +8,8 @@ import {
   overlayWriteValue,
   resolveEffectiveData,
 } from '@/core/project/resolve';
-import type { Tool, ToolContext, ToolId, PointerInfo } from '@/tools/types';
+import { anyMirror, mirrorBoxes, mirrorImages, type Vec3 } from '@/core/ops/mirror';
+import type { Tool, ToolContext, ToolId, PointerInfo, MirrorMode } from '@/tools/types';
 import type { Selection } from '@/core/ops/selection';
 import type { VoxelEdit } from '@/core/voxel/types';
 import type { VoxelObject } from '@/core/project/VoxelObject';
@@ -26,11 +27,15 @@ interface ActiveCtx {
   baseResolved: VoxelData | null;
 }
 
+/** Tools whose strokes follow the mirror planes (and get a mirrored ghost cursor). */
+const MIRRORING_TOOLS: ReadonlySet<ToolId> = new Set(['place', 'erase', 'box', 'paint', 'bucket']);
+
 /** Bridges pointer input + the active Tool + undo history + the viewport. */
 export class ToolRunner implements ToolContext {
   private tool: Tool;
   private batch: VoxelEdit[] = [];
   private batchLabel = '';
+  private batchMirror: MirrorMode = 'none';
   private histories = new HistoryStore<VoxelEdit>();
   private ctx: ActiveCtx | null = null;
   private liveFlushQueued = false;
@@ -131,15 +136,34 @@ export class ToolRunner implements ToolContext {
     return this.viewport.pickOnPlane(clientX, clientY, axis, planeCoord, cellValue);
   }
 
-  begin(label: string): void {
+  begin(label: string, mirror: MirrorMode = 'none'): void {
     this.batch = [];
     this.batchLabel = label;
+    this.batchMirror = mirror;
+  }
+
+  /** The grid size the mirror planes are centred in (the resolved read view). */
+  private mirrorSize(): Vec3 | null {
+    const d = this.ctx?.readData;
+    return d ? [d.sizeX, d.sizeY, d.sizeZ] : null;
   }
 
   write(x: number, y: number, z: number, value: number): void {
     const ctx = this.ctx;
     if (!ctx) return;
+    const size = this.batchMirror !== 'none' && anyMirror(this.store.mirror) ? this.mirrorSize() : null;
+    // decide the mirrored targets before the primary write can change solidity
+    const images = size
+      ? mirrorImages([x, y, z], size, this.store.mirror).filter(
+          ([mx, my, mz]) => this.batchMirror !== 'recolour' || ctx.readData.isSolid(mx, my, mz),
+        )
+      : [];
+    this.writeOne(ctx, x, y, z, value);
+    for (const [mx, my, mz] of images) this.writeOne(ctx, mx, my, mz, value);
+  }
 
+  /** One cell through the overlay-aware path, recorded in the open batch. */
+  private writeOne(ctx: ActiveCtx, x: number, y: number, z: number, value: number): void {
     if (!ctx.extend) {
       const prev = ctx.object.data.setRaw(x, y, z, value);
       if (prev !== value) {
@@ -192,7 +216,20 @@ export class ToolRunner implements ToolContext {
   }
 
   setCursor(box: CursorBox | null): void {
-    this.viewport.setCursor(box);
+    this.viewport.setCursor(box, box ? this.mirrorCursors(box) : []);
+  }
+
+  /** Ghost copies of the cursor at its mirror positions, for tools that mirror. */
+  private mirrorCursors(box: CursorBox): CursorBox[] {
+    const size = this.mirrorSize();
+    if (!size || !anyMirror(this.store.mirror) || !MIRRORING_TOOLS.has(this.tool.id)) return [];
+    const min: Vec3 = [box.min.x, box.min.y, box.min.z];
+    const max: Vec3 = [box.max.x, box.max.y, box.max.z];
+    return mirrorBoxes(min, max, size, this.store.mirror).map(([mn, mx]) => ({
+      min: box.min.clone().set(...mn),
+      max: box.max.clone().set(...mx),
+      color: box.color,
+    }));
   }
 
   pickColor(index: number): void {
@@ -306,8 +343,12 @@ export class ToolRunner implements ToolContext {
    * Run an external, non-pointer edit (shape dialog, context-menu ops) through
    * the same overlay-aware write path and history as a tool stroke.
    */
-  runExternal(label: string, fn: (write: (x: number, y: number, z: number, value: number) => void) => void): void {
-    this.begin(label);
+  runExternal(
+    label: string,
+    fn: (write: (x: number, y: number, z: number, value: number) => void) => void,
+    mirror: MirrorMode = 'none',
+  ): void {
+    this.begin(label, mirror);
     fn((x, y, z, value) => this.write(x, y, z, value));
     this.commit();
   }

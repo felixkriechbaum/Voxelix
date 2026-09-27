@@ -197,8 +197,18 @@ export class Viewport {
     this.controls.setView(view);
   }
 
-  setCursor(box: CursorBox | null): void {
-    this.gizmos.setCursor(box);
+  setCursor(box: CursorBox | null, mirrored: CursorBox[] = []): void {
+    this.gizmos.setCursor(box, mirrored);
+  }
+
+  /** Highlight the axes of the plane being built on. */
+  setBuildPlane(plane: BuildPlane): void {
+    this.gizmos.setBuildPlane(plane);
+  }
+
+  /** Show the active mirror planes (indexed by the axis each one flips). */
+  setMirror(axes: readonly [boolean, boolean, boolean]): void {
+    this.gizmos.setMirror(axes);
   }
 
   setSelectionBox(box: CursorBox | null, cells?: Array<[number, number, number]>): void {

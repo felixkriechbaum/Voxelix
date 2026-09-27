@@ -90,6 +90,10 @@ src/
   erased) refits the camera. `Picker.pick` only accepts a click that lands
   inside the active grid's bounds, so a camera still framed on a larger object
   leaves a small new one silently unclickable — no hit, no error, nothing.
+- The ortho camera renders a symmetric ±4000 depth slab around its eye, and
+  zooming moves the eye in, so close up it sits inside the object. `Picker`
+  therefore starts ortho rays at the near plane (`aim`), not at the eye —
+  otherwise clicks from some sides miss the visible faces.
 - Meshing is always off-thread. A chunk is re-meshed when its voxels or a
   neighbour's border voxels change (`VoxelData.dirty`).
 - Autosave writes the whole project (+ a viewport JPEG thumbnail) to IndexedDB
@@ -198,9 +202,14 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   along the start face's normal; off → the box is narrowed to camera-visible
   voxels (`ops/visibility.ts`, grid-marched sight lines) and becomes a cell
   selection, highlighted per voxel by `Gizmos`.
-- **Next up:** mirror modelling — edits mirrored across the chosen plane(s),
-  with the selected mirror plane (XY / XZ / ZY) drawn in the viewport so it's
-  visible where the mirroring happens. Mirrored writes must honour the brush
-  size and go through the ToolRunner write path (overlays + undo).
+  Mirror modelling (`store.mirror`, indexed by flipped axis: YZ/XZ/XY toolbar
+  toggles): planes run through the grid centre (`core/ops/mirror.ts`). A batch
+  opts in via `begin(label, 'draw' | 'recolour')` — place/erase/box/RMB-erase
+  draw, paint/bucket recolour (mirrored cell only if already solid). Mirroring
+  happens per cell in `ToolRunner.write`, so brush blocks, overlays and undo
+  follow for free; selection ops / shapes / context menu stay unmirrored.
+  `Gizmos` draws the active planes (axis-coloured) + ghost cursors. The build
+  plane is a toolbar toggle (XZ/XY/YZ); `Gizmos.setBuildPlane` lights up the
+  two axes it spans (glow bars along the grid edges), the normal axis fades.
 - **Later — iter 4 ideas:** selection copy/paste across objects, marquee in
   screen space, per-object up-axis/pivot in the export dialog.
