@@ -3,6 +3,7 @@ import { REMOVED } from '@/core/voxel/constants';
 import type { Project } from './Project';
 import type { VoxelObject } from './VoxelObject';
 import type { ColorAdjust } from './types';
+import { mergeParts } from './parts';
 
 /**
  * The voxel grid an object actually represents once extend-overlays are applied.
@@ -18,7 +19,7 @@ export function resolveEffectiveData(
   seen = new Set<string>(),
 ): VoxelData {
   if (object.kind !== 'extend' || !object.baseId || seen.has(object.id)) {
-    return object.data;
+    return object.merged();
   }
   seen.add(object.id);
   const base = project.getById(object.baseId);
@@ -124,8 +125,10 @@ export function buildActiveRender(object: VoxelObject, project: Project): Active
   if (object.kind !== 'extend' || !object.baseId) {
     return {
       editableId: object.id,
+      // the part being edited is bright; the other parts and any modifier
+      // copies (its own included) show dimmed around it
       editableData: object.data,
-      baseContext: null,
+      baseContext: object.isComposite ? mergeParts(object.parts, object.detail, object.activePart) : null,
       baseResolved: null,
       detail,
       colorAdjust,

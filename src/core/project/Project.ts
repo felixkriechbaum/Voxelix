@@ -1,6 +1,7 @@
 import { VoxelData } from '@/core/voxel/VoxelData';
 import { createDefaultPalette, type Palette } from '@/core/palette';
 import { VoxelObject } from './VoxelObject';
+import { VoxelPart } from './parts';
 import { resolveEffectiveData } from './resolve';
 import { CELLS_PER_VOXEL } from '@/core/voxel/constants';
 import {
@@ -88,13 +89,21 @@ export class Project {
   duplicate(id: string): VoxelObject | null {
     const src = this.getById(id);
     if (!src) return null;
-    const resolved = resolveEffectiveData(src, this);
-    const data = new VoxelData(resolved.sizeX, resolved.sizeY, resolved.sizeZ);
-    resolved.forEachFilled((x, y, z, color) => data.set(x, y, z, color));
+    let parts: VoxelPart[];
+    if (src.kind === 'extend') {
+      // an overlay copies as its finished look — the copy isn't linked to anything
+      const resolved = resolveEffectiveData(src, this);
+      const data = new VoxelData(resolved.sizeX, resolved.sizeY, resolved.sizeZ);
+      resolved.forEachFilled((x, y, z, color) => data.set(x, y, z, color));
+      parts = [new VoxelPart({ name: 'Part 1', data })];
+    } else {
+      parts = src.parts.map((p) => p.clone());
+    }
     const copy = new VoxelObject({
       name: this.uniqueName(`${src.name} copy`),
       kind: 'normal',
-      data,
+      parts,
+      activePartId: parts[src.parts.findIndex((p) => p.id === src.activePartId)]?.id,
       pivot: src.pivot,
       detail: src.detail,
       colorAdjust: src.colorAdjust ? { ...src.colorAdjust } : undefined,
@@ -148,7 +157,7 @@ export class Project {
     // a mid-transition file may carry detail 2/3 — normalise to the fixed grid
     for (const o of objects) {
       if (o.detail > 1 && o.detail < CELLS_PER_VOXEL) {
-        o.data.upscale(CELLS_PER_VOXEL / o.detail);
+        for (const p of o.parts) p.data.upscale(CELLS_PER_VOXEL / o.detail);
         o.detail = CELLS_PER_VOXEL;
       }
     }

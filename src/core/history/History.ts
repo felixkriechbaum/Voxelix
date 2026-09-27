@@ -66,7 +66,9 @@ export class HistoryStore<E extends { prev: number; next: number }> {
     return h;
   }
 
+  /** Drop a stack, and every stack keyed under it (`<id>/<sub>`, e.g. an object's parts). */
   drop(objectId: string): void {
     this.map.delete(objectId);
+    for (const key of [...this.map.keys()]) if (key.startsWith(`${objectId}/`)) this.map.delete(key);
   }
 }

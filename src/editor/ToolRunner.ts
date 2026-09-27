@@ -245,11 +245,13 @@ export class ToolRunner implements ToolContext {
   }
 
   // ---- history --------------------------------------------------------
+  /** One undo stack per part — switching parts never undoes into the wrong grid. */
   private currentHistory() {
-    return this.histories.for(this.store.activeObjectId ?? '_');
+    const obj = this.ctx?.object;
+    return this.histories.for(obj ? `${obj.id}/${obj.activePartId}` : '_');
   }
 
-  /** Drop an object's undo stack — its diffs no longer line up with the grid. */
+  /** Drop an object's undo stacks (all its parts) — their diffs no longer line up with the grid. */
   forgetHistory(objectId: string): void {
     this.histories.drop(objectId);
   }
@@ -261,6 +263,11 @@ export class ToolRunner implements ToolContext {
       this.viewport.refreshEditable(render.editableData);
       // an erase over a base voxel stores a REMOVED marker — the locked base mesh
       // has to re-mesh too, or the "deleted" voxel stays visible until an object switch
+      if (render.baseContext) this.viewport.refreshBase(render.baseContext);
+    } else if (this.ctx?.object.activePart.hasActiveModifiers) {
+      // the part's array copies are generated from it — regenerate them live
+      this.viewport.flush();
+      const render = buildActiveRender(this.ctx.object, this.store.project!);
       if (render.baseContext) this.viewport.refreshBase(render.baseContext);
     } else {
       this.viewport.flush();

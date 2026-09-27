@@ -1,5 +1,6 @@
 import type { VoxelDataJson } from '@/core/voxel/types';
 import type { Palette } from '@/core/palette';
+import type { VoxelPartJson } from './parts';
 
 export type ObjectKind = 'normal' | 'extend';
 
@@ -10,7 +11,11 @@ export interface VoxelObjectJson {
   kind: ObjectKind;
   /** set when kind === 'extend': the object this overlay builds on */
   baseId?: string;
+  /** the finished look (all parts merged, modifiers applied) — what older versions read */
   data: VoxelDataJson;
+  /** the separate meshes + their modifiers; absent = a single plain part (`data`) */
+  parts?: VoxelPartJson[];
+  activePartId?: string;
   /** per-object export pivot; default 'bottom-center' */
   pivot?: 'bottom-center' | 'min-corner';
   /** grid cells per voxel edge; default 1 */
