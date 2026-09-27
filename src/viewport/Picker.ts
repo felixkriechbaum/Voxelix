@@ -15,6 +15,21 @@ export interface PickResult {
 export class Picker {
   private ray = new THREE.Raycaster();
 
+  /**
+   * Point the ray through `ndc`. An orthographic camera's ray would start at
+   * the eye, but the ortho camera renders a symmetric depth slab around the eye
+   * and zooming moves the eye in — close up it sits *inside* the object. The
+   * ray then begins past the faces you can see and misses them, so clicks from
+   * some sides silently do nothing. Start it at the near plane instead, so it
+   * covers everything that is drawn.
+   */
+  private aim(ndc: THREE.Vector2, camera: THREE.Camera): void {
+    this.ray.setFromCamera(ndc, camera);
+    if (camera instanceof THREE.OrthographicCamera) {
+      this.ray.ray.origin.set(ndc.x, ndc.y, -1).unproject(camera);
+    }
+  }
+
   pick(
     ndc: THREE.Vector2,
     camera: THREE.Camera,
@@ -23,7 +38,7 @@ export class Picker {
     buildPlane: BuildPlane,
     buildOffset: number,
   ): PickResult | null {
-    this.ray.setFromCamera(ndc, camera);
+    this.aim(ndc, camera);
 
     const hits = this.ray.intersectObjects(targets, false);
     if (hits.length > 0 && hits[0].face) {
@@ -79,7 +94,7 @@ export class Picker {
     planeCoord: number,
     cellValue: number,
   ): THREE.Vector3 | null {
-    this.ray.setFromCamera(ndc, camera);
+    this.aim(ndc, camera);
     const normal = new THREE.Vector3();
     normal.setComponent(axis, 1);
     const plane = new THREE.Plane(normal, -planeCoord);
