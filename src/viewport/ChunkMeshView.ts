@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { VoxelData } from '@/core/voxel/VoxelData';
 import type { ChunkMesher } from '@/core/mesh/ChunkMesher';
-import type { MeshResult } from '@/core/mesh/meshTypes';
+import type { MeshArrays, MeshResult } from '@/core/mesh/meshTypes';
 
 export interface ChunkMeshViewOpts {
   /** dim + cool tint + slight transparency — for a locked extend base */
@@ -12,7 +12,10 @@ export interface ChunkMeshViewOpts {
 export class ChunkMeshView {
   readonly group = new THREE.Group();
   private meshes = new Map<number, THREE.Mesh>();
+  /** see-through voxels (palette alpha < 1), one mesh per chunk, blended */
+  private glassMeshes = new Map<number, THREE.Mesh>();
   private material: THREE.MeshStandardMaterial;
+  private glassMaterial: THREE.MeshStandardMaterial;
   private paletteOverride: Float32Array | undefined;
   private baseOpacity: number;
   private baseTransparent: boolean;
@@ -33,6 +36,16 @@ export class ChunkMeshView {
     });
     this.baseOpacity = this.material.opacity;
     this.baseTransparent = this.material.transparent;
+    // vertex alpha carries each colour's own opacity; a glossier finish reads as glass
+    this.glassMaterial = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.2,
+      metalness: 0,
+      color: this.material.color.clone(),
+      transparent: true,
+      depthWrite: false,
+      opacity: this.material.opacity,
+    });
     data.markAllChunksDirty();
   }
 
@@ -43,6 +56,8 @@ export class ChunkMeshView {
     m.opacity = on ? this.baseOpacity * 0.3 : this.baseOpacity;
     m.depthWrite = !on;
     m.needsUpdate = true;
+    this.glassMaterial.opacity = on ? this.baseOpacity * 0.3 : this.baseOpacity;
+    this.glassMaterial.needsUpdate = true;
   }
 
   /** Swap in a freshly-derived grid (extend re-resolve, resize) and re-mesh it.
@@ -52,11 +67,13 @@ export class ChunkMeshView {
   setData(data: VoxelData): void {
     this.data = data;
     const valid = new Set(data.allChunkKeys());
-    for (const [k, m] of this.meshes) {
-      if (valid.has(k)) continue;
-      this.group.remove(m);
-      m.geometry.dispose();
-      this.meshes.delete(k);
+    for (const map of [this.meshes, this.glassMeshes]) {
+      for (const [k, m] of map) {
+        if (valid.has(k)) continue;
+        this.group.remove(m);
+        m.geometry.dispose();
+        map.delete(k);
+      }
     }
     data.markAllChunksDirty();
     this.flush();
@@ -79,40 +96,53 @@ export class ChunkMeshView {
 
   applyResult(r: MeshResult): void {
     if (r.objectId !== this.id) return;
-    const existing = this.meshes.get(r.chunkKey);
-    if (r.indices.length === 0) {
+    this.applyArrays(this.meshes, r.chunkKey, r.opaque, this.material);
+    this.applyArrays(this.glassMeshes, r.chunkKey, r.glass, this.glassMaterial);
+  }
+
+  private applyArrays(
+    map: Map<number, THREE.Mesh>,
+    chunkKey: number,
+    arrays: MeshArrays,
+    material: THREE.Material,
+  ): void {
+    const existing = map.get(chunkKey);
+    if (arrays.indices.length === 0) {
       if (existing) {
         this.group.remove(existing);
         existing.geometry.dispose();
-        this.meshes.delete(r.chunkKey);
+        map.delete(chunkKey);
       }
       return;
     }
     const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(r.positions, 3));
-    geom.setAttribute('normal', new THREE.BufferAttribute(r.normals, 3));
-    geom.setAttribute('color', new THREE.BufferAttribute(r.colors, 3));
-    geom.setIndex(new THREE.BufferAttribute(r.indices, 1));
+    geom.setAttribute('position', new THREE.BufferAttribute(arrays.positions, 3));
+    geom.setAttribute('normal', new THREE.BufferAttribute(arrays.normals, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(arrays.colors, 4));
+    geom.setIndex(new THREE.BufferAttribute(arrays.indices, 1));
     geom.computeBoundingSphere();
     if (existing) {
       existing.geometry.dispose();
       existing.geometry = geom;
     } else {
-      const mesh = new THREE.Mesh(geom, this.material);
-      mesh.userData.chunkKey = r.chunkKey;
-      this.meshes.set(r.chunkKey, mesh);
+      const mesh = new THREE.Mesh(geom, material);
+      mesh.userData.chunkKey = chunkKey;
+      map.set(chunkKey, mesh);
       this.group.add(mesh);
     }
   }
 
+  /** Glass included — a pane has to be clickable to paint or erase it. */
   raycastTargets(): THREE.Mesh[] {
-    return [...this.meshes.values()];
+    return [...this.meshes.values(), ...this.glassMeshes.values()];
   }
 
   dispose(): void {
-    for (const m of this.meshes.values()) m.geometry.dispose();
+    for (const m of [...this.meshes.values(), ...this.glassMeshes.values()]) m.geometry.dispose();
     this.meshes.clear();
+    this.glassMeshes.clear();
     this.material.dispose();
+    this.glassMaterial.dispose();
     this.group.removeFromParent();
     this.group.clear();
   }

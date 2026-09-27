@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { greedyMesh } from '@/core/mesh/greedyMesh';
-import type { MeshArrays } from '@/core/mesh/meshTypes';
+import type { ChunkMeshes, MeshArrays } from '@/core/mesh/meshTypes';
 import { adjustPaletteLinear, paletteToLinearArray, type Palette } from '@/core/palette';
 import { resolveEffectiveData } from '@/core/project/resolve';
 import type { VoxelData } from '@/core/voxel/VoxelData';
@@ -12,37 +12,43 @@ import { metersPerVoxel, type ExportSettings } from '@/core/project/types';
 /** Let the browser paint (progress overlay, etc.) between bursts of work. */
 const breathe = () => new Promise<void>((r) => setTimeout(r));
 
-/** Greedy-mesh every chunk of an object and concatenate into one mesh. */
+/** Greedy-mesh every chunk of an object; opaque and see-through geometry each concatenated. */
 export async function buildMergedArrays(
   data: VoxelData,
   paletteLinear: Float32Array,
-): Promise<MeshArrays> {
-  const parts: MeshArrays[] = [];
-  let vcount = 0;
-  let icount = 0;
+): Promise<ChunkMeshes> {
+  const opaque: MeshArrays[] = [];
+  const glass: MeshArrays[] = [];
   const keys = data.allChunkKeys();
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
     const padded = data.extractPadded(key);
     const o = data.chunkOrigin(key);
     const m = greedyMesh(padded, paletteLinear, o.x, o.y, o.z);
-    if (m.indices.length > 0) {
-      parts.push(m);
-      vcount += m.positions.length / 3;
-      icount += m.indices.length;
-    }
+    if (m.opaque.indices.length > 0) opaque.push(m.opaque);
+    if (m.glass.indices.length > 0) glass.push(m.glass);
     if ((i & 31) === 31) await breathe();
+  }
+  return { opaque: concatArrays(opaque), glass: concatArrays(glass) };
+}
+
+function concatArrays(parts: MeshArrays[]): MeshArrays {
+  let vcount = 0;
+  let icount = 0;
+  for (const m of parts) {
+    vcount += m.positions.length / 3;
+    icount += m.indices.length;
   }
   const positions = new Float32Array(vcount * 3);
   const normals = new Float32Array(vcount * 3);
-  const colors = new Float32Array(vcount * 3);
+  const colors = new Float32Array(vcount * 4);
   const indices = new Uint32Array(icount);
   let vo = 0;
   let io = 0;
   for (const m of parts) {
     positions.set(m.positions, vo * 3);
     normals.set(m.normals, vo * 3);
-    colors.set(m.colors, vo * 3);
+    colors.set(m.colors, vo * 4);
     for (let i = 0; i < m.indices.length; i++) indices[io + i] = m.indices[i] + vo;
     vo += m.positions.length / 3;
     io += m.indices.length;
@@ -70,7 +76,12 @@ export async function exportObjectToGlb(
   if (adj && (adj.saturation !== 0 || adj.brightness !== 0)) {
     paletteLinear = adjustPaletteLinear(paletteLinear, adj.saturation, adj.brightness);
   }
-  const arrays = await buildMergedArrays(effectiveData, paletteLinear);
+  const split = await buildMergedArrays(effectiveData, paletteLinear);
+  // one mesh for the whole object; see-through voxels become a second
+  // primitive with a blended material (glTF alphaMode BLEND)
+  const opaqueIndexCount = split.opaque.indices.length;
+  const glassIndexCount = split.glass.indices.length;
+  const arrays = concatArrays([split.opaque, split.glass]);
 
   let ox: number;
   let oy: number;
@@ -116,7 +127,7 @@ export async function exportObjectToGlb(
   const geom = new THREE.BufferGeometry();
   geom.setAttribute('position', new THREE.BufferAttribute(arrays.positions, 3));
   geom.setAttribute('normal', new THREE.BufferAttribute(arrays.normals, 3));
-  geom.setAttribute('color', new THREE.BufferAttribute(arrays.colors, 3));
+  geom.setAttribute('color', new THREE.BufferAttribute(arrays.colors, 4));
   geom.setIndex(new THREE.BufferAttribute(arrays.indices, 1));
 
   const material = new THREE.MeshStandardMaterial({
@@ -124,7 +135,25 @@ export async function exportObjectToGlb(
     roughness: 0.85,
     metalness: 0,
   });
-  const mesh = new THREE.Mesh(geom, material);
+  const glassMaterial = new THREE.MeshStandardMaterial({
+    name: 'glass',
+    vertexColors: true,
+    roughness: 0.2,
+    metalness: 0,
+    transparent: true,
+    depthWrite: false,
+  });
+  const materials: THREE.Material[] = [];
+  if (opaqueIndexCount > 0) {
+    geom.addGroup(0, opaqueIndexCount, materials.length);
+    materials.push(material);
+  }
+  if (glassIndexCount > 0) {
+    geom.addGroup(opaqueIndexCount, glassIndexCount, materials.length);
+    materials.push(glassMaterial);
+  }
+  const mesh = new THREE.Mesh(geom, materials.length === 1 ? materials[0] : materials);
+  if (materials.length === 1) geom.clearGroups();
   mesh.name = object.name;
 
   // Hand the exporter a named Scene, not a bare Mesh: given a loose object it
@@ -143,6 +172,7 @@ export async function exportObjectToGlb(
 
   geom.dispose();
   material.dispose();
+  glassMaterial.dispose();
   return { name: `${sanitizeFilename(object.name)}.glb`, blob: new Blob([result], { type: 'model/gltf-binary' }) };
 }
 

@@ -1,7 +1,8 @@
 import { PALETTE_SIZE } from './voxel/constants';
 
-/** A project palette: PALETTE_SIZE sRGB hex strings ("#rrggbb"). Index 0 is a
- *  usable colour like any other. */
+/** A project palette: PALETTE_SIZE sRGB hex strings — "#rrggbb", or
+ *  "#rrggbbaa" for a see-through colour (glass). Index 0 is a usable colour
+ *  like any other. */
 export type Palette = string[];
 
 const DEFAULT_RAMPS = [
@@ -38,6 +39,23 @@ export function hexToRgb(hex: string): [number, number, number] {
   ];
 }
 
+/** Opacity of a palette colour, 0–1 ("#rrggbb" is fully opaque). */
+export function hexAlpha(hex: string): number {
+  const h = hex.replace('#', '');
+  return h.length >= 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1;
+}
+
+/** The colour without its alpha — what `<input type="color">` accepts. */
+export function hexOpaque(hex: string): string {
+  return `#${hex.replace('#', '').slice(0, 6)}`;
+}
+
+/** `hex` with opacity `alpha` (0–1); fully opaque stays in the short "#rrggbb" form. */
+export function withAlpha(hex: string, alpha: number): string {
+  const a = Math.max(0, Math.min(255, Math.round(alpha * 255)));
+  return a >= 255 ? hexOpaque(hex) : `${hexOpaque(hex)}${a.toString(16).padStart(2, '0')}`;
+}
+
 export function rgbToHex(r: number, g: number, b: number): string {
   const c = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
   return `#${c(r)}${c(g)}${c(b)}`;
@@ -53,14 +71,19 @@ function linearToSrgb(c: number): number {
   return s <= 0.0031308 ? s * 12.92 : 1.055 * Math.pow(s, 1 / 2.4) - 0.055;
 }
 
-/** 256 * 3 Float32Array in linear space, for meshing and GLB vertex colours. */
+/** Floats per palette slot in the linear array: r, g, b (linear) + alpha. */
+export const PALETTE_STRIDE = 4;
+
+/** 256 * RGBA Float32Array, colour in linear space, for meshing and GLB vertex colours. */
 export function paletteToLinearArray(palette: Palette): Float32Array {
-  const out = new Float32Array(PALETTE_SIZE * 3);
+  const out = new Float32Array(PALETTE_SIZE * PALETTE_STRIDE);
   for (let i = 0; i < PALETTE_SIZE; i++) {
-    const [r, g, b] = hexToRgb(palette[i] ?? '#000000');
-    out[i * 3] = srgbToLinear(r);
-    out[i * 3 + 1] = srgbToLinear(g);
-    out[i * 3 + 2] = srgbToLinear(b);
+    const hex = palette[i] ?? '#000000';
+    const [r, g, b] = hexToRgb(hex);
+    out[i * 4] = srgbToLinear(r);
+    out[i * 4 + 1] = srgbToLinear(g);
+    out[i * 4 + 2] = srgbToLinear(b);
+    out[i * 4 + 3] = hexAlpha(hex);
   }
   return out;
 }
@@ -78,18 +101,19 @@ export function adjustPaletteLinear(
 ): Float32Array {
   const out = new Float32Array(paletteLinear.length);
   for (let i = 0; i < PALETTE_SIZE; i++) {
-    const r = linearToSrgb(paletteLinear[i * 3]) * 255;
-    const g = linearToSrgb(paletteLinear[i * 3 + 1]) * 255;
-    const b = linearToSrgb(paletteLinear[i * 3 + 2]) * 255;
+    const r = linearToSrgb(paletteLinear[i * 4]) * 255;
+    const g = linearToSrgb(paletteLinear[i * 4 + 1]) * 255;
+    const b = linearToSrgb(paletteLinear[i * 4 + 2]) * 255;
     const [h, s, v] = rgbToHsv(r, g, b);
     const [nr, ng, nb] = hsvToRgb(
       h,
       Math.max(0, Math.min(1, s + saturation)),
       Math.max(0, Math.min(1, v + brightness)),
     );
-    out[i * 3] = srgbToLinear(nr);
-    out[i * 3 + 1] = srgbToLinear(ng);
-    out[i * 3 + 2] = srgbToLinear(nb);
+    out[i * 4] = srgbToLinear(nr);
+    out[i * 4 + 1] = srgbToLinear(ng);
+    out[i * 4 + 2] = srgbToLinear(nb);
+    out[i * 4 + 3] = paletteLinear[i * 4 + 3]; // a colour shift never changes opacity
   }
   return out;
 }

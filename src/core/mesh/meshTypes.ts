@@ -1,8 +1,15 @@
 export interface MeshArrays {
   positions: Float32Array;
   normals: Float32Array;
+  /** RGBA per vertex, linear colour + alpha */
   colors: Float32Array;
   indices: Uint32Array;
+}
+
+/** One chunk's geometry: opaque voxels, and see-through ones (glass) apart. */
+export interface ChunkMeshes {
+  opaque: MeshArrays;
+  glass: MeshArrays;
 }
 
 /** Message sent to the mesher worker for one chunk. */
@@ -19,13 +26,9 @@ export interface MeshJob {
 }
 
 /** Result posted back from the mesher worker. */
-export interface MeshResult {
+export interface MeshResult extends ChunkMeshes {
   objectId: string;
   chunkKey: number;
-  positions: Float32Array;
-  normals: Float32Array;
-  colors: Float32Array;
-  indices: Uint32Array;
 }
 
 export const EMPTY_MESH: MeshArrays = {

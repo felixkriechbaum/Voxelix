@@ -1,5 +1,5 @@
 import { CHUNK } from '@/core/voxel/constants';
-import type { MeshArrays } from './meshTypes';
+import type { ChunkMeshes, MeshArrays } from './meshTypes';
 
 const PAD = CHUNK + 2;
 
@@ -8,9 +8,18 @@ function cell(data: Uint16Array, x: number, y: number, z: number): number {
 }
 
 /**
- * Greedy mesh one chunk from its padded (CHUNK+2)^3 volume.
+ * Greedy mesh one chunk from its padded (CHUNK+2)^3 volume, as two meshes:
+ * the opaque voxels, and the see-through ones (palette alpha < 1, e.g. glass)
+ * which need their own blended material.
+ *
  * Coplanar faces of equal colour are merged into large quads; hidden faces are
- * dropped. Colours are baked per-vertex from `paletteLinear` (256 * 3, linear).
+ * dropped. What counts as hidden depends on transparency:
+ *  - an opaque face shows wherever its neighbour is empty *or see-through*,
+ *    so a wall behind a window pane is still drawn;
+ *  - a see-through face shows against empty space or a *different* see-through
+ *    colour — never against an opaque voxel, and never inside a block of the
+ *    same glass (no internal panes).
+ * Colours are baked per-vertex as RGBA from `paletteLinear` (256 × 4, linear).
  * Voxel (x,y,z) fills the unit cube [x, x+1]; output is offset by (ox,oy,oz).
  */
 export function greedyMesh(
@@ -19,6 +28,36 @@ export function greedyMesh(
   ox: number,
   oy: number,
   oz: number,
+): ChunkMeshes {
+  const see = (v: number) => v !== 0 && paletteLinear[(v - 1) * 4 + 3] < 1;
+  const solid = (v: number) => v !== 0 && !see(v);
+
+  const opaque = meshPass(data, paletteLinear, ox, oy, oz, (a, b) => {
+    // front face (+d) of a, or back face (-d) of b, or nothing
+    if (solid(a) && !solid(b)) return a;
+    if (solid(b) && !solid(a)) return -b;
+    return 0;
+  });
+  const glass = meshPass(data, paletteLinear, ox, oy, oz, (a, b) => {
+    if (see(a) && (b === 0 || (see(b) && b !== a))) return a;
+    if (see(b) && (a === 0 || (see(a) && a !== b))) return -b;
+    return 0;
+  });
+  return { opaque, glass };
+}
+
+/**
+ * One greedy pass. `face(a, b)` looks at the two cells either side of a slice
+ * boundary and returns the cell value whose face to emit there — positive for
+ * a's +d face, negative for b's -d face — or 0 for none.
+ */
+function meshPass(
+  data: Uint16Array,
+  paletteLinear: Float32Array<ArrayBufferLike>,
+  ox: number,
+  oy: number,
+  oz: number,
+  face: (a: number, b: number) => number,
 ): MeshArrays {
   const positions: number[] = [];
   const normals: number[] = [];
@@ -49,9 +88,7 @@ export function greedyMesh(
           const a = cell(data, x[0], x[1], x[2]);
           x[d] = sliceD + 1;
           const b = cell(data, x[0], x[1], x[2]);
-          if ((a !== 0) === (b !== 0)) mask[n] = 0;
-          else if (a !== 0) mask[n] = a; // front face, +d normal
-          else mask[n] = -b; // back face, -d normal
+          mask[n] = face(a, b);
         }
       }
 
@@ -97,13 +134,14 @@ export function greedyMesh(
             [pos[0] + au[0] + av[0], pos[1] + au[1] + av[1], pos[2] + au[2] + av[2]],
             [pos[0] + av[0], pos[1] + av[1], pos[2] + av[2]],
           ];
-          const cr = paletteLinear[colorIndex * 3];
-          const cg = paletteLinear[colorIndex * 3 + 1];
-          const cb = paletteLinear[colorIndex * 3 + 2];
+          const cr = paletteLinear[colorIndex * 4];
+          const cg = paletteLinear[colorIndex * 4 + 1];
+          const cb = paletteLinear[colorIndex * 4 + 2];
+          const ca = paletteLinear[colorIndex * 4 + 3];
           for (const p of corners) {
             positions.push(p[0] + ox, p[1] + oy, p[2] + oz);
             normals.push(q[0] * sign, q[1] * sign, q[2] * sign);
-            colors.push(cr, cg, cb);
+            colors.push(cr, cg, cb, ca);
           }
           if (front) {
             indices.push(base, base + 1, base + 2, base, base + 2, base + 3);

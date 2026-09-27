@@ -6,24 +6,13 @@ type Inbound =
   | { kind: 'palette'; palette: Float32Array }
   | { kind: 'jobs'; jobs: MeshJob[] };
 
-let paletteLinear: Float32Array<ArrayBufferLike> = new Float32Array(768);
+let paletteLinear: Float32Array<ArrayBufferLike> = new Float32Array(256 * 4);
 
 function run(job: MeshJob): void {
-  const mesh = greedyMesh(job.padded, job.palette ?? paletteLinear, job.origin[0], job.origin[1], job.origin[2]);
-  const result: MeshResult = {
-    objectId: job.objectId,
-    chunkKey: job.chunkKey,
-    positions: mesh.positions,
-    normals: mesh.normals,
-    colors: mesh.colors,
-    indices: mesh.indices,
-  };
-  (self as DedicatedWorkerGlobalScope).postMessage(result, [
-    mesh.positions.buffer,
-    mesh.normals.buffer,
-    mesh.colors.buffer,
-    mesh.indices.buffer,
-  ]);
+  const { opaque, glass } = greedyMesh(job.padded, job.palette ?? paletteLinear, job.origin[0], job.origin[1], job.origin[2]);
+  const result: MeshResult = { objectId: job.objectId, chunkKey: job.chunkKey, opaque, glass };
+  const buffers = [opaque, glass].flatMap((m) => [m.positions.buffer, m.normals.buffer, m.colors.buffer, m.indices.buffer]);
+  (self as DedicatedWorkerGlobalScope).postMessage(result, buffers as ArrayBuffer[]);
 }
 
 self.onmessage = (e: MessageEvent<Inbound>) => {
