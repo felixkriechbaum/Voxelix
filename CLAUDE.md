@@ -36,7 +36,9 @@ build catches worker/bundler issues the typecheck misses.
   accent, `--axis-x/y/z` for anything spatial (plane / mirror / size fields,
   matching the viewport gizmo). Chakra Petch for headings, IBM Plex Sans for UI.
   Editor layout: `Toolbar` (project + file actions) on top, `ToolRail` (tools)
-  left, `ToolOptions` floating in the viewport, objects + palette right.
+  left, `ToolOptions` floating in the viewport, objects + palette right
+  (width draggable via the handle in the gap, 240–560 px, localStorage
+  `voxelix.voxelSide`).
 - Keep `core/` free of Three.js and Vue — it is pure logic and must stay testable
   in `bun` without a DOM.
 

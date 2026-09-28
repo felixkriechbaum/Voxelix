@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Toolbar from './Toolbar.vue';
 import ToolRail from './ToolRail.vue';
 import Outliner from './Outliner.vue';
@@ -19,6 +19,62 @@ const showSettings = ref(false);
 const { saveProject } = useProjectSave();
 
 const { flushAutosave } = useAutosave();
+
+// ---- resizable right sidebar -------------------------------------------------
+const SIDE_KEY = 'voxelix.voxelSide';
+const SIDE_MIN = 240;
+const SIDE_MAX = 560;
+const SIDE_DEFAULT = 280;
+const clampSide = (w: number) => Math.min(SIDE_MAX, Math.max(SIDE_MIN, Math.round(w)));
+function loadSide(): number {
+  try {
+    const w = Number(localStorage.getItem(SIDE_KEY));
+    if (w) return clampSide(w);
+  } catch {
+    /* private mode */
+  }
+  return SIDE_DEFAULT;
+}
+const sideWidth = ref(loadSide());
+watch(sideWidth, (w) => {
+  try {
+    localStorage.setItem(SIDE_KEY, String(w));
+  } catch {
+    /* private mode */
+  }
+});
+
+const resizing = ref(false);
+let dragStartX = 0;
+let dragStartWidth = 0;
+function onHandleDown(e: PointerEvent) {
+  dragStartX = e.clientX;
+  dragStartWidth = sideWidth.value;
+  resizing.value = true;
+  document.body.style.userSelect = 'none';
+  window.addEventListener('pointermove', onHandleMove);
+  window.addEventListener('pointerup', onHandleUp);
+}
+function onHandleMove(e: PointerEvent) {
+  // the sidebar sits on the right, so dragging its left edge leftward grows it
+  sideWidth.value = clampSide(dragStartWidth - (e.clientX - dragStartX));
+}
+function onHandleUp() {
+  resizing.value = false;
+  document.body.style.userSelect = '';
+  window.removeEventListener('pointermove', onHandleMove);
+  window.removeEventListener('pointerup', onHandleUp);
+}
+function onHandleKey(e: KeyboardEvent) {
+  const step = e.shiftKey ? 64 : 16;
+  if (e.key === 'ArrowLeft') sideWidth.value = clampSide(sideWidth.value + step);
+  else if (e.key === 'ArrowRight') sideWidth.value = clampSide(sideWidth.value - step);
+  else if (e.key === 'Home') sideWidth.value = SIDE_MIN;
+  else if (e.key === 'End') sideWidth.value = SIDE_MAX;
+  else return;
+  e.preventDefault();
+}
+onBeforeUnmount(onHandleUp);
 
 async function closeProject() {
   await flushAutosave();
@@ -49,7 +105,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
-  <div class="editor" :aria-busy="!!store.exportStatus" @contextmenu="onContextMenu">
+  <div
+    class="editor"
+    :class="{ resizing }"
+    :style="{ '--side-width': `${sideWidth}px` }"
+    :aria-busy="!!store.exportStatus"
+    @contextmenu="onContextMenu"
+  >
     <Toolbar
       class="toolbar"
       :inert="!!store.exportStatus"
@@ -60,6 +122,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
     <main class="stage" :inert="!!store.exportStatus">
       <ViewportCanvas />
     </main>
+    <div
+      class="side-handle"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Sidebar width"
+      :aria-valuenow="sideWidth"
+      :aria-valuemin="SIDE_MIN"
+      :aria-valuemax="SIDE_MAX"
+      tabindex="0"
+      title="Drag to resize the sidebar — double-click to reset"
+      @pointerdown="onHandleDown"
+      @dblclick="sideWidth = SIDE_DEFAULT"
+      @keydown="onHandleKey"
+    />
     <aside class="side" :inert="!!store.exportStatus">
       <Outliner />
       <PalettePanel />
@@ -83,7 +159,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 .editor {
   height: 100%;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 280px;
+  grid-template-columns: auto minmax(0, 1fr) var(--side-width, 280px);
   grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
     'top top top'
@@ -105,6 +181,30 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
   overflow: hidden;
   border: 1px solid var(--line);
 }
+.side-handle {
+  /* sits in the grid gap left of the sidebar — its own element, so the
+     sidebar's scroll container can't clip it */
+  grid-area: side;
+  justify-self: start;
+  align-self: stretch;
+  width: 6px;
+  margin-left: -6px;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+  border-radius: 3px;
+}
+.side-handle:hover {
+  background: var(--accent-soft);
+}
+.editor.resizing .side-handle,
+.side-handle:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.editor.resizing {
+  cursor: col-resize;
+}
 .side {
   grid-area: side;
   display: flex;
@@ -123,6 +223,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
   }
   .side {
     overflow: visible;
+  }
+  .side-handle {
+    display: none;
   }
 }
 .export-overlay {
