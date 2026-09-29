@@ -94,15 +94,17 @@ export class Viewport {
       this.scene.add(this.editableView.group);
       this.editableView.setPaletteOverride(this.colorAdjustOverride());
     }
+    this.editableView.setCage(render.cage);
 
     if (render.baseContext) {
-      const baseId = `${render.editableId}::base`;
+      // under a cage the context is the finished object — shown as-is, not dimmed
+      const baseId = `${render.editableId}::${render.cage ? 'result' : 'base'}`;
       if (this.baseView && this.baseView.id === baseId) {
         this.baseView.setData(render.baseContext);
         this.baseView.setPaletteOverride(this.colorAdjustOverride());
       } else {
         this.baseView?.dispose();
-        this.baseView = new ChunkMeshView(baseId, render.baseContext, this.mesher, { dimmed: true });
+        this.baseView = new ChunkMeshView(baseId, render.baseContext, this.mesher, { dimmed: !render.cage });
         this.baseView.setXray(this.xray);
         this.scene.add(this.baseView.group);
         this.baseView.setPaletteOverride(this.colorAdjustOverride());

@@ -169,7 +169,7 @@ function loadActive() {
   viewport.setActiveRender(
     store.screenshotMode
       ? // a screenshot shows the finished object: an overlay merged with its base, nothing dimmed
-        { ...render, editableData: resolveEffectiveData(obj, project), baseContext: null }
+        { ...render, editableData: resolveEffectiveData(obj, project), baseContext: null, cage: false }
       : render,
   );
 

@@ -19,6 +19,8 @@ export class ChunkMeshView {
   private paletteOverride: Float32Array | undefined;
   private baseOpacity: number;
   private baseTransparent: boolean;
+  private xray = false;
+  private cage = false;
 
   constructor(
     public readonly id: string,
@@ -51,13 +53,32 @@ export class ChunkMeshView {
 
   /** X-ray: faint and depth-write-free so voxels behind show through. */
   setXray(on: boolean): void {
-    const m = this.material;
-    m.transparent = on || this.baseTransparent;
-    m.opacity = on ? this.baseOpacity * 0.3 : this.baseOpacity;
-    m.depthWrite = !on;
-    m.needsUpdate = true;
-    this.glassMaterial.opacity = on ? this.baseOpacity * 0.3 : this.baseOpacity;
-    this.glassMaterial.needsUpdate = true;
+    this.xray = on;
+    this.applyLook();
+  }
+
+  /**
+   * Cage: faint like x-ray, drawn over a smoothed result. Pulled towards the
+   * camera a touch — its flat faces coincide with the result's and would
+   * speckle through them otherwise.
+   */
+  setCage(on: boolean): void {
+    this.cage = on;
+    this.applyLook();
+  }
+
+  private applyLook(): void {
+    const faint = this.xray || this.cage;
+    const opacity = faint ? this.baseOpacity * (this.cage ? 0.22 : 0.3) : this.baseOpacity;
+    for (const m of [this.material, this.glassMaterial]) {
+      m.opacity = opacity;
+      m.polygonOffset = this.cage;
+      m.polygonOffsetFactor = this.cage ? -1 : 0;
+      m.polygonOffsetUnits = this.cage ? -1 : 0;
+      m.needsUpdate = true;
+    }
+    this.material.transparent = faint || this.baseTransparent;
+    this.material.depthWrite = !faint;
   }
 
   /** Swap in a freshly-derived grid (extend re-resolve, resize) and re-mesh it.

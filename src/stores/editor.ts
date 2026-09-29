@@ -445,8 +445,11 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   function addModifier(partId: string, type: ModifierType) {
-    const part = activeObject()?.parts.find((p) => p.id === partId);
-    if (!part) return;
+    const obj = activeObject();
+    const part = obj?.parts.find((p) => p.id === partId);
+    if (!obj || !part) return;
+    // smoothing rounds at cell level — on a coarse object there's nothing to round with
+    if (type === 'smooth') ensureDetail(obj.id);
     part.modifiers.push(newModifier(type));
     partsChanged();
   }

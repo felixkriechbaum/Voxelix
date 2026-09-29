@@ -164,6 +164,15 @@ stack, applied top to bottom (`evaluatePart`), UI in `ModifierStack.vue`:
 - mirror: across the grid-centre plane that flips an axis
 - move: whole-voxel offset (× detail)
 - radial: 2 (180°) or 4 (90°) copies about Y through the grid centre
+- smooth: `radius` in voxels (0.25–6, fractions ok; old files' `level` 1–3
+  load as that many voxels) = total blur reach; 2× separable box blur of
+  the occupancy. A new cell needs blur > 0.5, an existing one > 0.5 × the
+  local peak (so thin rods/plates keep their thickness). New cells take the
+  nearest original colour. Adding it subdivides a coarse object
+  (`ensureDetail`). While a smoothed part is active, `ActiveRender.cage`: the
+  finished object shows undimmed and the part's raw voxels draw over it as a
+  faint cage (`ChunkMeshView.setCage`); mid-stroke the result isn't
+  regenerated (too slow per frame), only on commit.
 Everything generated is clipped at the grid. A 90° object rotation turns each
 modifier with it (`rotateModifierY`); `normalizeModifier` clamps edits + loads
 (a modifier without a `type` is a pre-stack array). `obj.data` is a getter for the **active

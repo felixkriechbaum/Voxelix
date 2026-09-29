@@ -45,7 +45,20 @@ export interface RadialModifier {
   count: 2 | 4;
 }
 
-export type Modifier = ArrayModifier | MirrorModifier | MoveModifier | RadialModifier;
+/**
+ * Blender-subdivision-like rounding at cell resolution: edges and corners get
+ * rounded, inner corners filled. Works in grid cells, so it needs a subdivided
+ * object to look smooth — adding it to a coarse one subdivides it first.
+ */
+export interface SmoothModifier {
+  id: string;
+  type: 'smooth';
+  enabled: boolean;
+  /** how far the rounding reaches, in voxels (SMOOTH_MIN–SMOOTH_MAX, fractions allowed) */
+  radius: number;
+}
+
+export type Modifier = ArrayModifier | MirrorModifier | MoveModifier | RadialModifier | SmoothModifier;
 export type ModifierType = Modifier['type'];
 
 /** Does this modifier change anything right now? */
@@ -86,6 +99,11 @@ export class VoxelPart {
     return this.modifiers.some(modifierActive);
   }
 
+  /** Is it rounded off? Then its own voxels are only the cage of what shows. */
+  get isSmoothed(): boolean {
+    return this.modifiers.some((m) => m.type === 'smooth' && modifierActive(m));
+  }
+
   clone(): VoxelPart {
     return new VoxelPart({
       name: this.name,
@@ -123,6 +141,8 @@ export function newModifier(type: ModifierType): Modifier {
       return { id, type, enabled: true, offset: [0, 0, 0] };
     case 'radial':
       return { id, type, enabled: true, count: 4 };
+    case 'smooth':
+      return { id, type, enabled: true, radius: 2 };
   }
 }
 
@@ -147,6 +167,13 @@ export function normalizeModifier(m: Modifier): Modifier {
     }
     case 'radial':
       return { id, type: 'radial', enabled, count: m.count === 2 ? 2 : 4 };
+    case 'smooth': {
+      // files from before the radius had `level` 1–3, which meant as many voxels
+      const legacy = (m as { level?: unknown }).level;
+      const v = Number(m.radius ?? legacy ?? 2);
+      const radius = Number.isFinite(v) ? Math.min(SMOOTH_MAX, Math.max(SMOOTH_MIN, v)) : 2;
+      return { id, type: 'smooth', enabled, radius: Math.round(radius * 100) / 100 };
+    }
     default: {
       // 'array' — also any older file whose modifiers had no type yet
       const a = m as ArrayModifier;
@@ -166,7 +193,8 @@ export function normalizeModifier(m: Modifier): Modifier {
 /**
  * How a modifier follows a 90° turn of the whole object about Y (see
  * VoxelData.rotateY): clockwise sends +X → −Z and +Z → +X, counter-clockwise
- * +X → +Z and +Z → −X. Radial copies sit around the centre, so they don't change.
+ * +X → +Z and +Z → −X. Radial copies sit around the centre and smoothing is
+ * the same in every direction, so neither changes.
  */
 export function rotateModifierY(m: Modifier, dir: 1 | -1): void {
   if (m.type === 'array') {
@@ -252,6 +280,135 @@ export function applyRadial(src: VoxelData, mod: RadialModifier): VoxelData {
   return out;
 }
 
+/** Smooth radius limits, in voxels — the upper one keeps the re-evaluation per edit bearable. */
+export const SMOOTH_MIN = 0.25;
+export const SMOOTH_MAX = 6;
+
+/** Box-blur radius in cells for one pass, so all passes together reach `radius` voxels. */
+function smoothRadius(radius: number, detail: number): number {
+  return Math.max(1, Math.round((radius * detail) / SMOOTH_PASSES));
+}
+
+/** Blur passes of the smooth modifier — two box blurs make a tent kernel, rounder than one. */
+const SMOOTH_PASSES = 2;
+
+/**
+ * Round the part off: blur its occupancy with a box kernel (`SMOOTH_PASSES`
+ * times) and keep every cell that ends up more than half full. Flat faces stay
+ * where they are, outer edges/corners get rounded, inner ones filled. A cell
+ * that wasn't solid before takes the colour of the nearest original voxel.
+ * Only the filled bounds plus the reach of the blur are processed.
+ *
+ * The cut is relative to the fullest spot in reach, so thin rods and plates
+ * keep their thickness instead of melting away; new cells still need a
+ * half-full blur, so thin bits don't swell either.
+ */
+export function applySmooth(src: VoxelData, mod: SmoothModifier, detail: number): VoxelData {
+  const b = src.filledBounds();
+  if (!b) return src;
+  const r = smoothRadius(mod.radius, detail);
+  const pad = r * SMOOTH_PASSES;
+  // the box may reach past the grid (clipping it there would cut into the
+  // blur and shrink faces lying on the grid edge); writing out clips instead
+  const x0 = b.min.x - pad, y0 = b.min.y - pad, z0 = b.min.z - pad;
+  const nx = b.max.x - b.min.x + 2 * pad;
+  const ny = b.max.y - b.min.y + 2 * pad;
+  const nz = b.max.z - b.min.z + 2 * pad;
+  const sy = nx, sz = nx * ny;
+  const n = nx * ny * nz;
+
+  // colour + 1 per cell (0 = empty), and the occupancy to blur
+  const color = new Int32Array(n);
+  let occ = new Float32Array(n);
+  src.forEachFilled((x, y, z, c) => {
+    const i = x - x0 + (y - y0) * sy + (z - z0) * sz;
+    color[i] = c + 1;
+    occ[i] = 1;
+  });
+
+  // separable box blur, outside the box counts as empty
+  let tmp = new Float32Array(n);
+  const width = 2 * r + 1;
+  const dims = [nx, ny, nz];
+  const strides = [1, sy, sz];
+  for (let pass = 0; pass < SMOOTH_PASSES; pass++) {
+    for (let axis = 0; axis < 3; axis++) {
+      const len = dims[axis];
+      const step = strides[axis];
+      const [ua, va] = axis === 0 ? [1, 2] : axis === 1 ? [0, 2] : [0, 1];
+      for (let v = 0; v < dims[va]; v++)
+        for (let u = 0; u < dims[ua]; u++) {
+          const base = u * strides[ua] + v * strides[va];
+          let sum = 0;
+          for (let k = 0; k <= Math.min(r, len - 1); k++) sum += occ[base + k * step];
+          for (let k = 0; k < len; k++) {
+            tmp[base + k * step] = sum / width;
+            const add = k + r + 1;
+            const drop = k - r;
+            if (add < len) sum += occ[base + add * step];
+            if (drop >= 0) sum -= occ[base + drop * step];
+          }
+        }
+      [occ, tmp] = [tmp, occ];
+    }
+  }
+
+  // How full the fullest spot in reach is. Against a thick body that's 1 and
+  // the cut sits at the usual half; inside a thin rod or plate the blur never
+  // gets near 1, so the cut drops with it — thin bits get rounded, not erased.
+  const peak = tmp;
+  peak.set(occ);
+  const reach = r * SMOOTH_PASSES;
+  const line = new Float32Array(Math.max(nx, ny, nz));
+  const deque = new Int32Array(line.length);
+  for (let axis = 0; axis < 3; axis++) {
+    const len = dims[axis];
+    const step = strides[axis];
+    const [ua, va] = axis === 0 ? [1, 2] : axis === 1 ? [0, 2] : [0, 1];
+    for (let v = 0; v < dims[va]; v++)
+      for (let u = 0; u < dims[ua]; u++) {
+        const base = u * strides[ua] + v * strides[va];
+        for (let k = 0; k < len; k++) line[k] = peak[base + k * step];
+        // sliding-window max over [k - reach, k + reach] with a monotonic deque
+        let qh = 0, qt = 0, next = 0;
+        for (let k = 0; k < len; k++) {
+          for (; next < len && next <= k + reach; next++) {
+            while (qt > qh && line[deque[qt - 1]] <= line[next]) qt--;
+            deque[qt++] = next;
+          }
+          while (deque[qh] < k - reach) qh++;
+          peak[base + k * step] = line[deque[qh]];
+        }
+      }
+  }
+
+  const solid = color.map((c) => (c !== 0 ? 1 : 0));
+  // nearest original colour for every cell (multi-source BFS, 6-connected)
+  const queue = new Int32Array(n);
+  let head = 0, tail = 0;
+  for (let i = 0; i < n; i++) if (color[i] !== 0) queue[tail++] = i;
+  while (head < tail) {
+    const i = queue[head++];
+    const x = i % nx, y = ((i / sy) | 0) % ny, z = (i / sz) | 0;
+    const c = color[i];
+    if (x > 0 && color[i - 1] === 0) { color[i - 1] = c; queue[tail++] = i - 1; }
+    if (x < nx - 1 && color[i + 1] === 0) { color[i + 1] = c; queue[tail++] = i + 1; }
+    if (y > 0 && color[i - sy] === 0) { color[i - sy] = c; queue[tail++] = i - sy; }
+    if (y < ny - 1 && color[i + sy] === 0) { color[i + sy] = c; queue[tail++] = i + sy; }
+    if (z > 0 && color[i - sz] === 0) { color[i - sz] = c; queue[tail++] = i - sz; }
+    if (z < nz - 1 && color[i + sz] === 0) { color[i + sz] = c; queue[tail++] = i + sz; }
+  }
+
+  const out = new VoxelData(src.sizeX, src.sizeY, src.sizeZ);
+  for (let z = 0; z < nz; z++)
+    for (let y = 0; y < ny; y++)
+      for (let x = 0; x < nx; x++) {
+        const i = x + y * sy + z * sz;
+        if (occ[i] > (solid[i] ? 0.5 * peak[i] : 0.5) && out.inBounds(x + x0, y + y0, z + z0)) out.set(x + x0, y + y0, z + z0, color[i] - 1);
+      }
+  return out;
+}
+
 function applyModifier(src: VoxelData, m: Modifier, detail: number): VoxelData {
   switch (m.type) {
     case 'array':
@@ -262,6 +419,8 @@ function applyModifier(src: VoxelData, m: Modifier, detail: number): VoxelData {
       return applyMove(src, m, detail);
     case 'radial':
       return applyRadial(src, m);
+    case 'smooth':
+      return applySmooth(src, m, detail);
   }
 }
 

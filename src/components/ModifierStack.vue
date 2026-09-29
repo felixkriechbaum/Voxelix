@@ -2,7 +2,7 @@
 import { useEditorStore } from '@/stores/editor';
 import Icon from './Icon.vue';
 import { faXmark, faChevronUp, faChevronDown } from '@fortawesome/pro-solid-svg-icons';
-import type { Modifier, ModifierType } from '@/core/project/parts';
+import { SMOOTH_MAX, SMOOTH_MIN, type Modifier, type ModifierType } from '@/core/project/parts';
 
 const props = defineProps<{ partId: string; partName: string; modifiers: Modifier[] }>();
 const store = useEditorStore();
@@ -12,8 +12,15 @@ const kinds: Array<{ type: ModifierType; label: string; title: string }> = [
   { type: 'mirror', label: 'Mirror', title: 'Mirror the part across a plane through the middle of the object' },
   { type: 'move', label: 'Move', title: 'Shift the part by whole voxels, without redrawing it' },
   { type: 'radial', label: 'Radial', title: 'Copies turned around the middle of the object — 2 or 4 times' },
+  {
+    type: 'smooth',
+    label: 'Smooth',
+    title: 'Round off edges and corners, like a subdivision surface — subdivides the object if it is still coarse',
+  },
 ];
-const names: Record<ModifierType, string> = { array: 'Array', mirror: 'Mirror', move: 'Move', radial: 'Radial' };
+const names: Record<ModifierType, string> = { array: 'Array', mirror: 'Mirror', move: 'Move', radial: 'Radial', smooth: 'Smooth' };
+/** one-click radii, in voxels */
+const smoothPresets = [0.5, 1, 2, 3];
 const axes = ['x', 'y', 'z'] as const;
 /** mirror planes in the toolbar's order; `axis` is the one the plane flips */
 const mirrorPlanes: Array<{ axis: 0 | 1 | 2; label: string; title: string }> = [
@@ -48,6 +55,7 @@ function setOffset(m: Modifier, axis: number, e: Event) {
     </div>
     <p v-if="modifiers.length === 0" class="empty">
       None yet. Modifiers change this part without touching the others, and stay editable. They apply top to bottom.
+      The result shows dimmed around the part while you edit it — screenshot mode shows it as exported.
     </p>
 
     <div v-for="(m, i) in modifiers" :key="m.id" class="mod" :class="{ off: !m.enabled }">
@@ -184,6 +192,34 @@ function setOffset(m: Modifier, axis: number, e: Event) {
           </button>
         </div>
       </div>
+
+      <!-- smooth: how far the rounding reaches, in voxels -->
+      <div v-else-if="m.type === 'smooth'" class="row">
+        <label class="lbl" :for="`radius-${m.id}`">Radius</label>
+        <input
+          :id="`radius-${m.id}`"
+          class="num"
+          type="number"
+          :min="SMOOTH_MIN"
+          :max="SMOOTH_MAX"
+          step="0.25"
+          :value="m.radius"
+          :title="`How far the rounding reaches, in voxels (${SMOOTH_MIN}–${SMOOTH_MAX}). Larger fills in fine relief.`"
+          @change="update(m, { radius: num($event) })"
+        />
+        <div class="seg fill" role="group" aria-label="Radius presets">
+          <button
+            v-for="r in smoothPresets"
+            :key="r"
+            :class="{ active: m.radius === r }"
+            :aria-pressed="m.radius === r"
+            :title="`Round by ${r} voxel${r === 1 ? '' : 's'}`"
+            @click="update(m, { radius: r })"
+          >
+            {{ r === 0.5 ? '½' : r }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -202,7 +238,7 @@ function setOffset(m: Modifier, axis: number, e: Event) {
 }
 .add {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
   gap: 3px;
 }
 .add-btn {

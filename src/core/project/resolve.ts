@@ -116,6 +116,11 @@ export interface ActiveRender {
   detail: number;
   /** the active object's own saturation/brightness shift, or null if unset */
   colorAdjust: ColorAdjust | null;
+  /**
+   * the active part is smoothed: `baseContext` is the finished object shown
+   * as-is, and the part's own voxels are drawn over it as a faint cage
+   */
+  cage: boolean;
 }
 
 /** Build the render/edit bundle for whichever object is active. */
@@ -123,15 +128,21 @@ export function buildActiveRender(object: VoxelObject, project: Project): Active
   const detail = effectiveDetail(object, project);
   const colorAdjust = object.colorAdjust ?? null;
   if (object.kind !== 'extend' || !object.baseId) {
+    // a smoothed part's result differs from its voxels everywhere, so show it
+    // whole (its own cells too) with the part as a cage on top; otherwise the
+    // part being edited is bright and the other parts plus any modifier copies
+    // (its own included) show dimmed around it
+    const cage = object.activePart.isSmoothed;
     return {
       editableId: object.id,
-      // the part being edited is bright; the other parts and any modifier
-      // copies (its own included) show dimmed around it
       editableData: object.data,
-      baseContext: object.isComposite ? mergeParts(object.parts, object.detail, object.activePart) : null,
+      baseContext: object.isComposite
+        ? mergeParts(object.parts, object.detail, cage ? undefined : object.activePart)
+        : null,
       baseResolved: null,
       detail,
       colorAdjust,
+      cage,
     };
   }
   const base = project.getById(object.baseId);
@@ -156,7 +167,7 @@ export function buildActiveRender(object: VoxelObject, project: Project): Active
     if (v !== REMOVED) editableData.setRaw(x, y, z, v);
   });
 
-  return { editableId: object.id, editableData, baseContext, baseResolved, detail, colorAdjust };
+  return { editableId: object.id, editableData, baseContext, baseResolved, detail, colorAdjust, cage: false };
 }
 
 /**

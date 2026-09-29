@@ -192,7 +192,7 @@ export class ToolRunner implements ToolContext {
     this.liveFlushQueued = true;
     requestAnimationFrame(() => {
       this.liveFlushQueued = false;
-      if (this.batch.length > 0) this.afterEdit();
+      if (this.batch.length > 0) this.afterEdit(true);
     });
   }
 
@@ -256,7 +256,8 @@ export class ToolRunner implements ToolContext {
     this.histories.drop(objectId);
   }
 
-  private afterEdit(): void {
+  /** `live`: mid-stroke — skip regenerating a smoothed result, too slow per frame; the cage shows the stroke. */
+  private afterEdit(live = false): void {
     if (this.ctx?.extend) {
       const project = this.store.project!;
       const render = buildActiveRender(this.ctx.object, project);
@@ -264,7 +265,7 @@ export class ToolRunner implements ToolContext {
       // an erase over a base voxel stores a REMOVED marker — the locked base mesh
       // has to re-mesh too, or the "deleted" voxel stays visible until an object switch
       if (render.baseContext) this.viewport.refreshBase(render.baseContext);
-    } else if (this.ctx?.object.activePart.hasActiveModifiers) {
+    } else if (this.ctx?.object.activePart.hasActiveModifiers && !(live && this.ctx.object.activePart.isSmoothed)) {
       // the part's array copies are generated from it — regenerate them live
       this.viewport.flush();
       const render = buildActiveRender(this.ctx.object, this.store.project!);
