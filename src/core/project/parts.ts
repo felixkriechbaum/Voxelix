@@ -58,7 +58,21 @@ export interface SmoothModifier {
   radius: number;
 }
 
-export type Modifier = ArrayModifier | MirrorModifier | MoveModifier | RadialModifier | SmoothModifier;
+/**
+ * Drops the voxel look: the part is drawn and exported as one smooth surface
+ * (see core/mesh/surfaceNets), colours running into each other. It doesn't
+ * change any voxels, so it acts on the finished part wherever it sits in the
+ * stack; the part's voxels stay editable as a cage.
+ */
+export interface UnvoxelModifier {
+  id: string;
+  type: 'unvoxel';
+  enabled: boolean;
+  /** 0 = still voxels, 100 = fully rounded */
+  strength: number;
+}
+
+export type Modifier = ArrayModifier | MirrorModifier | MoveModifier | RadialModifier | SmoothModifier | UnvoxelModifier;
 export type ModifierType = Modifier['type'];
 
 /** Does this modifier change anything right now? */
@@ -69,6 +83,8 @@ export function modifierActive(m: Modifier): boolean {
       return m.count > 1;
     case 'move':
       return m.offset.some((v) => v !== 0);
+    case 'unvoxel':
+      return m.strength > 0;
     default:
       return true;
   }
@@ -101,7 +117,14 @@ export class VoxelPart {
 
   /** Is it rounded off? Then its own voxels are only the cage of what shows. */
   get isSmoothed(): boolean {
-    return this.modifiers.some((m) => m.type === 'smooth' && modifierActive(m));
+    return this.modifiers.some((m) => (m.type === 'smooth' || m.type === 'unvoxel') && modifierActive(m));
+  }
+
+  /** The un-voxel strength (0–100) when the part is drawn as a smooth surface, else 0. */
+  get unvoxelStrength(): number {
+    let strength = 0;
+    for (const m of this.modifiers) if (m.type === 'unvoxel' && modifierActive(m)) strength = m.strength;
+    return strength;
   }
 
   clone(): VoxelPart {
@@ -143,6 +166,8 @@ export function newModifier(type: ModifierType): Modifier {
       return { id, type, enabled: true, count: 4 };
     case 'smooth':
       return { id, type, enabled: true, radius: 2 };
+    case 'unvoxel':
+      return { id, type, enabled: true, strength: 50 };
   }
 }
 
@@ -173,6 +198,10 @@ export function normalizeModifier(m: Modifier): Modifier {
       const v = Number(m.radius ?? legacy ?? 2);
       const radius = Number.isFinite(v) ? Math.min(SMOOTH_MAX, Math.max(SMOOTH_MIN, v)) : 2;
       return { id, type: 'smooth', enabled, radius: Math.round(radius * 100) / 100 };
+    }
+    case 'unvoxel': {
+      const v = Number(m.strength ?? 50);
+      return { id, type: 'unvoxel', enabled, strength: Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : 50 };
     }
     default: {
       // 'array' — also any older file whose modifiers had no type yet
@@ -421,6 +450,8 @@ function applyModifier(src: VoxelData, m: Modifier, detail: number): VoxelData {
       return applyRadial(src, m);
     case 'smooth':
       return applySmooth(src, m, detail);
+    case 'unvoxel':
+      return src; // changes how the part is meshed, not its voxels
   }
 }
 
@@ -435,11 +466,13 @@ export function evaluatePart(part: VoxelPart, detail: number): VoxelData {
  * Every part of an object merged into one grid, modifiers applied. Later parts
  * win where they overlap. `skip` leaves one part's own voxels out (its
  * generated copies stay) — the dimmed context around the part being edited.
+ * `voxelOnly` leaves out the un-voxeled parts, which are meshed on their own.
  */
-export function mergeParts(parts: VoxelPart[], detail: number, skip?: VoxelPart): VoxelData {
+export function mergeParts(parts: VoxelPart[], detail: number, skip?: VoxelPart, voxelOnly = false): VoxelData {
   const first = parts[0].data;
   const out = new VoxelData(first.sizeX, first.sizeY, first.sizeZ);
   for (const part of parts) {
+    if (voxelOnly && part.unvoxelStrength > 0) continue;
     const evaluated = evaluatePart(part, detail);
     evaluated.forEachFilled((x, y, z, c) => {
       if (part === skip && part.data.get(x, y, z) !== 0) return;
@@ -447,4 +480,19 @@ export function mergeParts(parts: VoxelPart[], detail: number, skip?: VoxelPart)
     });
   }
   return out;
+}
+
+/** A part drawn as a smooth surface instead of voxels: its finished voxels plus how smooth. */
+export interface SmoothLayer {
+  /** stable per part — `objectId/partId` */
+  key: string;
+  data: VoxelData;
+  strength: number;
+}
+
+/** The un-voxeled parts of an object, modifiers applied — meshed apart from the voxel parts. */
+export function smoothLayers(objectId: string, parts: VoxelPart[], detail: number): SmoothLayer[] {
+  return parts
+    .filter((p) => p.unvoxelStrength > 0)
+    .map((p) => ({ key: `${objectId}/${p.id}`, data: evaluatePart(p, detail), strength: p.unvoxelStrength }));
 }

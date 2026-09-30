@@ -173,6 +173,15 @@ stack, applied top to bottom (`evaluatePart`), UI in `ModifierStack.vue`:
   finished object shows undimmed and the part's raw voxels draw over it as a
   faint cage (`ChunkMeshView.setCage`); mid-stroke the result isn't
   regenerated (too slow per frame), only on commit.
+- unvoxel: `strength` 0–100. Changes no voxels — the part is drawn and
+  exported as one smooth surface (`core/mesh/surfaceNets.ts`): occupancy +
+  colour are box-blurred (reach 3 voxels at 100, colours half that; coarse grids sampled 6× per
+  voxel), cut at half full with the smooth modifier's thin-part rule, and
+  extracted as a surface net (strength → 0 puts the vertices on the voxel
+  corners). Meshed as a whole part in the worker (`ChunkMesher.meshSmooth`,
+  seq-guarded), shown by `SmoothMeshView`; `ActiveRender.smooth` lists these
+  parts and `mergeParts(…, voxelOnly)` leaves them out of the voxel grids.
+  Export appends them to the object's mesh (`resolveLook`).
 Everything generated is clipped at the grid. A 90° object rotation turns each
 modifier with it (`rotateModifierY`); `normalizeModifier` clamps edits + loads
 (a modifier without a `type` is a pre-stack array). `obj.data` is a getter for the **active
@@ -198,6 +207,16 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
 
 - `resolveEffectiveData(obj, project)` — recursive (cycle-guarded) merge of the
   resolved base with this overlay. Used for export and the tool read-view.
+  `resolveLook` is the full version (also voxel-only grid + smooth layers).
+- The base's parts **and modifiers** act on the whole overlay object
+  (`resolveParts`): the overlay is worked into the base parts' raw voxels
+  before their modifiers run — a colour goes to the part that has the cell,
+  else the first part it touches, else part 0; REMOVED clears the cell from
+  every part (its modifier copies go too) and is also punched out of the
+  finished look (so a deleted generated copy stays deleted). No modifiers →
+  identical to base-plus-overlay. An un-voxeled base makes the overlay render
+  in cage mode (all voxels faint, smooth surfaces shown); mid-stroke nothing
+  regenerates while the chain has a smoothed part.
 - `buildActiveRender(obj, project)` — splits into `editableData` (overlay-only,
   the bright editable mesh) and `baseContext` (resolved base minus overlay-touched
   cells, the dimmed locked mesh).

@@ -3,8 +3,10 @@ import { GodotControls, type PresetView, type ProjectionMode } from './GodotCont
 import { Gizmos, type CursorBox } from './Gizmos';
 import { Picker, type BuildPlane, type PickResult } from './Picker';
 import { ChunkMeshView } from './ChunkMeshView';
+import { SmoothMeshView } from './SmoothMeshView';
 import { ChunkMesher } from '@/core/mesh/ChunkMesher';
 import type { ActiveRender } from '@/core/project/resolve';
+import type { SmoothLayer } from '@/core/project/parts';
 import type { VoxelData } from '@/core/voxel/VoxelData';
 import { adjustPaletteLinear } from '@/core/palette';
 import type { ColorAdjust } from '@/core/project/types';
@@ -22,6 +24,8 @@ export class Viewport {
 
   private editableView: ChunkMeshView | null = null;
   private baseView: ChunkMeshView | null = null;
+  /** un-voxeled parts of the active object, by `objectId/partId` */
+  private smoothViews = new Map<string, SmoothMeshView>();
   private timer = new THREE.Timer();
   private raf = 0;
   private paletteLinear: Float32Array<ArrayBufferLike> = new Float32Array(256 * 4);
@@ -60,6 +64,7 @@ export class Viewport {
       this.editableView?.applyResult(r);
       this.baseView?.applyResult(r);
     });
+    this.mesher.onSmoothResult((r) => this.smoothViews.get(r.key)?.apply(r));
 
     this.resize();
     this.loop();
@@ -70,6 +75,12 @@ export class Viewport {
     this.mesher.setPalette(paletteLinear);
     this.editableView?.setPaletteOverride(this.colorAdjustOverride());
     this.baseView?.setPaletteOverride(this.colorAdjustOverride());
+    for (const v of this.smoothViews.values()) v.remesh(this.smoothPalette());
+  }
+
+  /** The palette smooth surfaces are coloured from — the active object's shift applied. */
+  private smoothPalette(): Float32Array {
+    return (this.colorAdjustOverride() ?? this.paletteLinear) as Float32Array;
   }
 
   /** The active object's saturation/brightness shift applied to a copy of the
@@ -114,6 +125,8 @@ export class Viewport {
       this.baseView = null;
     }
 
+    this.syncSmooth(render.smooth, render.smoothDimmed, render.detail);
+
     const d = render.editableData;
     const b = render.baseContext;
     this.gizmos.setObjectSize(
@@ -126,6 +139,30 @@ export class Viewport {
 
   flush(): void {
     this.editableView?.flush();
+  }
+
+  /** Show exactly these smooth surfaces: new ones are created, gone ones dropped, the rest re-meshed. */
+  private syncSmooth(layers: SmoothLayer[], dimmed: boolean, detail: number): void {
+    const keep = new Set(layers.map((l) => l.key));
+    for (const [key, view] of this.smoothViews) {
+      if (keep.has(key) && view.dimmed === dimmed) continue;
+      view.dispose();
+      this.smoothViews.delete(key);
+    }
+    for (const layer of layers) {
+      let view = this.smoothViews.get(layer.key);
+      if (!view) {
+        view = new SmoothMeshView(layer.key, this.mesher, detail, dimmed);
+        this.smoothViews.set(layer.key, view);
+        this.scene.add(view.group);
+      }
+      view.setData(layer.data, layer.strength, detail, this.smoothPalette());
+    }
+  }
+
+  /** Re-mesh some smooth surfaces after an edit of their voxels. */
+  refreshSmooth(layers: SmoothLayer[], detail: number): void {
+    for (const layer of layers) this.smoothViews.get(layer.key)?.setData(layer.data, layer.strength, detail, this.smoothPalette());
   }
 
   /** Swap only the editable grid (extend overlay re-resolve) without touching the base. */
@@ -232,9 +269,15 @@ export class Viewport {
     if (!d) return null;
     const b = d.filledBounds() ?? this.baseView?.data.filledBounds() ?? null;
     // filled bounds are already in world units (max exclusive: a voxel spans [x, x + 1])
-    const bounds = b
+    let bounds = b
       ? new THREE.Box3(new THREE.Vector3(b.min.x, b.min.y, b.min.z), new THREE.Vector3(b.max.x, b.max.y, b.max.z))
-      : new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(d.sizeX, d.sizeY, d.sizeZ));
+      : null;
+    // smooth surfaces aren't in either grid — a screenshot of an all-smooth object still has to frame them
+    for (const v of this.smoothViews.values()) {
+      const sb = v.bounds();
+      if (sb) bounds = bounds ? bounds.union(sb) : sb;
+    }
+    bounds ??= new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(d.sizeX, d.sizeY, d.sizeZ));
     const center = bounds.getCenter(new THREE.Vector3());
     const size = bounds.getSize(new THREE.Vector3());
     return { center, radius: Math.max(size.x, size.y, size.z) * 0.5, bounds };
@@ -395,6 +438,8 @@ export class Viewport {
     this.controls.dispose();
     this.editableView?.dispose();
     this.baseView?.dispose();
+    for (const v of this.smoothViews.values()) v.dispose();
+    this.smoothViews.clear();
     this.gizmos.dispose();
     this.mesher.dispose();
     this.renderer.dispose();

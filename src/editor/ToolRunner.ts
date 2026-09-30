@@ -7,6 +7,8 @@ import {
   effectiveDetail,
   overlayWriteValue,
   resolveEffectiveData,
+  hasModifiersInChain,
+  someInChain,
 } from '@/core/project/resolve';
 import { anyMirror, mirrorBoxes, mirrorImages, type Vec3 } from '@/core/ops/mirror';
 import type { Tool, ToolContext, ToolId, PointerInfo, MirrorMode } from '@/tools/types';
@@ -75,25 +77,10 @@ export class ToolRunner implements ToolContext {
       const baseResolved = base
         ? resolveEffectiveData(base, project)
         : new VoxelData(object.data.sizeX, object.data.sizeY, object.data.sizeZ);
-      this.ctx = { object, extend: true, baseResolved, readData: this.resolveRead(object, baseResolved) };
+      this.ctx = { object, extend: true, baseResolved, readData: resolveEffectiveData(object, project) };
     } else {
       this.ctx = { object, extend: false, baseResolved: null, readData: object.data };
     }
-  }
-
-  private resolveRead(object: VoxelObject, baseResolved: VoxelData): VoxelData {
-    const size: [number, number, number] = [
-      Math.max(baseResolved.sizeX, object.data.sizeX),
-      Math.max(baseResolved.sizeY, object.data.sizeY),
-      Math.max(baseResolved.sizeZ, object.data.sizeZ),
-    ];
-    const read = new VoxelData(...size);
-    baseResolved.forEachFilled((x, y, z, c) => read.set(x, y, z, c));
-    object.data.forEachEntry((x, y, z, v) => {
-      if (v === REMOVED) read.clear(x, y, z);
-      else read.setRaw(x, y, z, v);
-    });
-    return read;
   }
 
   // ---- ToolContext -----------------------------------------------------
@@ -260,16 +247,29 @@ export class ToolRunner implements ToolContext {
   private afterEdit(live = false): void {
     if (this.ctx?.extend) {
       const project = this.store.project!;
+      // the base's modifiers act on the overlay too (see resolveParts) — a
+      // smoothed or un-voxeled base is too slow to regenerate per frame, so
+      // mid-stroke only the lockstep read view moves and it catches up on commit
+      const modifiers = hasModifiersInChain(this.ctx.object, project);
+      if (live && modifiers && someInChain(this.ctx.object, project, (p) => p.isSmoothed)) return;
       const render = buildActiveRender(this.ctx.object, project);
       this.viewport.refreshEditable(render.editableData);
       // an erase over a base voxel stores a REMOVED marker — the locked base mesh
       // has to re-mesh too, or the "deleted" voxel stays visible until an object switch
       if (render.baseContext) this.viewport.refreshBase(render.baseContext);
+      if (!live) {
+        this.viewport.refreshSmooth(render.smooth, render.detail);
+        // modifier copies of what was just drawn only exist in a fresh resolve
+        if (modifiers) this.ctx.readData = resolveEffectiveData(this.ctx.object, project);
+      }
     } else if (this.ctx?.object.activePart.hasActiveModifiers && !(live && this.ctx.object.activePart.isSmoothed)) {
       // the part's array copies are generated from it — regenerate them live
       this.viewport.flush();
       const render = buildActiveRender(this.ctx.object, this.store.project!);
       if (render.baseContext) this.viewport.refreshBase(render.baseContext);
+      // only the part being edited changed — the other smooth surfaces stay as they are
+      const own = `${this.ctx.object.id}/${this.ctx.object.activePartId}`;
+      this.viewport.refreshSmooth(render.smooth.filter((l) => l.key === own), render.detail);
     } else {
       this.viewport.flush();
     }

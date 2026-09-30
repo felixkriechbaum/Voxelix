@@ -10,7 +10,7 @@ import {
   hasDirectoryPicker,
 } from '@/core/io/fileSystem';
 import { exportObjectToGlb, exportProjectToGlbs } from '@/core/export/exportGlb';
-import { resolveEffectiveData } from '@/core/project/resolve';
+import { resolveLook } from '@/core/project/resolve';
 import { useProjectSave } from '@/editor/save';
 import { toast } from '@/editor/toasts';
 import Icon from './Icon.vue';
@@ -60,8 +60,7 @@ async function exportActive() {
   store.exportStatus = `Exporting ${obj.name}…`;
   try {
     await new Promise((r) => setTimeout(r)); // let the overlay paint first
-    const data = resolveEffectiveData(obj, store.project);
-    const file = await exportObjectToGlb(obj, data, store.project.palette, store.project.exportSettings);
+    const file = await exportObjectToGlb(obj, resolveLook(obj, store.project), store.project.palette, store.project.exportSettings);
     if (!file) {
       toast('Object is empty — nothing to export', 'info');
       return;

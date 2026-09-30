@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { greedyMesh } from '@/core/mesh/greedyMesh';
+import { surfaceNets, toSmoothGrid } from '@/core/mesh/surfaceNets';
 import type { ChunkMeshes, MeshArrays } from '@/core/mesh/meshTypes';
 import { adjustPaletteLinear, paletteToLinearArray, type Palette } from '@/core/palette';
-import { resolveEffectiveData } from '@/core/project/resolve';
+import { resolveLook, type ResolvedLook } from '@/core/project/resolve';
 import type { VoxelData } from '@/core/voxel/VoxelData';
 import type { VoxelObject } from '@/core/project/VoxelObject';
 import type { Project } from '@/core/project/Project';
@@ -64,11 +65,11 @@ export interface GlbFile {
 /** Build a single .glb for one object, honouring pivot / scale / up-axis. */
 export async function exportObjectToGlb(
   object: VoxelObject,
-  effectiveData: VoxelData,
+  look: ResolvedLook,
   palette: Palette,
   settings: ExportSettings,
 ): Promise<GlbFile | null> {
-  const bounds = effectiveData.filledBounds();
+  const bounds = look.data.filledBounds();
   if (!bounds) return null;
 
   let paletteLinear = paletteToLinearArray(palette);
@@ -76,7 +77,16 @@ export async function exportObjectToGlb(
   if (adj && (adj.saturation !== 0 || adj.brightness !== 0)) {
     paletteLinear = adjustPaletteLinear(paletteLinear, adj.saturation, adj.brightness);
   }
-  const split = await buildMergedArrays(effectiveData, paletteLinear);
+  // un-voxeled parts are smooth surfaces of their own; the rest stays voxels
+  const split = await buildMergedArrays(look.voxelData, paletteLinear);
+  for (const layer of look.smooth) {
+    const grid = toSmoothGrid(layer.data);
+    if (!grid) continue;
+    await breathe();
+    const smooth = surfaceNets(grid, paletteLinear, layer.strength, object.detail);
+    split.opaque = concatArrays([split.opaque, smooth.opaque]);
+    split.glass = concatArrays([split.glass, smooth.glass]);
+  }
   // one mesh for the whole object; see-through voxels become a second
   // primitive with a blended material (glTF alphaMode BLEND)
   const opaqueIndexCount = split.opaque.indices.length;
@@ -202,8 +212,7 @@ export async function exportProjectToGlbs(
   for (const obj of project.objects) {
     onProgress?.({ done, total, name: obj.name });
     await breathe(); // let the overlay repaint before this object blocks
-    const data = resolveEffectiveData(obj, project);
-    const file = await exportObjectToGlb(obj, data, project.palette, project.exportSettings);
+    const file = await exportObjectToGlb(obj, resolveLook(obj, project), project.palette, project.exportSettings);
     done++;
     if (file) {
       file.name = dedupeName(file.name, used);

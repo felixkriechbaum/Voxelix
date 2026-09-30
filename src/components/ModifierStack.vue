@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import { useEditorStore } from '@/stores/editor';
 import Icon from './Icon.vue';
 import { faXmark, faChevronUp, faChevronDown } from '@fortawesome/pro-solid-svg-icons';
@@ -17,8 +18,26 @@ const kinds: Array<{ type: ModifierType; label: string; title: string }> = [
     label: 'Smooth',
     title: 'Round off edges and corners, like a subdivision surface — subdivides the object if it is still coarse',
   },
+  {
+    type: 'unvoxel',
+    label: 'Unvoxel',
+    title: 'Drop the voxel look: draw and export the part as one smooth surface, colours blending into each other',
+  },
 ];
-const names: Record<ModifierType, string> = { array: 'Array', mirror: 'Mirror', move: 'Move', radial: 'Radial', smooth: 'Smooth' };
+const names: Record<ModifierType, string> = {
+  array: 'Array',
+  mirror: 'Mirror',
+  move: 'Move',
+  radial: 'Radial',
+  smooth: 'Smooth',
+  unvoxel: 'Unvoxel',
+};
+/**
+ * Strength while the slider is dragged — only committed on release, each change
+ * re-meshes the part. The slider binds to it too: Vue re-applies `value` on
+ * every render, which would otherwise snap the thumb back mid-drag.
+ */
+const draggingStrength = ref<{ id: string; value: number } | null>(null);
 /** one-click radii, in voxels */
 const smoothPresets = [0.5, 1, 2, 3];
 const axes = ['x', 'y', 'z'] as const;
@@ -220,6 +239,27 @@ function setOffset(m: Modifier, axis: number, e: Event) {
           </button>
         </div>
       </div>
+
+      <!-- unvoxel: 0 = voxels, 100 = fully smooth -->
+      <template v-else-if="m.type === 'unvoxel'">
+        <div class="row">
+          <label class="lbl" :for="`strength-${m.id}`">Strength</label>
+          <input
+            :id="`strength-${m.id}`"
+            class="range"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            :value="draggingStrength?.id === m.id ? draggingStrength.value : m.strength"
+            title="0 keeps the voxels, 100 rounds everything off — reaches about three voxels"
+            @input="draggingStrength = { id: m.id, value: num($event) }"
+            @change="update(m, { strength: num($event) }), (draggingStrength = null)"
+          />
+          <span class="val">{{ draggingStrength?.id === m.id ? draggingStrength.value : m.strength }}</span>
+        </div>
+        <p class="hint">Applies to the finished part, wherever it sits in the stack. Edit its voxels through the cage.</p>
+      </template>
     </div>
   </div>
 </template>
@@ -314,6 +354,23 @@ function setOffset(m: Modifier, axis: number, e: Event) {
 .lbl.short {
   min-width: 0;
   margin-left: 4px;
+}
+.range {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+.val {
+  min-width: 26px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+.hint {
+  margin: 5px 0 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink-faint);
 }
 .num {
   width: 60px;

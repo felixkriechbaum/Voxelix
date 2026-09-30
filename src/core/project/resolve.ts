@@ -3,40 +3,117 @@ import { REMOVED } from '@/core/voxel/constants';
 import type { Project } from './Project';
 import type { VoxelObject } from './VoxelObject';
 import type { ColorAdjust } from './types';
-import { mergeParts } from './parts';
+import { mergeParts, modifierActive, smoothLayers, VoxelPart, type SmoothLayer } from './parts';
+
+/**
+ * An object as parts before their modifiers run, plus the holes punched
+ * into the finished result afterwards. For an extend object: the base's parts
+ * (and modifiers) with the overlay worked into their voxels.
+ */
+interface ResolvedParts {
+  parts: VoxelPart[];
+  /** cells an overlay deleted — cleared from the finished look, modifier copies included */
+  holes: Array<[number, number, number]>;
+}
+
+const NEIGHBOURS: Array<[number, number, number]> = [
+  [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1],
+];
+
+/**
+ * An extend object takes over its base's parts and modifier stacks, so the
+ * modifiers act on the whole thing, additions included — a mirrored base
+ * mirrors a handle the overlay adds, an un-voxeled one smooths it in:
+ *  - a colour lands in the part that already has a voxel there, else in the
+ *    first part it touches, else in the first part;
+ *  - REMOVED deletes the cell from every part (so a mirrored copy of it goes
+ *    too) and punches a hole in the finished look (so a generated copy the
+ *    overlay deleted stays deleted).
+ * Without modifiers that's exactly the base with the overlay laid on top.
+ */
+function resolveParts(object: VoxelObject, project: Project, seen: Set<string>): ResolvedParts {
+  if (object.kind !== 'extend' || !object.baseId || seen.has(object.id)) return { parts: object.parts, holes: [] };
+  seen.add(object.id);
+  const base = project.getById(object.baseId);
+  // a broken link shows the overlay's own voxels (REMOVED markers aren't solid)
+  if (!base) return { parts: [new VoxelPart({ id: object.activePartId, name: 'Part 1', data: object.data })], holes: [] };
+
+  const from = resolveParts(base, project, seen);
+  const overlay = object.data;
+  const parts = from.parts.map((p) => {
+    const data = new VoxelData(
+      Math.max(p.data.sizeX, overlay.sizeX),
+      Math.max(p.data.sizeY, overlay.sizeY),
+      Math.max(p.data.sizeZ, overlay.sizeZ),
+    );
+    p.data.forEachFilled((x, y, z, c) => data.set(x, y, z, c));
+    return new VoxelPart({ id: p.id, name: p.name, data, modifiers: p.modifiers });
+  });
+  const holes = from.holes.slice();
+  overlay.forEachEntry((x, y, z, v) => {
+    if (v === REMOVED) {
+      for (const p of parts) p.data.clear(x, y, z);
+      holes.push([x, y, z]);
+      return;
+    }
+    let owner = -1;
+    for (let i = parts.length - 1; i >= 0 && owner < 0; i--) if (parts[i].data.isSolid(x, y, z)) owner = i;
+    for (let i = 0; i < parts.length && owner < 0; i++)
+      if (NEIGHBOURS.some(([dx, dy, dz]) => parts[i].data.isSolid(x + dx, y + dy, z + dz))) owner = i;
+    parts.forEach((p, i) => (i === Math.max(0, owner) ? p.data.setRaw(x, y, z, v) : p.data.clear(x, y, z)));
+  });
+  return { parts, holes };
+}
+
+/** How an object finally looks: every voxel, the voxel parts alone, and the smooth surfaces. */
+export interface ResolvedLook {
+  /** all of it as voxels — un-voxeled parts included (their cage) */
+  data: VoxelData;
+  /** only the parts that stay voxels; equals `data` when nothing is un-voxeled */
+  voxelData: VoxelData;
+  smooth: SmoothLayer[];
+}
+
+/** The finished look of any object — extend overlays resolved, modifiers applied. */
+export function resolveLook(object: VoxelObject, project: Project): ResolvedLook {
+  const { parts, holes } = resolveParts(object, project, new Set());
+  const detail = effectiveDetail(object, project);
+  const punch = (d: VoxelData) => {
+    for (const [x, y, z] of holes) d.clear(x, y, z);
+    return d;
+  };
+  const plain = object.kind !== 'extend' || !object.baseId;
+  const data = plain ? object.merged() : punch(mergeParts(parts, detail));
+  const smooth = smoothLayers(object.id, parts, detail).map((l) => ({ ...l, data: punch(l.data.clone()) }));
+  const voxelData = smooth.length > 0 ? punch(mergeParts(parts, detail, undefined, true)) : data;
+  return { data, voxelData, smooth };
+}
+
+/** Does any part of this object, or of a base up its extend chain, pass `test`? */
+export function someInChain(object: VoxelObject, project: Project, test: (part: VoxelPart) => boolean): boolean {
+  const seen = new Set<string>();
+  for (let o: VoxelObject | null = object; o && !seen.has(o.id); o = o.baseId ? (project.getById(o.baseId) ?? null) : null) {
+    seen.add(o.id);
+    if (o.parts.some(test)) return true;
+  }
+  return false;
+}
+
+/** Does anything in this object (or up its extend chain) carry an active modifier? */
+export function hasModifiersInChain(object: VoxelObject, project: Project): boolean {
+  return someInChain(object, project, (p) => p.modifiers.some(modifierActive));
+}
 
 /**
  * The voxel grid an object actually represents once extend-overlays are applied.
  *
- * A normal object resolves to its own data. An extend object resolves to its
- * base's resolved data with this object's overlay applied on top: overlay cells
- * holding a colour value are written, cells holding REMOVED punch a hole, and
- * empty overlay cells inherit the base.
+ * A normal object resolves to its own data, modifiers applied. An extend
+ * object resolves through its base's parts with this overlay worked in (see
+ * `resolveParts`): overlay cells holding a colour are written, REMOVED
+ * punches a hole, and empty overlay cells inherit the base.
  */
-export function resolveEffectiveData(
-  object: VoxelObject,
-  project: Project,
-  seen = new Set<string>(),
-): VoxelData {
-  if (object.kind !== 'extend' || !object.baseId || seen.has(object.id)) {
-    return object.merged();
-  }
-  seen.add(object.id);
-  const base = project.getById(object.baseId);
-  if (!base) return object.data;
-
-  const baseData = resolveEffectiveData(base, project, seen);
-  const result = new VoxelData(
-    Math.max(baseData.sizeX, object.data.sizeX),
-    Math.max(baseData.sizeY, object.data.sizeY),
-    Math.max(baseData.sizeZ, object.data.sizeZ),
-  );
-  baseData.forEachFilled((x, y, z, c) => result.set(x, y, z, c));
-  object.data.forEachEntry((x, y, z, v) => {
-    if (v === REMOVED) result.clear(x, y, z);
-    else result.setRaw(x, y, z, v);
-  });
-  return result;
+export function resolveEffectiveData(object: VoxelObject, project: Project): VoxelData {
+  return resolveLook(object, project).data;
 }
 
 /**
@@ -121,6 +198,10 @@ export interface ActiveRender {
    * as-is, and the part's own voxels are drawn over it as a faint cage
    */
   cage: boolean;
+  /** un-voxeled parts, drawn as smooth surfaces — they're left out of the grids above */
+  smooth: SmoothLayer[];
+  /** show the smooth surfaces dimmed, as context around the part being edited */
+  smoothDimmed: boolean;
 }
 
 /** Build the render/edit bundle for whichever object is active. */
@@ -133,41 +214,76 @@ export function buildActiveRender(object: VoxelObject, project: Project): Active
     // part being edited is bright and the other parts plus any modifier copies
     // (its own included) show dimmed around it
     const cage = object.activePart.isSmoothed;
+    const smooth = smoothLayers(object.id, object.parts, object.detail);
     return {
       editableId: object.id,
       editableData: object.data,
       baseContext: object.isComposite
-        ? mergeParts(object.parts, object.detail, cage ? undefined : object.activePart)
+        ? mergeParts(object.parts, object.detail, cage ? undefined : object.activePart, smooth.length > 0)
         : null,
       baseResolved: null,
       detail,
       colorAdjust,
       cage,
+      smooth,
+      smoothDimmed: !cage,
     };
   }
   const base = project.getById(object.baseId);
   const baseResolved = base
     ? resolveEffectiveData(base, project)
     : new VoxelData(object.data.sizeX, object.data.sizeY, object.data.sizeZ);
+  const look = resolveLook(object, project);
+  const size: [number, number, number] = [look.data.sizeX, look.data.sizeY, look.data.sizeZ];
 
-  const size: [number, number, number] = [
-    Math.max(baseResolved.sizeX, object.data.sizeX),
-    Math.max(baseResolved.sizeY, object.data.sizeY),
-    Math.max(baseResolved.sizeZ, object.data.sizeZ),
-  ];
+  if (look.smooth.length > 0) {
+    // the base is (partly) un-voxeled: show the finished object, all its voxels
+    // as the cage to click on and paint, as with a smoothed part
+    return {
+      editableId: object.id,
+      editableData: look.data,
+      baseContext: look.voxelData.isEmpty() ? null : look.voxelData,
+      baseResolved,
+      detail,
+      colorAdjust,
+      cage: true,
+      smooth: look.smooth,
+      smoothDimmed: false,
+    };
+  }
 
+  // the overlay's own colours are the bright, editable mesh; everything else
+  // of the finished look — the base, and any copies the base's modifiers make
+  // of the overlay — is the dimmed locked context
   const editableData = new VoxelData(...size);
-  const baseContext = new VoxelData(...size);
-  baseResolved.forEachFilled((x, y, z, c) => baseContext.set(x, y, z, c));
-
+  const baseContext = look.data; // freshly merged, ours to cut into
   object.data.forEachEntry((x, y, z, v) => {
-    // whatever the overlay touches leaves the locked base context...
+    if (v === REMOVED) return;
+    editableData.setRaw(x, y, z, v);
     baseContext.clear(x, y, z);
-    // ...and non-removed overlay cells make up the editable mesh
-    if (v !== REMOVED) editableData.setRaw(x, y, z, v);
   });
 
-  return { editableId: object.id, editableData, baseContext, baseResolved, detail, colorAdjust, cage: false };
+  return {
+    editableId: object.id,
+    editableData,
+    baseContext,
+    baseResolved,
+    detail,
+    colorAdjust,
+    cage: false,
+    smooth: [],
+    smoothDimmed: false,
+  };
+}
+
+/**
+ * The object as exported, nothing dimmed or caged: an overlay merged with its
+ * base, un-voxeled parts as smooth surfaces. For screenshot mode.
+ */
+export function buildFinishedRender(object: VoxelObject, project: Project): ActiveRender {
+  const render = buildActiveRender(object, project);
+  const look = resolveLook(object, project);
+  return { ...render, editableData: look.voxelData, baseContext: null, cage: false, smooth: look.smooth, smoothDimmed: false };
 }
 
 /**

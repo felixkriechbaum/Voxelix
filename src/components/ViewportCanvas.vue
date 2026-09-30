@@ -5,7 +5,7 @@ import { Viewport } from '@/viewport/Viewport';
 import { ToolRunner } from '@/editor/ToolRunner';
 import { setSession } from '@/editor/session';
 import { useEditorStore } from '@/stores/editor';
-import { buildActiveRender, resolveEffectiveData } from '@/core/project/resolve';
+import { buildActiveRender, buildFinishedRender } from '@/core/project/resolve';
 import { floodRegion } from '@/core/ops/flood';
 import { deleteSelection, moveSelection } from '@/editor/selectionOps';
 import { useTheme } from '@/editor/theme';
@@ -166,12 +166,8 @@ function loadActive() {
   if (!viewport || !runner || !obj || !project) return;
   runner.syncActive();
   const render = buildActiveRender(obj, project);
-  viewport.setActiveRender(
-    store.screenshotMode
-      ? // a screenshot shows the finished object: an overlay merged with its base, nothing dimmed
-        { ...render, editableData: resolveEffectiveData(obj, project), baseContext: null, cage: false }
-      : render,
-  );
+  // a screenshot shows the finished object: an overlay merged with its base, nothing dimmed
+  viewport.setActiveRender(store.screenshotMode ? buildFinishedRender(obj, project) : render);
 
   const switched = obj.id !== loadedId;
   loadedId = obj.id;

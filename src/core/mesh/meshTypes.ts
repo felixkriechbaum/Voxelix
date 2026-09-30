@@ -1,3 +1,5 @@
+import type { SmoothGrid } from './surfaceNets';
+
 export interface MeshArrays {
   positions: Float32Array;
   normals: Float32Array;
@@ -37,3 +39,21 @@ export const EMPTY_MESH: MeshArrays = {
   colors: new Float32Array(0),
   indices: new Uint32Array(0),
 };
+
+/** Message sent to the mesher worker to un-voxel one part as a whole. */
+export interface SmoothJob {
+  key: string;
+  /** newer jobs for the same key supersede older ones */
+  seq: number;
+  grid: SmoothGrid;
+  strength: number;
+  detail: number;
+  palette: Float32Array;
+}
+
+/** Result posted back for a SmoothJob. */
+export interface SmoothResult extends ChunkMeshes {
+  kind: 'smooth';
+  key: string;
+  seq: number;
+}
