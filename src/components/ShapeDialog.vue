@@ -58,11 +58,13 @@ interface Remembered {
   h: number;
   d: number;
   hollow: boolean;
-  /** flat shapes: plane, the two in-plane sizes, thickness */
+  /** flat shapes: plane, the two in-plane sizes (full voxels), thickness and
+   *  ring border (counted in the chosen voxel size, so 1 = one layer) */
   plane: ShapePlane;
   fa: number;
   fb: number;
   ft: number;
+  fw: number;
   /** voxel size as a fraction of a full voxel: 1, 2, 3 or 6 */
   fraction: number;
 }
@@ -76,6 +78,7 @@ const defaults: Remembered = {
   fa: 16,
   fb: 16,
   ft: 1,
+  fw: 1,
   fraction: 1,
 };
 function load(): Remembered {
@@ -100,6 +103,8 @@ const flat = computed(() => isFlat(spec.kind));
 const hollowable = computed(() => supportsHollow(spec.kind));
 /** For a flat shape: [first in-plane axis, second in-plane axis, thickness axis]. */
 const flatAxes = computed(() => planeAxes(spec.plane));
+/** Thickness / border are counted in the chosen voxel size — say which, when it isn't a full voxel. */
+const layerUnit = computed(() => (spec.fraction > 1 ? voxelSizes.find((v) => v.f === spec.fraction)?.label.toLowerCase() : ''));
 
 // ---- limits --------------------------------------------------------------
 const maxDims = computed<[number, number, number]>(() => {
@@ -200,13 +205,22 @@ async function add() {
   const block = Math.max(1, Math.round(det / Math.min(det, spec.fraction)));
   const max = maxDims.value;
   const units = (voxels: number, axis: number) => Math.max(1, Math.round((clamp(voxels, max[axis]) * det) / block));
+  // thickness / border are already in the shape's own voxels — one means one layer
+  const layers = (n: number, axis: number) => clamp(n, Math.max(1, Math.floor((max[axis] * det) / block)));
 
   let cells: Array<[number, number, number]>;
   let dims: [number, number, number];
   let thickAxis = -1;
   if (isFlat(spec.kind)) {
     const [a, b, t] = flatAxes.value;
-    const r = voxelizeFlat(spec.kind, spec.plane, units(spec.fa, a), units(spec.fb, b), units(spec.ft, t));
+    const r = voxelizeFlat(
+      spec.kind,
+      spec.plane,
+      units(spec.fa, a),
+      units(spec.fb, b),
+      layers(spec.ft, t),
+      layers(spec.fw, a),
+    );
     cells = r.cells;
     dims = r.dims;
     thickAxis = t;
@@ -299,7 +313,9 @@ function clamp(n: number, max: number) {
           </button>
         </div>
 
-        <div class="field-label">Size in voxels</div>
+        <div class="field-label">
+          Size in voxels<template v-if="layerUnit"> · {{ spec.kind === 'ring' ? 'thick + border' : 'thick' }} in {{ layerUnit }} voxels</template>
+        </div>
         <div class="dims">
           <label class="axis" :title="`Along ${axisName[flatAxes[0]].toUpperCase()}`">
             <span class="ax" :style="{ color: `var(--axis-${axisName[flatAxes[0]]})` }">{{ axisName[flatAxes[0]].toUpperCase() }}</span>
@@ -309,9 +325,13 @@ function clamp(n: number, max: number) {
             <span class="ax" :style="{ color: `var(--axis-${axisName[flatAxes[1]]})` }">{{ axisName[flatAxes[1]].toUpperCase() }}</span>
             <input v-model.number="spec.fb" type="number" min="1" :max="maxDims[flatAxes[1]]" />
           </label>
-          <label class="axis thick" title="Thickness, through the plane">
+          <label class="axis thick" :title="`Thickness through the plane, in ${layerUnit || 'full'} voxels`">
             <span class="ax">Thick</span>
-            <input v-model.number="spec.ft" type="number" min="1" :max="maxDims[flatAxes[2]]" />
+            <input v-model.number="spec.ft" type="number" min="1" :max="maxDims[flatAxes[2]] * spec.fraction" />
+          </label>
+          <label v-if="spec.kind === 'ring'" class="axis thick" :title="`Width of the ring's band, in ${layerUnit || 'full'} voxels`">
+            <span class="ax">Border</span>
+            <input v-model.number="spec.fw" type="number" min="1" :max="maxDims[flatAxes[0]] * spec.fraction" />
           </label>
         </div>
       </template>
