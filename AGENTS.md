@@ -196,7 +196,8 @@ stacks are keyed `objectId/partId`. Anything that changes the grid as a whole
   generated copies (`mergeParts(..., skip = active)`) are the dimmed context.
   `ToolRunner.afterEdit` regenerates that context live when the active part
   has modifiers.
-- Extend overlays are always single-part; `setExtendBase` flattens first.
+- Extend overlays are always single-part (their diff); `setExtendBase` flattens
+  first. They act on the base's parts instead — see "Overlay states" below.
 - File format: `data` is always the merged look (older versions still open it);
   `parts` / `activePartId` are only written when there's more than one plain part.
 - Select tool → "Move to new part" splits the selection into its own part.
@@ -222,6 +223,21 @@ diff** in its own `VoxelData`: colour values for added/recoloured voxels, and
   identical to base-plus-overlay. An un-voxeled base makes the overlay render
   in cage mode (all voxels faint, smooth surfaces shown); mid-stroke nothing
   regenerates while the chain has a smoothed part.
+- **Overlay states.** An overlay can change its base's parts, so several
+  overlays of one base are states of it (fridge closed / open / smooth):
+  `partModifiers` (own modifiers per base part id, run after the base's),
+  `mutedModifiers` (inherited modifier ids switched off here — only off, the
+  values stay the base's) and `partVisibility` (base part id → shown/hidden,
+  overriding the base both ways). `resolve.partStacks` gives the stacks as
+  they reach an object (`applyPartState` per chain level, so an overlay of an
+  overlay inherits its state); `resolveParts` applies the same to the voxel
+  parts. The store's modifier ops write to `partModifiers` when the active
+  object is an overlay (`editableModifiers`); the Outliner lists the base's
+  parts and `ModifierStack` shows the inherited stack with on/off ticks.
+  Overlay colours routed into a part the overlay hides are left out of the
+  editable mesh too (`ResolvedLook.hiddenEdits`), and a lone new voxel goes to
+  the first part that shows. `setExtendBase` drops state for parts / modifiers
+  the new base doesn't have; rotation turns `partModifiers` with the family.
 - `buildActiveRender(obj, project)` — splits into `editableData` (overlay-only,
   the bright editable mesh) and `baseContext` (resolved base minus overlay-touched
   cells, the dimmed locked mesh).

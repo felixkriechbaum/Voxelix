@@ -1,6 +1,6 @@
 import type { VoxelDataJson } from '@/core/voxel/types';
 import type { Palette } from '@/core/palette';
-import type { VoxelPartJson } from './parts';
+import type { Modifier, VoxelPartJson } from './parts';
 
 export type ObjectKind = 'normal' | 'extend';
 
@@ -23,6 +23,12 @@ export interface VoxelObjectJson {
   /** per-object saturation/brightness shift applied at mesh/export time; the
    *  palette itself is left untouched. Shifts are in [-1, 1]; absent = 0/0. */
   colorAdjust?: ColorAdjust;
+  /** extend only: this overlay's own modifiers per base part id, run after the base's */
+  partModifiers?: Record<string, Modifier[]>;
+  /** extend only: ids of inherited modifiers switched off in this overlay */
+  mutedModifiers?: string[];
+  /** extend only: base part id → shown (true) / hidden (false) here, overriding the base */
+  partVisibility?: Record<string, boolean>;
 }
 
 export interface ColorAdjust {

@@ -3,7 +3,7 @@ import { REMOVED } from '@/core/voxel/constants';
 import type { Project } from './Project';
 import type { VoxelObject } from './VoxelObject';
 import type { ColorAdjust } from './types';
-import { mergeParts, modifierActive, smoothLayers, VoxelPart, type SmoothLayer } from './parts';
+import { mergeParts, modifierActive, smoothLayers, VoxelPart, type Modifier, type SmoothLayer } from './parts';
 
 /**
  * An object as parts before their modifiers run, plus the holes punched
@@ -14,29 +14,75 @@ interface ResolvedParts {
   parts: VoxelPart[];
   /** cells an overlay deleted — cleared from the finished look, modifier copies included */
   holes: Array<[number, number, number]>;
+  /** this overlay's own colour cells that went into a part it hides — not drawn as editable either */
+  hiddenEdits: Array<[number, number, number]>;
 }
 
 const NEIGHBOURS: Array<[number, number, number]> = [
   [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1],
 ];
 
+/** A part as some object sees it: which modifiers run on it, and whether it shows. */
+export interface PartStack {
+  id: string;
+  name: string;
+  modifiers: Modifier[];
+  hidden: boolean;
+}
+
+/**
+ * How an overlay changes one of its base's parts — so overlays of one base can
+ * be different states of it: inherited modifiers it muted are switched off,
+ * its own ones for that part run after them, and it can show or hide the part.
+ */
+function applyPartState(overlay: VoxelObject, part: PartStack): PartStack {
+  const muted = overlay.mutedModifiers;
+  const visible = overlay.partVisibility[part.id];
+  return {
+    id: part.id,
+    name: part.name,
+    modifiers: [
+      ...part.modifiers.map((m) => (m.enabled && muted.includes(m.id) ? { ...m, enabled: false } : m)),
+      ...(overlay.partModifiers[part.id] ?? []),
+    ],
+    hidden: visible === undefined ? part.hidden : !visible,
+  };
+}
+
+/**
+ * The parts as they apply to `object`: its own, or for an extend object its
+ * base's parts with every overlay's state down the chain applied. Cheap — no
+ * voxels are touched — so the UI can show what an overlay inherits.
+ */
+export function partStacks(object: VoxelObject, project: Project, seen = new Set<string>()): PartStack[] {
+  if (object.kind !== 'extend' || !object.baseId || seen.has(object.id))
+    return object.parts.map((p) => ({ id: p.id, name: p.name, modifiers: p.modifiers, hidden: p.hidden }));
+  seen.add(object.id);
+  const base = project.getById(object.baseId);
+  if (!base) return [{ id: object.activePartId, name: 'Part 1', modifiers: [], hidden: false }];
+  return partStacks(base, project, seen).map((p) => applyPartState(object, p));
+}
+
 /**
  * An extend object takes over its base's parts and modifier stacks, so the
  * modifiers act on the whole thing, additions included — a mirrored base
  * mirrors a handle the overlay adds, an un-voxeled one smooths it in:
  *  - a colour lands in the part that already has a voxel there, else in the
- *    first part it touches, else in the first part;
+ *    first part it touches, else in the first part that isn't hidden;
  *  - REMOVED deletes the cell from every part (so a mirrored copy of it goes
  *    too) and punches a hole in the finished look (so a generated copy the
  *    overlay deleted stays deleted).
  * Without modifiers that's exactly the base with the overlay laid on top.
+ * The overlay's own part state (`applyPartState`) then goes on top of the
+ * base's stacks.
  */
 function resolveParts(object: VoxelObject, project: Project, seen: Set<string>): ResolvedParts {
-  if (object.kind !== 'extend' || !object.baseId || seen.has(object.id)) return { parts: object.parts, holes: [] };
+  if (object.kind !== 'extend' || !object.baseId || seen.has(object.id)) return { parts: object.parts, holes: [], hiddenEdits: [] };
   seen.add(object.id);
   const base = project.getById(object.baseId);
   // a broken link shows the overlay's own voxels (REMOVED markers aren't solid)
-  if (!base) return { parts: [new VoxelPart({ id: object.activePartId, name: 'Part 1', data: object.data })], holes: [] };
+  if (!base)
+    return { parts: [new VoxelPart({ id: object.activePartId, name: 'Part 1', data: object.data })], holes: [], hiddenEdits: [] };
 
   const from = resolveParts(base, project, seen);
   const overlay = object.data;
@@ -47,9 +93,11 @@ function resolveParts(object: VoxelObject, project: Project, seen: Set<string>):
       Math.max(p.data.sizeZ, overlay.sizeZ),
     );
     p.data.forEachFilled((x, y, z, c) => data.set(x, y, z, c));
-    return new VoxelPart({ id: p.id, name: p.name, data, modifiers: p.modifiers, hidden: p.hidden });
+    const { modifiers, hidden } = applyPartState(object, p);
+    return new VoxelPart({ id: p.id, name: p.name, data, modifiers, hidden });
   });
   const holes = from.holes.slice();
+  const hiddenEdits: Array<[number, number, number]> = [];
   overlay.forEachEntry((x, y, z, v) => {
     if (v === REMOVED) {
       for (const p of parts) p.data.clear(x, y, z);
@@ -60,9 +108,12 @@ function resolveParts(object: VoxelObject, project: Project, seen: Set<string>):
     for (let i = parts.length - 1; i >= 0 && owner < 0; i--) if (parts[i].data.isSolid(x, y, z)) owner = i;
     for (let i = 0; i < parts.length && owner < 0; i++)
       if (NEIGHBOURS.some(([dx, dy, dz]) => parts[i].data.isSolid(x + dx, y + dy, z + dz))) owner = i;
-    parts.forEach((p, i) => (i === Math.max(0, owner) ? p.data.setRaw(x, y, z, v) : p.data.clear(x, y, z)));
+    // touching nothing: the first part that shows (a hidden one would swallow it)
+    if (owner < 0) owner = Math.max(0, parts.findIndex((p) => !p.hidden));
+    parts.forEach((p, i) => (i === owner ? p.data.setRaw(x, y, z, v) : p.data.clear(x, y, z)));
+    if (parts[owner].hidden) hiddenEdits.push([x, y, z]);
   });
-  return { parts, holes };
+  return { parts, holes, hiddenEdits };
 }
 
 /** How an object finally looks: every voxel, the voxel parts alone, and the smooth surfaces. */
@@ -72,11 +123,13 @@ export interface ResolvedLook {
   /** only the parts that stay voxels; equals `data` when nothing is un-voxeled */
   voxelData: VoxelData;
   smooth: SmoothLayer[];
+  /** an overlay's own colour cells that sit in a part it hides (see `resolveParts`) */
+  hiddenEdits: Array<[number, number, number]>;
 }
 
 /** The finished look of any object — extend overlays resolved, modifiers applied. */
 export function resolveLook(object: VoxelObject, project: Project): ResolvedLook {
-  const { parts, holes } = resolveParts(object, project, new Set());
+  const { parts, holes, hiddenEdits } = resolveParts(object, project, new Set());
   const detail = effectiveDetail(object, project);
   const punch = (d: VoxelData) => {
     for (const [x, y, z] of holes) d.clear(x, y, z);
@@ -86,22 +139,19 @@ export function resolveLook(object: VoxelObject, project: Project): ResolvedLook
   const data = plain ? object.merged() : punch(mergeParts(parts, detail));
   const smooth = smoothLayers(object.id, parts, detail).map((l) => ({ ...l, data: punch(l.data.clone()) }));
   const voxelData = smooth.length > 0 ? punch(mergeParts(parts, detail, undefined, true)) : data;
-  return { data, voxelData, smooth };
+  return { data, voxelData, smooth, hiddenEdits };
 }
 
-/** Does any part of this object, or of a base up its extend chain, pass `test`? */
-export function someInChain(object: VoxelObject, project: Project, test: (part: VoxelPart) => boolean): boolean {
-  const seen = new Set<string>();
-  for (let o: VoxelObject | null = object; o && !seen.has(o.id); o = o.baseId ? (project.getById(o.baseId) ?? null) : null) {
-    seen.add(o.id);
-    if (o.parts.some(test)) return true;
-  }
-  return false;
-}
-
-/** Does anything in this object (or up its extend chain) carry an active modifier? */
+/** Does any part, as it applies to this object (extend chain included), carry an active modifier? */
 export function hasModifiersInChain(object: VoxelObject, project: Project): boolean {
-  return someInChain(object, project, (p) => p.modifiers.some(modifierActive));
+  return partStacks(object, project).some((p) => p.modifiers.some(modifierActive));
+}
+
+/** Is any visible part, as it applies to this object, rounded off (smooth / un-voxel)? */
+export function smoothedInChain(object: VoxelObject, project: Project): boolean {
+  return partStacks(object, project).some(
+    (p) => !p.hidden && p.modifiers.some((m) => (m.type === 'smooth' || m.type === 'unvoxel') && modifierActive(m)),
+  );
 }
 
 /**
@@ -255,11 +305,13 @@ export function buildActiveRender(object: VoxelObject, project: Project): Active
 
   // the overlay's own colours are the bright, editable mesh; everything else
   // of the finished look — the base, and any copies the base's modifiers make
-  // of the overlay — is the dimmed locked context
+  // of the overlay — is the dimmed locked context. Colours that went into a
+  // part this overlay hides don't show at all, as in the export.
   const editableData = new VoxelData(...size);
   const baseContext = look.data; // freshly merged, ours to cut into
+  const hidden = new Set(look.hiddenEdits.map(([x, y, z]) => `${x},${y},${z}`));
   object.data.forEachEntry((x, y, z, v) => {
-    if (v === REMOVED) return;
+    if (v === REMOVED || hidden.has(`${x},${y},${z}`)) return;
     editableData.setRaw(x, y, z, v);
     baseContext.clear(x, y, z);
   });

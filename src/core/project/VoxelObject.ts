@@ -1,6 +1,6 @@
 import { VoxelData } from '@/core/voxel/VoxelData';
 import { CELLS_PER_VOXEL } from '@/core/voxel/constants';
-import { mergeParts, VoxelPart } from './parts';
+import { mergeParts, normalizeModifier, VoxelPart, type Modifier } from './parts';
 import type { ColorAdjust, ObjectKind, VoxelObjectJson } from './types';
 
 export class VoxelObject {
@@ -21,6 +21,16 @@ export class VoxelObject {
   detail: number;
   /** per-object saturation/brightness shift; undefined = unchanged */
   colorAdjust?: ColorAdjust;
+  /**
+   * Extend only — how this overlay changes the base's parts, so overlays of one
+   * base can be different states of it (see `resolve.partStacks`):
+   * own modifiers per base part id, run after the base's stack…
+   */
+  partModifiers: Record<string, Modifier[]>;
+  /** …inherited modifiers (by id) switched off here… */
+  mutedModifiers: string[];
+  /** …and base parts shown (true) / hidden (false) here, overriding the base. */
+  partVisibility: Record<string, boolean>;
 
   constructor(opts: {
     id?: string;
@@ -34,6 +44,9 @@ export class VoxelObject {
     pivot?: 'bottom-center' | 'min-corner';
     detail?: number;
     colorAdjust?: ColorAdjust;
+    partModifiers?: Record<string, Modifier[]>;
+    mutedModifiers?: string[];
+    partVisibility?: Record<string, boolean>;
   }) {
     this.id = opts.id ?? crypto.randomUUID();
     this.name = opts.name;
@@ -47,6 +60,18 @@ export class VoxelObject {
     this.pivot = opts.pivot ?? 'bottom-center';
     this.detail = Math.min(CELLS_PER_VOXEL, Math.max(1, Math.round(opts.detail ?? 1)));
     this.colorAdjust = opts.colorAdjust;
+    this.partModifiers = opts.partModifiers ?? {};
+    this.mutedModifiers = opts.mutedModifiers ?? [];
+    this.partVisibility = opts.partVisibility ?? {};
+  }
+
+  /** Does this overlay change anything about its base's parts? */
+  get hasPartState(): boolean {
+    return (
+      Object.values(this.partModifiers).some((mods) => mods.length > 0) ||
+      this.mutedModifiers.length > 0 ||
+      Object.keys(this.partVisibility).length > 0
+    );
   }
 
   get activePart(): VoxelPart {
@@ -95,6 +120,10 @@ export class VoxelObject {
       json.parts = this.parts.map((p) => p.toJSON());
       json.activePartId = this.activePartId;
     }
+    const partModifiers = Object.entries(this.partModifiers).filter(([, mods]) => mods.length > 0);
+    if (partModifiers.length > 0) json.partModifiers = Object.fromEntries(partModifiers.map(([id, mods]) => [id, mods.map(normalizeModifier)]));
+    if (this.mutedModifiers.length > 0) json.mutedModifiers = [...this.mutedModifiers];
+    if (Object.keys(this.partVisibility).length > 0) json.partVisibility = { ...this.partVisibility };
     return json;
   }
 
@@ -110,6 +139,13 @@ export class VoxelObject {
       pivot: json.pivot,
       detail: json.detail,
       colorAdjust: json.colorAdjust,
+      partModifiers: Object.fromEntries(
+        Object.entries(json.partModifiers ?? {}).map(([id, mods]) => [id, (mods ?? []).map(normalizeModifier)]),
+      ),
+      mutedModifiers: (json.mutedModifiers ?? []).filter((id) => typeof id === 'string'),
+      partVisibility: Object.fromEntries(
+        Object.entries(json.partVisibility ?? {}).filter(([, v]) => typeof v === 'boolean'),
+      ),
     });
   }
 }

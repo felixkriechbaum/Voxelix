@@ -8,7 +8,7 @@ import {
   overlayWriteValue,
   resolveEffectiveData,
   hasModifiersInChain,
-  someInChain,
+  smoothedInChain,
 } from '@/core/project/resolve';
 import { anyMirror, mirrorBoxes, mirrorImages, type Vec3 } from '@/core/ops/mirror';
 import type { Tool, ToolContext, ToolId, PointerInfo, MirrorMode } from '@/tools/types';
@@ -251,7 +251,7 @@ export class ToolRunner implements ToolContext {
       // smoothed or un-voxeled base is too slow to regenerate per frame, so
       // mid-stroke only the lockstep read view moves and it catches up on commit
       const modifiers = hasModifiersInChain(this.ctx.object, project);
-      if (live && modifiers && someInChain(this.ctx.object, project, (p) => p.isSmoothed)) return;
+      if (live && modifiers && smoothedInChain(this.ctx.object, project)) return;
       const render = buildActiveRender(this.ctx.object, project);
       this.viewport.refreshEditable(render.editableData);
       // an erase over a base voxel stores a REMOVED marker — the locked base mesh

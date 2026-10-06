@@ -21,6 +21,8 @@ import {
   faEyeSlash,
 } from '@fortawesome/pro-solid-svg-icons';
 import { partsCollapsed } from '@/editor/panelPrefs';
+import { partStacks } from '@/core/project/resolve';
+import type { Modifier } from '@/core/project/parts';
 
 const store = useEditorStore();
 const { runner } = useSession();
@@ -32,29 +34,77 @@ const deleteTargetId = ref<string | null>(null);
 
 const active = computed(() => store.activeObject());
 
-/** The active object's parts + modifiers as plain data (the project itself is markRaw). */
+const copyModifier = (m: Modifier): Modifier =>
+  m.type === 'move' ? { ...m, offset: [...m.offset] as [number, number, number] } : { ...m };
+
+/** Which base part an extend object's parts list has open (its own modifiers + the inherited ones). */
+const statePartId = ref<string | null>(null);
+
+/**
+ * The active object's parts + modifiers as plain data (the project itself is
+ * markRaw). An extend object lists its base's parts instead: per part, what
+ * it inherits and what this overlay adds, mutes or shows / hides.
+ */
 const partsView = computed(() => {
   void store.activeVersion;
   void store.structureVersion;
   void store.editVersion;
   const o = store.activeObject();
-  if (!o) return null;
+  const proj = store.project;
+  if (!o || !proj) return null;
+  if (o.kind === 'extend') {
+    const base = o.baseId ? proj.getById(o.baseId) : null;
+    if (!base) return null;
+    const inherited = partStacks(base, proj);
+    const open = inherited.find((p) => p.id === statePartId.value) ?? inherited[0];
+    return {
+      extend: true,
+      activeId: open.id,
+      parts: inherited.map((p) => {
+        const shown = o.partVisibility[p.id];
+        return {
+          id: p.id,
+          name: p.name,
+          mods: o.partModifiers[p.id]?.length ?? 0,
+          hidden: shown === undefined ? p.hidden : !shown,
+          /** shown / hidden differently from the base */
+          override: shown !== undefined,
+        };
+      }),
+      modifiers: (o.partModifiers[open.id] ?? []).map(copyModifier),
+      inherited: open.modifiers.map((m) => ({ mod: copyModifier(m), muted: o.mutedModifiers.includes(m.id) })),
+      activeName: open.name,
+    };
+  }
   return {
-    extend: o.kind === 'extend',
+    extend: false,
     activeId: o.activePartId,
-    parts: o.parts.map((p) => ({ id: p.id, name: p.name, mods: p.modifiers.length, hidden: p.hidden })),
-    modifiers: o.activePart.modifiers.map((m) => (m.type === 'move' ? { ...m, offset: [...m.offset] as [number, number, number] } : { ...m })),
+    parts: o.parts.map((p) => ({ id: p.id, name: p.name, mods: p.modifiers.length, hidden: p.hidden, override: false })),
+    modifiers: o.activePart.modifiers.map(copyModifier),
+    inherited: null,
     activeName: o.activePart.name,
   };
 });
+
+/** Click on a part row: edit that part — or, on an extend object, open its state. */
+function pickPart(id: string) {
+  if (partsView.value?.extend) statePartId.value = id;
+  else store.setActivePart(id);
+}
+
+function eyeTitle(p: { name: string; hidden: boolean; override: boolean }, extend: boolean): string {
+  if (!extend) return p.hidden ? `Show ${p.name} again` : `Hide ${p.name} — it's left out of the export too`;
+  if (p.override) return p.hidden ? `${p.name} is hidden in this overlay only — click to show it` : `${p.name} is shown in this overlay only — click to hide it again`;
+  return p.hidden ? `Show ${p.name} in this overlay (the base hides it)` : `Hide ${p.name} in this overlay — the base keeps it`;
+}
 
 /** What the folded parts section still tells you: the part you're editing and its modifiers. */
 const partsSummary = computed(() => {
   const v = partsView.value;
   if (!v) return '';
-  const mods = v.modifiers.length;
-  const modText = mods ? `${mods} mod${mods > 1 ? 's' : ''}` : 'no mods';
-  return v.parts.length > 1 ? `${v.activeName} · ${modText}` : modText;
+  const mods = v.extend ? v.parts.reduce((n, p) => n + p.mods, 0) : v.modifiers.length;
+  const modText = mods ? `${mods} ${v.extend ? 'own ' : ''}mod${mods > 1 ? 's' : ''}` : v.extend ? 'no own mods' : 'no mods';
+  return v.parts.length > 1 && !v.extend ? `${v.activeName} · ${modText}` : modText;
 });
 
 const renamingPartId = ref<string | null>(null);
@@ -72,8 +122,8 @@ function onPartKey(e: KeyboardEvent, id: string, name: string) {
   if (e.target instanceof HTMLInputElement) return;
   if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault();
-    store.setActivePart(id);
-  } else if (e.key === 'F2') {
+    pickPart(id);
+  } else if (e.key === 'F2' && !partsView.value?.extend) {
     e.preventDefault();
     startPartRename(id, name);
   }
@@ -354,7 +404,7 @@ function resetColorAdjust() {
   <section v-if="active" class="panel box" aria-labelledby="object-heading">
       <h3 id="object-heading" class="obj-title" :title="active.name">{{ active.name }}</h3>
 
-      <template v-if="partsView && !partsView.extend">
+      <template v-if="partsView">
         <div class="sub">
           <button
             class="fold"
@@ -368,7 +418,7 @@ function resetColorAdjust() {
           </button>
           <span v-if="partsCollapsed" class="dim summary" :title="partsSummary">{{ partsSummary }}</span>
           <button
-            v-else
+            v-else-if="!partsView.extend"
             class="mini"
             title="Add an empty part — its own mesh inside this object"
             @click="store.addPart()"
@@ -377,7 +427,11 @@ function resetColorAdjust() {
           </button>
         </div>
         <div v-show="!partsCollapsed" id="parts-body">
-          <ul class="parts" aria-label="Parts of this object">
+          <p v-if="partsView.extend" class="state-hint">
+            The base's parts. Give one modifiers of its own here, switch the base's off or hide it — only this
+            overlay changes, the base stays as it is.
+          </p>
+          <ul class="parts" :aria-label="partsView.extend ? 'Parts of the base' : 'Parts of this object'">
             <li
               v-for="p in partsView.parts"
               :key="p.id"
@@ -385,9 +439,9 @@ function resetColorAdjust() {
               :role="renamingPartId === p.id ? undefined : 'button'"
               :aria-pressed="renamingPartId === p.id ? undefined : p.id === partsView.activeId"
               :tabindex="renamingPartId === p.id ? -1 : 0"
-              title="Click to edit this part · double-click to rename"
-              @click="store.setActivePart(p.id)"
-              @dblclick="startPartRename(p.id, p.name)"
+              :title="partsView.extend ? 'Click to show what this overlay does to the part' : 'Click to edit this part · double-click to rename'"
+              @click="pickPart(p.id)"
+              @dblclick="!partsView.extend && startPartRename(p.id, p.name)"
               @keydown="onPartKey($event, p.id, p.name)"
             >
               <Icon :icon="faLayerGroup" :size="11" class="part-ic" />
@@ -403,11 +457,15 @@ function resetColorAdjust() {
               />
               <template v-else>
                 <span class="pname">{{ p.name }}</span>
-                <span v-if="p.mods" class="tag" title="This part has modifiers">{{ p.mods }} mod{{ p.mods > 1 ? 's' : '' }}</span>
+                <span
+                  v-if="p.mods"
+                  class="tag"
+                  :title="partsView.extend ? 'Modifiers this overlay adds to the part' : 'This part has modifiers'"
+                >{{ partsView.extend ? '+' : '' }}{{ p.mods }} mod{{ p.mods > 1 ? 's' : '' }}</span>
                 <button
                   class="part-btn eye"
-                  :class="{ off: p.hidden }"
-                  :title="p.hidden ? `Show ${p.name} again` : `Hide ${p.name} — it's left out of the export too`"
+                  :class="{ off: p.hidden, override: p.override }"
+                  :title="eyeTitle(p, partsView.extend)"
                   :aria-label="p.hidden ? `Show ${p.name}` : `Hide ${p.name}`"
                   :aria-pressed="p.hidden"
                   @click.stop="store.setPartHidden(p.id, !p.hidden)"
@@ -415,7 +473,7 @@ function resetColorAdjust() {
                   <Icon :icon="p.hidden ? faEyeSlash : faEye" :size="11" />
                 </button>
                 <button
-                  v-if="partsView.parts.length > 1"
+                  v-if="!partsView.extend && partsView.parts.length > 1"
                   class="part-btn del"
                   :title="`Delete ${p.name}`"
                   :aria-label="`Delete ${p.name}`"
@@ -427,7 +485,12 @@ function resetColorAdjust() {
             </li>
           </ul>
 
-          <ModifierStack :part-id="partsView.activeId" :part-name="partsView.activeName" :modifiers="partsView.modifiers" />
+          <ModifierStack
+            :part-id="partsView.activeId"
+            :part-name="partsView.activeName"
+            :modifiers="partsView.modifiers"
+            :inherited="partsView.inherited"
+          />
         </div>
       </template>
 
@@ -642,7 +705,7 @@ function resetColorAdjust() {
   background: color-mix(in srgb, var(--warn) 12%, transparent);
 }
 /* the row's buttons only show on hover — except the eye of a hidden part, which stays as a marker */
-.parts li:not(:hover):not(:focus-within) .part-btn:not(.off) {
+.parts li:not(:hover):not(:focus-within) .part-btn:not(.off):not(.override) {
   opacity: 0;
 }
 .parts li.hidden .pname,
@@ -651,6 +714,16 @@ function resetColorAdjust() {
 }
 .parts li.hidden .pname {
   font-style: italic;
+}
+/* shown / hidden differently from the base — always visible, in the accent */
+.parts .part-btn.eye.override {
+  color: var(--accent);
+}
+.state-hint {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-faint);
 }
 .mini {
   padding: 1px 8px;

@@ -5,7 +5,14 @@ import Icon from './Icon.vue';
 import { faXmark, faChevronUp, faChevronDown } from '@fortawesome/pro-solid-svg-icons';
 import { SMOOTH_MAX, SMOOTH_MIN, type Modifier, type ModifierType } from '@/core/project/parts';
 
-const props = defineProps<{ partId: string; partName: string; modifiers: Modifier[] }>();
+const props = defineProps<{
+  partId: string;
+  partName: string;
+  /** the editable stack — on an extend object, what this overlay adds to the base part */
+  modifiers: Modifier[];
+  /** extend objects: the base part's own stack, run first; each can be switched off here */
+  inherited?: Array<{ mod: Modifier; muted: boolean }> | null;
+}>();
 const store = useEditorStore();
 
 const kinds: Array<{ type: ModifierType; label: string; title: string }> = [
@@ -54,6 +61,25 @@ function update(m: Modifier, patch: Record<string, unknown>) {
 function num(e: Event): number {
   return Number((e.target as HTMLInputElement).value);
 }
+const AXES = ['X', 'Y', 'Z'];
+/** One line of what an inherited modifier does — it's edited on the base, not here. */
+function summary(m: Modifier): string {
+  switch (m.type) {
+    case 'array':
+      return `${m.count}× along ${m.direction < 0 ? '−' : '+'}${AXES[m.axis]}${m.gap ? `, gap ${m.gap}` : ''}`;
+    case 'mirror':
+      return `flips ${AXES[m.axis]}`;
+    case 'move':
+      return m.offset.map((v, i) => `${AXES[i]} ${v > 0 ? '+' : ''}${v}`).join(' ');
+    case 'radial':
+      return `${m.count} copies`;
+    case 'smooth':
+      return `radius ${m.radius}`;
+    case 'unvoxel':
+      return `strength ${m.strength}`;
+  }
+}
+
 function setOffset(m: Modifier, axis: number, e: Event) {
   if (m.type !== 'move') return;
   const offset = [...m.offset] as [number, number, number];
@@ -67,12 +93,46 @@ function setOffset(m: Modifier, axis: number, e: Event) {
     <div class="sub">
       <span class="title">Modifiers on {{ partName }}</span>
     </div>
+
+    <template v-if="inherited">
+      <div v-if="inherited.length" class="inherited" role="group" aria-label="Modifiers from the base">
+        <span class="inh-title">From the base — untick to switch one off here</span>
+        <label
+          v-for="{ mod, muted } in inherited"
+          :key="mod.id"
+          class="inh"
+          :class="{ off: !mod.enabled || muted }"
+          :title="
+            !mod.enabled
+              ? 'Switched off on the base (or further up) — turn it on there'
+              : muted
+                ? 'Switched off in this overlay only — tick to use the base\'s again'
+                : 'Runs as set on the base — untick to switch it off in this overlay only'
+          "
+        >
+          <input
+            type="checkbox"
+            :checked="mod.enabled && !muted"
+            :disabled="!mod.enabled"
+            @change="store.setInheritedModifierMuted(mod.id, !($event.target as HTMLInputElement).checked)"
+          />
+          <span class="inh-name">{{ names[mod.type] }}</span>
+          <span class="inh-sum">{{ summary(mod) }}</span>
+        </label>
+      </div>
+      <span class="inh-title own">This overlay's own — run after the base's</span>
+    </template>
+
     <div class="add" role="group" aria-label="Add a modifier">
       <button v-for="k in kinds" :key="k.type" class="add-btn" :title="k.title" @click="store.addModifier(partId, k.type)">
         + {{ k.label }}
       </button>
     </div>
-    <p v-if="modifiers.length === 0" class="empty">
+    <p v-if="modifiers.length === 0 && inherited" class="empty">
+      None yet. What you add here changes only this overlay — handy for states of one base, like a door moved
+      open.
+    </p>
+    <p v-else-if="modifiers.length === 0" class="empty">
       None yet. Modifiers change this part without touching the others, and stay editable. They apply top to bottom.
       The result shows dimmed around the part while you edit it — screenshot mode shows it as exported.
     </p>
@@ -275,6 +335,58 @@ function setOffset(m: Modifier, axis: number, e: Event) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.inherited {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 10px;
+  padding: 6px 8px;
+  background: var(--surface-0);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+}
+.inh-title {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.inh-title.own {
+  margin-bottom: 6px;
+}
+.inh {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 2px 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+.inh input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.inh input:disabled {
+  cursor: default;
+}
+.inh-name {
+  flex: none;
+  font: 600 12px/1.2 var(--font-display);
+}
+.inh-sum {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+.inh.off .inh-name,
+.inh.off .inh-sum {
+  color: var(--ink-faint);
+  text-decoration: line-through;
 }
 .add {
   display: grid;

@@ -7,6 +7,7 @@ import {
   compactOverlay,
   effectiveDetail,
   extendFamily,
+  partStacks,
   resolveEffectiveData,
 } from '@/core/project/resolve';
 import { CELLS_PER_VOXEL } from '@/core/voxel/constants';
@@ -215,6 +216,14 @@ export const useEditorStore = defineStore('editor', () => {
     obj.baseId = base.id;
     obj.detail = targetDetail;
 
+    // part state only means something for parts and modifiers the new base has
+    const stacks = partStacks(base, proj);
+    const partIds = new Set(stacks.map((p) => p.id));
+    const modIds = new Set(stacks.flatMap((p) => p.modifiers.map((m) => m.id)));
+    for (const id of Object.keys(obj.partModifiers)) if (!partIds.has(id)) delete obj.partModifiers[id];
+    for (const id of Object.keys(obj.partVisibility)) if (!partIds.has(id)) delete obj.partVisibility[id];
+    obj.mutedModifiers = obj.mutedModifiers.filter((id) => modIds.has(id));
+
     const baseResolved = resolveEffectiveData(base, proj);
     const aligned = alignOverlayToBase(obj.data, baseResolved);
     if (aligned) obj.data = aligned;
@@ -351,6 +360,7 @@ export const useEditorStore = defineStore('editor', () => {
         // modifiers turn with the object (axes, directions, offsets)
         for (const m of p.modifiers) rotateModifierY(m, dir);
       }
+      for (const mods of Object.values(o.partModifiers)) for (const m of mods) rotateModifierY(m, dir);
     }
     const { runner } = useSession();
     for (const o of touched) runner.value?.forgetHistory(o.id);
@@ -406,12 +416,60 @@ export const useEditorStore = defineStore('editor', () => {
     partsChanged(true);
   }
 
-  /** Show or hide a part — a hidden one is left out of the look and the export. */
+  /**
+   * Show or hide a part — a hidden one is left out of the look and the export.
+   * On an extend object this is the overlay's own say over a base part: it
+   * overrides what the base shows, and matching the base again drops it.
+   */
   function setPartHidden(partId: string, hidden: boolean) {
-    const part = activeObject()?.parts.find((p) => p.id === partId);
+    const obj = activeObject();
+    if (!obj) return;
+    const inherited = inheritedStacks(obj);
+    if (inherited) {
+      const part = inherited.find((p) => p.id === partId);
+      if (!part) return;
+      if (part.hidden === hidden) delete obj.partVisibility[partId];
+      else obj.partVisibility[partId] = !hidden;
+      partsChanged(true);
+      return;
+    }
+    const part = obj.parts.find((p) => p.id === partId);
     if (!part || part.hidden === hidden) return;
     part.hidden = hidden;
     partsChanged(true);
+  }
+
+  /**
+   * For an extend object with a base: the base's parts as they reach it — the
+   * modifiers and visibility it inherits, before its own part state. Else null.
+   */
+  function inheritedStacks(obj: VoxelObject) {
+    const proj = project.value;
+    const base = proj && obj.kind === 'extend' && obj.baseId ? proj.getById(obj.baseId) : null;
+    return proj && base ? partStacks(base, proj) : null;
+  }
+
+  /**
+   * The editable modifier stack for `partId`: the part's own, or for an extend
+   * object the overlay's own additions for that base part (created on demand).
+   */
+  function editableModifiers(obj: VoxelObject, partId: string): Modifier[] | null {
+    const inherited = inheritedStacks(obj);
+    if (inherited) {
+      if (!inherited.some((p) => p.id === partId)) return null;
+      return (obj.partModifiers[partId] ??= []);
+    }
+    return obj.parts.find((p) => p.id === partId)?.modifiers ?? null;
+  }
+
+  /** Switch an inherited modifier off (or back on) in the active extend object only. */
+  function setInheritedModifierMuted(modId: string, muted: boolean) {
+    const obj = activeObject();
+    if (!obj || !inheritedStacks(obj)) return;
+    const has = obj.mutedModifiers.includes(modId);
+    if (has === muted) return;
+    obj.mutedModifiers = muted ? [...obj.mutedModifiers, modId] : obj.mutedModifiers.filter((id) => id !== modId);
+    partsChanged();
   }
 
   function removePart(partId: string) {
@@ -454,27 +512,29 @@ export const useEditorStore = defineStore('editor', () => {
 
   function addModifier(partId: string, type: ModifierType) {
     const obj = activeObject();
-    const part = obj?.parts.find((p) => p.id === partId);
-    if (!obj || !part) return;
-    // smoothing rounds at cell level — on a coarse object there's nothing to round with
+    if (!obj || !editableModifiers(obj, partId)) return;
+    // smoothing rounds at cell level — on a coarse object there's nothing to
+    // round with (for an overlay, its base family gets subdivided)
     if (type === 'smooth') ensureDetail(obj.id);
-    part.modifiers.push(newModifier(type));
+    editableModifiers(obj, partId)!.push(newModifier(type));
     partsChanged();
   }
 
   /** Patch a modifier's settings; the result is clamped to sane values. */
   function updateModifier(partId: string, modId: string, patch: Partial<Modifier>) {
-    const part = activeObject()?.parts.find((p) => p.id === partId);
-    const i = part?.modifiers.findIndex((m) => m.id === modId) ?? -1;
-    if (!part || i < 0) return;
-    const current = part.modifiers[i];
-    part.modifiers[i] = normalizeModifier({ ...current, ...patch, id: current.id, type: current.type } as Modifier);
+    const obj = activeObject();
+    const mods = obj && editableModifiers(obj, partId);
+    const i = mods?.findIndex((m) => m.id === modId) ?? -1;
+    if (!mods || i < 0) return;
+    const current = mods[i];
+    mods[i] = normalizeModifier({ ...current, ...patch, id: current.id, type: current.type } as Modifier);
     partsChanged();
   }
 
   /** Reorder the stack — modifiers apply top to bottom, so order changes the result. */
   function moveModifier(partId: string, modId: string, delta: -1 | 1) {
-    const mods = activeObject()?.parts.find((p) => p.id === partId)?.modifiers;
+    const obj = activeObject();
+    const mods = obj && editableModifiers(obj, partId);
     const i = mods?.findIndex((m) => m.id === modId) ?? -1;
     if (!mods || i < 0 || i + delta < 0 || i + delta >= mods.length) return;
     [mods[i], mods[i + delta]] = [mods[i + delta], mods[i]];
@@ -482,9 +542,13 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   function removeModifier(partId: string, modId: string) {
-    const part = activeObject()?.parts.find((p) => p.id === partId);
-    if (!part) return;
-    part.modifiers = part.modifiers.filter((m) => m.id !== modId);
+    const obj = activeObject();
+    const mods = obj && editableModifiers(obj, partId);
+    const i = mods?.findIndex((m) => m.id === modId) ?? -1;
+    if (!obj || !mods || i < 0) return;
+    mods.splice(i, 1);
+    // an overlay keeps no empty stacks around
+    if (mods.length === 0 && obj.partModifiers[partId] === mods) delete obj.partModifiers[partId];
     partsChanged();
   }
 
@@ -572,6 +636,7 @@ export const useEditorStore = defineStore('editor', () => {
     renamePart,
     removePart,
     setPartHidden,
+    setInheritedModifierMuted,
     selectionToNewPart,
     addModifier,
     updateModifier,
