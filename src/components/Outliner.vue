@@ -181,13 +181,13 @@ function openMenu(e: MouseEvent, id: string, name: string, kind: string) {
   }
   const bases = store.objects.filter((o) => o.id !== id && !wouldCycle(o.id, id));
   if (bases.length) {
-    items.push({ separator: true });
-    for (const b of bases) {
-      items.push({
-        label: `Set base → ${b.name}`,
-        action: () => store.setExtendBase(id, b.id),
-      });
-    }
+    items.push(
+      { separator: true },
+      {
+        label: 'Set base',
+        children: bases.map((b) => ({ label: b.name, action: () => store.setExtendBase(id, b.id) })),
+      },
+    );
   }
   items.push({ separator: true }, { label: 'Delete', danger: true, action: () => requestDelete(id) });
   menu.value = { x: e.clientX, y: e.clientY, items };
