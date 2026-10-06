@@ -2,6 +2,9 @@
 import { computed } from 'vue';
 import { useEditorStore } from '@/stores/editor';
 import { hexAlpha, hexOpaque, withAlpha } from '@/core/palette';
+import { paletteCollapsed } from '@/editor/panelPrefs';
+import Icon from './Icon.vue';
+import { faChevronDown } from '@fortawesome/pro-solid-svg-icons';
 
 const store = useEditorStore();
 
@@ -48,8 +51,20 @@ function onSwatchKey(e: KeyboardEvent, index: number) {
 </script>
 
 <template>
-  <section class="panel palette" aria-labelledby="palette-heading">
-    <h3 id="palette-heading">Palette</h3>
+  <section class="panel palette" :class="{ collapsed: paletteCollapsed }" aria-labelledby="palette-heading">
+    <h3>
+      <button
+        id="palette-heading"
+        class="fold"
+        :aria-expanded="!paletteCollapsed"
+        aria-controls="palette-grid"
+        :title="paletteCollapsed ? 'Show all palette colours' : 'Fold the palette down to the current colour'"
+        @click="paletteCollapsed = !paletteCollapsed"
+      >
+        <Icon class="fold-chev" :icon="faChevronDown" :size="10" />
+        Palette
+      </button>
+    </h3>
 
     <div class="current">
       <label class="chip" :style="swatchStyle(currentHex)" :title="`Change the colour of slot ${store.currentColor}`">
@@ -67,7 +82,7 @@ function onSwatchKey(e: KeyboardEvent, index: number) {
       <span class="pct">{{ opacityPct }}%</span>
     </label>
 
-    <div class="grid" role="group" aria-label="Colour palette">
+    <div v-show="!paletteCollapsed" id="palette-grid" class="grid" role="group" aria-label="Colour palette">
       <button
         v-for="(hex, i) in palette"
         :key="i"
@@ -92,6 +107,11 @@ function onSwatchKey(e: KeyboardEvent, index: number) {
   flex-direction: column;
   min-height: 220px;
   flex: 1;
+}
+.palette.collapsed {
+  min-height: 0;
+  flex: none;
+  padding-bottom: 2px;
 }
 .current {
   display: flex;

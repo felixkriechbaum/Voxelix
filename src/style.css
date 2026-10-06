@@ -231,6 +231,32 @@ h3 {
   color: var(--ink);
 }
 
+/* a section header that folds its section away: chevron + label, no button chrome */
+button.fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0 0 0 -4px;
+  padding: 1px 6px 1px 4px;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border-color: transparent;
+}
+button.fold:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: transparent;
+}
+button.fold .fold-chev {
+  flex: none;
+  color: var(--ink-faint);
+  transition: transform 0.15s;
+}
+button.fold[aria-expanded='false'] .fold-chev {
+  transform: rotate(-90deg);
+}
+
 /* a keyboard key, for shortcut hints */
 kbd {
   display: inline-block;

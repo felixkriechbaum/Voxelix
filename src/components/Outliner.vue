@@ -16,7 +16,9 @@ import {
   faRotateRight,
   faLayerGroup,
   faXmark,
+  faChevronDown,
 } from '@fortawesome/pro-solid-svg-icons';
+import { partsCollapsed } from '@/editor/panelPrefs';
 
 const store = useEditorStore();
 const { runner } = useSession();
@@ -42,6 +44,15 @@ const partsView = computed(() => {
     modifiers: o.activePart.modifiers.map((m) => (m.type === 'move' ? { ...m, offset: [...m.offset] as [number, number, number] } : { ...m })),
     activeName: o.activePart.name,
   };
+});
+
+/** What the folded parts section still tells you: the part you're editing and its modifiers. */
+const partsSummary = computed(() => {
+  const v = partsView.value;
+  if (!v) return '';
+  const mods = v.modifiers.length;
+  const modText = mods ? `${mods} mod${mods > 1 ? 's' : ''}` : 'no mods';
+  return v.parts.length > 1 ? `${v.activeName} · ${modText}` : modText;
 });
 
 const renamingPartId = ref<string | null>(null);
@@ -343,52 +354,69 @@ function resetColorAdjust() {
 
       <template v-if="partsView && !partsView.extend">
         <div class="sub">
-          <span>Parts</span>
-          <button class="mini" title="Add an empty part — its own mesh inside this object" @click="store.addPart()">
+          <button
+            class="fold"
+            :aria-expanded="!partsCollapsed"
+            aria-controls="parts-body"
+            :title="partsCollapsed ? 'Show the parts and their modifiers' : 'Fold the parts and modifiers away'"
+            @click="partsCollapsed = !partsCollapsed"
+          >
+            <Icon class="fold-chev" :icon="faChevronDown" :size="10" />
+            Parts &amp; modifiers
+          </button>
+          <span v-if="partsCollapsed" class="dim summary" :title="partsSummary">{{ partsSummary }}</span>
+          <button
+            v-else
+            class="mini"
+            title="Add an empty part — its own mesh inside this object"
+            @click="store.addPart()"
+          >
             + Add part
           </button>
         </div>
-        <ul class="parts" aria-label="Parts of this object">
-          <li
-            v-for="p in partsView.parts"
-            :key="p.id"
-            :class="{ sel: p.id === partsView.activeId }"
-            :role="renamingPartId === p.id ? undefined : 'button'"
-            :aria-pressed="renamingPartId === p.id ? undefined : p.id === partsView.activeId"
-            :tabindex="renamingPartId === p.id ? -1 : 0"
-            title="Click to edit this part · double-click to rename"
-            @click="store.setActivePart(p.id)"
-            @dblclick="startPartRename(p.id, p.name)"
-            @keydown="onPartKey($event, p.id, p.name)"
-          >
-            <Icon :icon="faLayerGroup" :size="11" class="part-ic" />
-            <input
-              v-if="renamingPartId === p.id"
-              :id="`part-rename-${p.id}`"
-              v-model="partRenameText"
-              type="text"
-              @keydown.enter="commitPartRename"
-              @keydown.esc="renamingPartId = null"
-              @blur="commitPartRename"
-              @click.stop
-            />
-            <template v-else>
-              <span class="pname">{{ p.name }}</span>
-              <span v-if="p.mods" class="tag" title="This part has modifiers">{{ p.mods }} mod{{ p.mods > 1 ? 's' : '' }}</span>
-              <button
-                v-if="partsView.parts.length > 1"
-                class="part-del"
-                :title="`Delete ${p.name}`"
-                :aria-label="`Delete ${p.name}`"
-                @click.stop="store.removePart(p.id)"
-              >
-                <Icon :icon="faXmark" :size="11" />
-              </button>
-            </template>
-          </li>
-        </ul>
+        <div v-show="!partsCollapsed" id="parts-body">
+          <ul class="parts" aria-label="Parts of this object">
+            <li
+              v-for="p in partsView.parts"
+              :key="p.id"
+              :class="{ sel: p.id === partsView.activeId }"
+              :role="renamingPartId === p.id ? undefined : 'button'"
+              :aria-pressed="renamingPartId === p.id ? undefined : p.id === partsView.activeId"
+              :tabindex="renamingPartId === p.id ? -1 : 0"
+              title="Click to edit this part · double-click to rename"
+              @click="store.setActivePart(p.id)"
+              @dblclick="startPartRename(p.id, p.name)"
+              @keydown="onPartKey($event, p.id, p.name)"
+            >
+              <Icon :icon="faLayerGroup" :size="11" class="part-ic" />
+              <input
+                v-if="renamingPartId === p.id"
+                :id="`part-rename-${p.id}`"
+                v-model="partRenameText"
+                type="text"
+                @keydown.enter="commitPartRename"
+                @keydown.esc="renamingPartId = null"
+                @blur="commitPartRename"
+                @click.stop
+              />
+              <template v-else>
+                <span class="pname">{{ p.name }}</span>
+                <span v-if="p.mods" class="tag" title="This part has modifiers">{{ p.mods }} mod{{ p.mods > 1 ? 's' : '' }}</span>
+                <button
+                  v-if="partsView.parts.length > 1"
+                  class="part-del"
+                  :title="`Delete ${p.name}`"
+                  :aria-label="`Delete ${p.name}`"
+                  @click.stop="store.removePart(p.id)"
+                >
+                  <Icon :icon="faXmark" :size="11" />
+                </button>
+              </template>
+            </li>
+          </ul>
 
-        <ModifierStack :part-id="partsView.activeId" :part-name="partsView.activeName" :modifiers="partsView.modifiers" />
+          <ModifierStack :part-id="partsView.activeId" :part-name="partsView.activeName" :modifiers="partsView.modifiers" />
+        </div>
       </template>
 
       <div class="sub">
@@ -625,6 +653,15 @@ function resetColorAdjust() {
 .sub .dim {
   color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
+}
+.sub .fold {
+  flex: none;
+}
+.summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .size {
   gap: 4px;
