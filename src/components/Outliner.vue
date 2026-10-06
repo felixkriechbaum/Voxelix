@@ -17,6 +17,8 @@ import {
   faLayerGroup,
   faXmark,
   faChevronDown,
+  faEye,
+  faEyeSlash,
 } from '@fortawesome/pro-solid-svg-icons';
 import { partsCollapsed } from '@/editor/panelPrefs';
 
@@ -40,7 +42,7 @@ const partsView = computed(() => {
   return {
     extend: o.kind === 'extend',
     activeId: o.activePartId,
-    parts: o.parts.map((p) => ({ id: p.id, name: p.name, mods: p.modifiers.length })),
+    parts: o.parts.map((p) => ({ id: p.id, name: p.name, mods: p.modifiers.length, hidden: p.hidden })),
     modifiers: o.activePart.modifiers.map((m) => (m.type === 'move' ? { ...m, offset: [...m.offset] as [number, number, number] } : { ...m })),
     activeName: o.activePart.name,
   };
@@ -379,7 +381,7 @@ function resetColorAdjust() {
             <li
               v-for="p in partsView.parts"
               :key="p.id"
-              :class="{ sel: p.id === partsView.activeId }"
+              :class="{ sel: p.id === partsView.activeId, hidden: p.hidden }"
               :role="renamingPartId === p.id ? undefined : 'button'"
               :aria-pressed="renamingPartId === p.id ? undefined : p.id === partsView.activeId"
               :tabindex="renamingPartId === p.id ? -1 : 0"
@@ -403,8 +405,18 @@ function resetColorAdjust() {
                 <span class="pname">{{ p.name }}</span>
                 <span v-if="p.mods" class="tag" title="This part has modifiers">{{ p.mods }} mod{{ p.mods > 1 ? 's' : '' }}</span>
                 <button
+                  class="part-btn eye"
+                  :class="{ off: p.hidden }"
+                  :title="p.hidden ? `Show ${p.name} again` : `Hide ${p.name} — it's left out of the export too`"
+                  :aria-label="p.hidden ? `Show ${p.name}` : `Hide ${p.name}`"
+                  :aria-pressed="p.hidden"
+                  @click.stop="store.setPartHidden(p.id, !p.hidden)"
+                >
+                  <Icon :icon="p.hidden ? faEyeSlash : faEye" :size="11" />
+                </button>
+                <button
                   v-if="partsView.parts.length > 1"
-                  class="part-del"
+                  class="part-btn del"
                   :title="`Delete ${p.name}`"
                   :aria-label="`Delete ${p.name}`"
                   @click.stop="store.removePart(p.id)"
@@ -610,7 +622,7 @@ function resetColorAdjust() {
   min-width: 0;
   padding: 2px 5px;
 }
-.part-del {
+.part-btn {
   display: grid;
   place-items: center;
   width: 22px;
@@ -620,13 +632,25 @@ function resetColorAdjust() {
   background: transparent;
   border-color: transparent;
 }
-.part-del:hover:not(:disabled) {
-  color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 12%, transparent);
+.part-btn:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--surface-hi);
   border-color: transparent;
 }
-.parts li:not(:hover):not(:focus-within) .part-del {
+.part-btn.del:hover:not(:disabled) {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+/* the row's buttons only show on hover — except the eye of a hidden part, which stays as a marker */
+.parts li:not(:hover):not(:focus-within) .part-btn:not(.off) {
   opacity: 0;
+}
+.parts li.hidden .pname,
+.parts li.hidden .part-ic {
+  color: var(--ink-faint);
+}
+.parts li.hidden .pname {
+  font-style: italic;
 }
 .mini {
   padding: 1px 8px;

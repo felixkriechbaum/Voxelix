@@ -406,6 +406,14 @@ export const useEditorStore = defineStore('editor', () => {
     partsChanged(true);
   }
 
+  /** Show or hide a part — a hidden one is left out of the look and the export. */
+  function setPartHidden(partId: string, hidden: boolean) {
+    const part = activeObject()?.parts.find((p) => p.id === partId);
+    if (!part || part.hidden === hidden) return;
+    part.hidden = hidden;
+    partsChanged(true);
+  }
+
   function removePart(partId: string) {
     const obj = activeObject();
     if (!obj || obj.parts.length <= 1) return;
@@ -563,6 +571,7 @@ export const useEditorStore = defineStore('editor', () => {
     setActivePart,
     renamePart,
     removePart,
+    setPartHidden,
     selectionToNewPart,
     addModifier,
     updateModifier,

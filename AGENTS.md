@@ -200,6 +200,9 @@ stacks are keyed `objectId/partId`. Anything that changes the grid as a whole
 - File format: `data` is always the merged look (older versions still open it);
   `parts` / `activePartId` are only written when there's more than one plain part.
 - Select tool → "Move to new part" splits the selection into its own part.
+- A part can be hidden (eye in the parts list, `VoxelPart.hidden`): `mergeParts` /
+  `smoothLayers` skip it, so it's out of the look, the dimmed context and the
+  export. While it's the active part it draws as a cage over the rest.
 
 ### Extend / overlay objects (the subtle part)
 

@@ -61,12 +61,12 @@ export class VoxelObject {
     this.activePart.data = value;
   }
 
-  /** More than a plain single grid: several parts, or modifiers generating voxels. */
+  /** More than a plain single grid: several parts, modifiers generating voxels, or a hidden part. */
   get isComposite(): boolean {
-    return this.parts.length > 1 || this.parts.some((p) => p.hasActiveModifiers);
+    return this.parts.length > 1 || this.parts.some((p) => p.hasActiveModifiers || p.hidden);
   }
 
-  /** What the object looks like: every part merged, modifiers applied. */
+  /** What the object looks like: every visible part merged, modifiers applied. */
   merged(): VoxelData {
     return this.isComposite ? mergeParts(this.parts, this.detail) : this.parts[0].data;
   }
@@ -91,7 +91,7 @@ export class VoxelObject {
       detail: this.detail,
       colorAdjust: this.colorAdjust,
     };
-    if (this.parts.length > 1 || this.parts[0].modifiers.length > 0) {
+    if (this.parts.length > 1 || this.parts[0].modifiers.length > 0 || this.parts[0].hidden) {
       json.parts = this.parts.map((p) => p.toJSON());
       json.activePartId = this.activePartId;
     }

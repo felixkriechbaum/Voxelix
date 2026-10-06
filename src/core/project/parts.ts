@@ -95,6 +95,8 @@ export interface VoxelPartJson {
   name: string;
   data: VoxelDataJson;
   modifiers?: Modifier[];
+  /** left out of the look and the export */
+  hidden?: boolean;
 }
 
 /** One mesh of an object: its own voxels in the object's shared grid, plus modifiers. */
@@ -103,12 +105,15 @@ export class VoxelPart {
   name: string;
   data: VoxelData;
   modifiers: Modifier[];
+  /** Switched off: not drawn (but as a cage while it's the part being edited) and not exported. */
+  hidden: boolean;
 
-  constructor(opts: { id?: string; name: string; data: VoxelData; modifiers?: Modifier[] }) {
+  constructor(opts: { id?: string; name: string; data: VoxelData; modifiers?: Modifier[]; hidden?: boolean }) {
     this.id = opts.id ?? crypto.randomUUID();
     this.name = opts.name;
     this.data = opts.data;
     this.modifiers = opts.modifiers ?? [];
+    this.hidden = opts.hidden ?? false;
   }
 
   get hasActiveModifiers(): boolean {
@@ -132,11 +137,19 @@ export class VoxelPart {
       name: this.name,
       data: this.data.clone(),
       modifiers: this.modifiers.map((m) => cloneModifier(m, crypto.randomUUID())),
+      hidden: this.hidden,
     });
   }
 
   toJSON(): VoxelPartJson {
-    return { id: this.id, name: this.name, data: this.data.toJSON(), modifiers: this.modifiers.map((m) => cloneModifier(m, m.id)) };
+    const json: VoxelPartJson = {
+      id: this.id,
+      name: this.name,
+      data: this.data.toJSON(),
+      modifiers: this.modifiers.map((m) => cloneModifier(m, m.id)),
+    };
+    if (this.hidden) json.hidden = true;
+    return json;
   }
 
   static fromJSON(json: VoxelPartJson): VoxelPart {
@@ -145,6 +158,7 @@ export class VoxelPart {
       name: json.name,
       data: VoxelData.fromJSON(json.data),
       modifiers: (json.modifiers ?? []).map(normalizeModifier),
+      hidden: json.hidden === true,
     });
   }
 }
@@ -463,16 +477,17 @@ export function evaluatePart(part: VoxelPart, detail: number): VoxelData {
 }
 
 /**
- * Every part of an object merged into one grid, modifiers applied. Later parts
- * win where they overlap. `skip` leaves one part's own voxels out (its
- * generated copies stay) — the dimmed context around the part being edited.
- * `voxelOnly` leaves out the un-voxeled parts, which are meshed on their own.
+ * Every visible part of an object merged into one grid, modifiers applied.
+ * Later parts win where they overlap. `skip` leaves one part's own voxels out
+ * (its generated copies stay) — the dimmed context around the part being
+ * edited. `voxelOnly` leaves out the un-voxeled parts, which are meshed on
+ * their own.
  */
 export function mergeParts(parts: VoxelPart[], detail: number, skip?: VoxelPart, voxelOnly = false): VoxelData {
   const first = parts[0].data;
   const out = new VoxelData(first.sizeX, first.sizeY, first.sizeZ);
   for (const part of parts) {
-    if (voxelOnly && part.unvoxelStrength > 0) continue;
+    if (part.hidden || (voxelOnly && part.unvoxelStrength > 0)) continue;
     const evaluated = evaluatePart(part, detail);
     evaluated.forEachFilled((x, y, z, c) => {
       if (part === skip && part.data.get(x, y, z) !== 0) return;
@@ -490,9 +505,9 @@ export interface SmoothLayer {
   strength: number;
 }
 
-/** The un-voxeled parts of an object, modifiers applied — meshed apart from the voxel parts. */
+/** The visible un-voxeled parts of an object, modifiers applied — meshed apart from the voxel parts. */
 export function smoothLayers(objectId: string, parts: VoxelPart[], detail: number): SmoothLayer[] {
   return parts
-    .filter((p) => p.unvoxelStrength > 0)
+    .filter((p) => !p.hidden && p.unvoxelStrength > 0)
     .map((p) => ({ key: `${objectId}/${p.id}`, data: evaluatePart(p, detail), strength: p.unvoxelStrength }));
 }

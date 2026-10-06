@@ -47,7 +47,7 @@ function resolveParts(object: VoxelObject, project: Project, seen: Set<string>):
       Math.max(p.data.sizeZ, overlay.sizeZ),
     );
     p.data.forEachFilled((x, y, z, c) => data.set(x, y, z, c));
-    return new VoxelPart({ id: p.id, name: p.name, data, modifiers: p.modifiers });
+    return new VoxelPart({ id: p.id, name: p.name, data, modifiers: p.modifiers, hidden: p.hidden });
   });
   const holes = from.holes.slice();
   overlay.forEachEntry((x, y, z, v) => {
@@ -210,10 +210,11 @@ export function buildActiveRender(object: VoxelObject, project: Project): Active
   const colorAdjust = object.colorAdjust ?? null;
   if (object.kind !== 'extend' || !object.baseId) {
     // a smoothed part's result differs from its voxels everywhere, so show it
-    // whole (its own cells too) with the part as a cage on top; otherwise the
-    // part being edited is bright and the other parts plus any modifier copies
-    // (its own included) show dimmed around it
-    const cage = object.activePart.isSmoothed;
+    // whole (its own cells too) with the part as a cage on top — a hidden part
+    // the same way, as a cage over everything else; otherwise the part being
+    // edited is bright and the other parts plus any modifier copies (its own
+    // included) show dimmed around it
+    const cage = object.activePart.isSmoothed || object.activePart.hidden;
     const smooth = smoothLayers(object.id, object.parts, object.detail);
     return {
       editableId: object.id,

@@ -262,7 +262,11 @@ export class ToolRunner implements ToolContext {
         // modifier copies of what was just drawn only exist in a fresh resolve
         if (modifiers) this.ctx.readData = resolveEffectiveData(this.ctx.object, project);
       }
-    } else if (this.ctx?.object.activePart.hasActiveModifiers && !(live && this.ctx.object.activePart.isSmoothed)) {
+    } else if (
+      this.ctx?.object.activePart.hasActiveModifiers &&
+      !this.ctx.object.activePart.hidden &&
+      !(live && this.ctx.object.activePart.isSmoothed)
+    ) {
       // the part's array copies are generated from it — regenerate them live
       this.viewport.flush();
       const render = buildActiveRender(this.ctx.object, this.store.project!);
