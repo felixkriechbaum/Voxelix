@@ -19,8 +19,6 @@ const REACH_AT_FULL = 3;
 const PASSES = 3;
 /** Past this many samples a coarse object is sampled less finely, to keep the memory in check. */
 const SAMPLE_BUDGET = 12_000_000;
-/** How far colours run into each other, as a share of how far the shape is blurred. */
-const COLOR_SPREAD = 0.5;
 /** Below this strength the corners still lean towards the voxel corners, so 0 → 1 doesn't jump. */
 const BLEND_UNTIL = 10;
 
@@ -41,14 +39,18 @@ export function toSmoothGrid(data: VoxelData): SmoothGrid | null {
  * A smooth surface over a voxel grid, as two meshes like `greedyMesh`: the
  * opaque colours and the see-through ones.
  *
- * `strength` (0–100) blurs the voxels into a soft density field — occupancy
- * and colour alike (colours over half the distance), so colours run into
- * each other — and the surface is
- * where that field is half full, extracted as a surface net: one vertex per
- * cell of the sample lattice the surface passes through, at the mean of its
- * edge crossings, joined by a quad across every sample edge that changes
- * sides. With no blur the vertices sit on the voxel corners, which is the
- * voxel surface itself.
+ * `strength` (0–100) blurs the voxels' occupancy into a soft density field,
+ * and the surface is where that field is half full, extracted as a surface
+ * net: one vertex per cell of the sample lattice the surface passes through,
+ * at the mean of its edge crossings, joined by a quad across every sample
+ * edge that changes sides. With no blur the vertices sit on the voxel
+ * corners, which is the voxel surface itself.
+ *
+ * Only the shape is blurred, never the colours: each quad takes the colour of
+ * the voxel it faces out of (where the surface swelled into empty space, the
+ * nearest original voxel's), and a vertex is split where quads of different
+ * colours meet — the colours stay hard where they were painted, on a smooth
+ * surface.
  *
  * As in the smooth modifier, a voxel stays while the blur there is over half
  * the fullest spot in reach, and empty space fills where it's over half full
@@ -79,21 +81,20 @@ export function surfaceNets(
   const n = nx * ny * nz;
   const dims: [number, number, number] = [nx, ny, nz];
 
-  // occupancy and colour × occupancy per sample
+  // occupancy and raw cell value per sample
   const occ = new Float32Array(n);
-  const rgba = [0, 1, 2, 3].map(() => new Float32Array(n));
+  const value = new Uint16Array(n);
   for (let z = 0; z < gz; z++)
     for (let y = 0; y < gy; y++)
       for (let x = 0; x < gx; x++) {
         const v = grid.cells[x + y * gx + z * gx * gy];
         if (v === 0) continue;
-        const o = (v - 1) * 4;
         for (let dz = 0; dz < k; dz++)
           for (let dy = 0; dy < k; dy++)
             for (let dx = 0; dx < k; dx++) {
               const i = pad + x * k + dx + (pad + y * k + dy) * sy + (pad + z * k + dz) * sz;
               occ[i] = 1;
-              for (let ch = 0; ch < 4; ch++) rgba[ch][i] = paletteLinear[o + ch];
+              value[i] = v;
             }
       }
 
@@ -101,27 +102,20 @@ export function surfaceNets(
   // the local peak where there was a voxel, so thin bits keep their body, and
   // as it is elsewhere, so they don't swell either
   let field = occ;
-  // colours blur over only part of that distance — kept apart as their own
-  // occupancy + colour fields, so the colour mean stays a proper average
-  let colorOcc = occ;
-  let colorRgba = rgba;
   if (r > 0) {
-    const solid = occ.slice();
-    colorOcc = occ.slice();
-    colorRgba = rgba.map((f) => f.slice());
-    for (const f of [colorOcc, ...colorRgba]) blur(f, dims, r * COLOR_SPREAD);
-    for (const f of [occ, ...rgba]) blur(f, dims, r);
+    blur(occ, dims, r);
     const peak = occ.slice();
     slidingMax(peak, dims, reach);
     field = new Float32Array(n);
-    for (let i = 0; i < n; i++) field[i] = solid[i] && peak[i] > 1e-6 ? occ[i] / peak[i] : occ[i];
+    for (let i = 0; i < n; i++) field[i] = value[i] && peak[i] > 1e-6 ? occ[i] / peak[i] : occ[i];
+    // samples the surface swelled into take the nearest original colour
+    spreadNearest(value, dims);
   }
   const inside = (i: number) => field[i] > 0.5;
 
   // one vertex per lattice cell (the cube between 8 samples) the surface crosses
   const vertexAt = new Int32Array(n).fill(-1);
   const pos: number[] = [];
-  const col: number[] = [];
   const t = Math.min(1, s / BLEND_UNTIL);
   const corners = [0, 1, sy, 1 + sy, sz, 1 + sz, sy + sz, 1 + sy + sz];
   const cornerXYZ = [0, 1, 0, 1, 0, 1, 0, 1].map((cx, c) => [cx, (c >> 1) & 1, (c >> 2) & 1]);
@@ -160,31 +154,14 @@ export function surfaceNets(
       grid.origin[1] + (y + ly - pad + 0.5) / k,
       grid.origin[2] + (z + lz - pad + 0.5) / k,
     );
-    // colour: the blurred colour of the 8 samples, weighted by how full they
-    // are; where the surface swelled out past the colour blur's reach (a
-    // filled-in inner corner), the wider shape blur's colour stands in
-    let w = 0;
-    const c = [0, 0, 0, 0];
-    for (const o of corners) {
-      w += colorOcc[cell + o];
-      for (let ch = 0; ch < 4; ch++) c[ch] += colorRgba[ch][cell + o];
-    }
-    if (w < 1e-3) {
-      w = 0;
-      c.fill(0);
-      for (const o of corners) {
-        w += occ[cell + o];
-        for (let ch = 0; ch < 4; ch++) c[ch] += rgba[ch][cell + o];
-      }
-    }
-    for (let ch = 0; ch < 4; ch++) col.push(w > 1e-6 ? c[ch] / w : 1);
     return v;
   };
 
   // a quad across every sample edge whose ends lie on different sides,
-  // through the 4 lattice cells around that edge, facing out of the solid end
+  // through the 4 lattice cells around that edge, facing out of the solid end,
+  // in that end's colour
   const quads: number[] = [];
-  const quadGlass: boolean[] = [];
+  const quadValue: number[] = [];
   const strides = [1, sy, sz];
   for (let d = 0; d < 3; d++) {
     const su = strides[(d + 1) % 3];
@@ -205,8 +182,7 @@ export function surfaceNets(
           // u × w = +d: this order faces +d, out of a solid `i`
           if (a) quads.push(c00, c10, c11, c01);
           else quads.push(c00, c01, c11, c10);
-          const solid = a ? i : i + step;
-          quadGlass.push(occ[solid] > 1e-6 && rgba[3][solid] / occ[solid] < 0.99);
+          quadValue.push(value[a ? i : i + step]);
         }
   }
 
@@ -235,20 +211,40 @@ export function surfaceNets(
     nrm[v * 3 + 2] /= l;
   }
 
+  // see-through as in greedyMesh: palette alpha < 1
+  const see = (v: number) => paletteLinear[(v - 1) * 4 + 3] < 1;
   const build = (glass: boolean): MeshArrays => {
+    // a vertex gets one copy per colour of the quads around it (same spot,
+    // same smooth normal), so colours change hard at the edge between quads
     const remap = new Int32Array(vcount).fill(-1);
+    const remapValue = new Uint16Array(vcount);
+    const extra = new Map<number, number>();
     const used: number[] = [];
+    const usedValue: number[] = [];
     const indices: number[] = [];
-    const take = (v: number) => {
+    const take = (v: number, val: number) => {
       if (remap[v] < 0) {
         remap[v] = used.length;
+        remapValue[v] = val;
         used.push(v);
+        usedValue.push(val);
       }
-      return remap[v];
+      if (remapValue[v] === val) return remap[v];
+      const key = v * 0x10000 + val;
+      let id = extra.get(key);
+      if (id === undefined) {
+        id = used.length;
+        extra.set(key, id);
+        used.push(v);
+        usedValue.push(val);
+      }
+      return id;
     };
     for (let q = 0, qi = 0; q < quads.length; q += 4, qi++) {
-      if (quadGlass[qi] !== glass) continue;
-      const a = take(quads[q]), b = take(quads[q + 1]), c = take(quads[q + 2]), d = take(quads[q + 3]);
+      const val = quadValue[qi];
+      if (see(val) !== glass) continue;
+      const a = take(quads[q], val), b = take(quads[q + 1], val);
+      const c = take(quads[q + 2], val), d = take(quads[q + 3], val);
       indices.push(a, b, c, a, c, d);
     }
     const positions = new Float32Array(used.length * 3);
@@ -259,7 +255,8 @@ export function surfaceNets(
         positions[i * 3 + ch] = pos[v * 3 + ch];
         normals[i * 3 + ch] = nrm[v * 3 + ch];
       }
-      for (let ch = 0; ch < 4; ch++) colors[i * 4 + ch] = col[v * 4 + ch];
+      const o = (usedValue[i] - 1) * 4;
+      for (let ch = 0; ch < 4; ch++) colors[i * 4 + ch] = paletteLinear[o + ch];
     });
     return { positions, normals, colors, indices: Uint32Array.from(indices) };
   };
@@ -299,6 +296,27 @@ function blur(f: Float32Array, dims: [number, number, number], r: number): void 
           }
         }
     }
+}
+
+/** Give every empty sample the value of the nearest filled one (multi-source BFS, 6-connected). */
+function spreadNearest(value: Uint16Array, dims: [number, number, number]): void {
+  const [nx, ny, nz] = dims;
+  const sy = nx;
+  const sz = nx * ny;
+  const queue = new Int32Array(value.length);
+  let head = 0, tail = 0;
+  for (let i = 0; i < value.length; i++) if (value[i] !== 0) queue[tail++] = i;
+  while (head < tail) {
+    const i = queue[head++];
+    const x = i % nx, y = ((i / sy) | 0) % ny, z = (i / sz) | 0;
+    const c = value[i];
+    if (x > 0 && value[i - 1] === 0) { value[i - 1] = c; queue[tail++] = i - 1; }
+    if (x < nx - 1 && value[i + 1] === 0) { value[i + 1] = c; queue[tail++] = i + 1; }
+    if (y > 0 && value[i - sy] === 0) { value[i - sy] = c; queue[tail++] = i - sy; }
+    if (y < ny - 1 && value[i + sy] === 0) { value[i + sy] = c; queue[tail++] = i + sy; }
+    if (z > 0 && value[i - sz] === 0) { value[i - sz] = c; queue[tail++] = i - sz; }
+    if (z < nz - 1 && value[i + sz] === 0) { value[i + sz] = c; queue[tail++] = i + sz; }
+  }
 }
 
 /** Replace every sample by the largest value within `reach` samples (a box, separable). */

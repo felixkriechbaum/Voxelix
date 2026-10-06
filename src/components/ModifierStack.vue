@@ -21,7 +21,7 @@ const kinds: Array<{ type: ModifierType; label: string; title: string }> = [
   {
     type: 'unvoxel',
     label: 'Unvoxel',
-    title: 'Drop the voxel look: draw and export the part as one smooth surface, colours blending into each other',
+    title: 'Drop the voxel look: draw and export the part as one smooth surface, colours kept hard where they were painted',
   },
 ];
 const names: Record<ModifierType, string> = {

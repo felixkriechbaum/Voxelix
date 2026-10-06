@@ -174,12 +174,14 @@ stack, applied top to bottom (`evaluatePart`), UI in `ModifierStack.vue`:
   faint cage (`ChunkMeshView.setCage`); mid-stroke the result isn't
   regenerated (too slow per frame), only on commit.
 - unvoxel: `strength` 0–100. Changes no voxels — the part is drawn and
-  exported as one smooth surface (`core/mesh/surfaceNets.ts`): occupancy +
-  colour are box-blurred (reach 3 voxels at 100, colours half that; coarse grids sampled 6× per
-  voxel), cut at half full with the smooth modifier's thin-part rule, and
-  extracted as a surface net (strength → 0 puts the vertices on the voxel
-  corners). Meshed as a whole part in the worker (`ChunkMesher.meshSmooth`,
-  seq-guarded), shown by `SmoothMeshView`; `ActiveRender.smooth` lists these
+  exported as one smooth surface (`core/mesh/surfaceNets.ts`): occupancy is
+  box-blurred (reach 3 voxels at 100; coarse grids sampled 6× per voxel),
+  cut at half full with the smooth modifier's thin-part rule, and extracted
+  as a surface net (strength → 0 puts the vertices on the voxel corners).
+  Colours are never blurred: each quad takes its solid sample's palette
+  colour (swelled-in samples the nearest original one), and vertices split
+  per colour so colour edges stay hard. Meshed as a whole part in the worker
+  (`ChunkMesher.meshSmooth`, seq-guarded), shown by `SmoothMeshView`; `ActiveRender.smooth` lists these
   parts and `mergeParts(…, voxelOnly)` leaves them out of the voxel grids.
   Export appends them to the object's mesh (`resolveLook`).
 Everything generated is clipped at the grid. A 90° object rotation turns each

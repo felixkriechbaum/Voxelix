@@ -60,7 +60,7 @@ export interface SmoothModifier {
 
 /**
  * Drops the voxel look: the part is drawn and exported as one smooth surface
- * (see core/mesh/surfaceNets), colours running into each other. It doesn't
+ * (see core/mesh/surfaceNets), colours kept hard where they were painted. It doesn't
  * change any voxels, so it acts on the finished part wherever it sits in the
  * stack; the part's voxels stay editable as a cage.
  */
